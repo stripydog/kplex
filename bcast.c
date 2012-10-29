@@ -1,3 +1,9 @@
+/* bcast.c
+ * This file is part of kplex
+ * Copyright Keith Young 2012
+ * For copying information see the file COPYING distributed with this software
+ */
+
 #include "kplex.h"
 #include <netdb.h>
 
@@ -86,11 +92,11 @@ struct iface *init_bcast(char *str,struct iface *ifa)
         exit(1);
     }
 
-    if ((host=strtok(str+4,":"))) {
+    if ((host=strtok(str+4,","))) {
         if (!strcmp(host,"-")) {
             host=NULL;
         }
-        if (pptr=strtok(NULL,":"))  {
+        if (pptr=strtok(NULL,","))  {
             if ((port=atoi(pptr)) > 2^(sizeof(short) -1)) {
                 fprintf(stderr,"port %s out of range\n",pptr);
                 exit(1);

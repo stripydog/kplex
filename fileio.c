@@ -1,3 +1,9 @@
+/* fileio.c
+ * This file is part of kplex
+ * Copyright Keith Young 2012
+ * For copying information see the file COPYING distributed with this software
+ */
+
 #include "kplex.h"
 #include <stdlib.h>
 
@@ -73,7 +79,7 @@ iface_t *init_file (char *str, iface_t *ifa)
     }
     ifa->info = (void *) ifc;
 
-    if ((fname=strtok(str+4,":")) == NULL) {
+    if ((fname=strtok(str+4,",")) == NULL) {
         ifc->fp = (ifa->direction == IN)?stdin:stdout;
     } else if ((ifc->fp = fopen(fname,(ifa->direction == IN)?"r":"w")) == NULL) {
         fprintf(stderr,"Could not open %s: %s\n",fname,strerror(errno));

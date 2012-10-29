@@ -1,18 +1,18 @@
-#include "kplex.h"
-#include "kplex_mods.h"
-#include <unistd.h>
-
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * (c) Keith Young 2012
- * Licence TBD, but share and enjoy.
+ * Copyright Keith Young 2012
+ * For copying information, see the file COPYING distributed with this file
  */
 
 /* This file (kplex.c) contains the main body of the program and
  * central multiplexing engine. Initialisation and read/write routines are
  * defined in interface-specific files
  */
+
+#include "kplex.h"
+#include "kplex_mods.h"
+#include <unistd.h>
 
 /*
  *  Initialise an ioqueue
@@ -171,6 +171,9 @@ void *engine(void *info)
     senblk_t *sptr;
     iface_t *optr;
     struct engine_info *eptr = (struct engine_info *)info;
+    int retval=0;
+
+    (void) pthread_detach(pthread_self());
 
     for (;;) {
         sptr = next_senblk(eptr->q);
@@ -186,38 +189,27 @@ void *engine(void *info)
     		break;
         senblk_free(sptr,eptr->q);
     }
-    /* cleanup here */
+    pthread_exit(&retval);
 }
 
 /*
- * Generic output routine which calls interface specific routines
- * ifa->tid assignment is a race condition bug. Need to do this differently
+ * Interface startup routine
  * Args: Pointer to interface structure (cast to void)
  * Returns: Nothing
  */
-void do_output (void *ptr)
+void start_interface (void *ptr)
 {
     iface_t *ifa = ptr;
 
     ifa->tid = pthread_self();
 
-    ifa->write(ifa);
+    link_interface(ifa);
 
-}
+    if (ifa->direction == OUT)
+    	ifa->write(ifa);
+    else
+	ifa->read(ifa);
 
-/*
- * Generic input routine which calls interface specific routines
- * ifa->tid assignment is a race condition bug. Need to do this differently
- * Args: Pointer to interface structure (cast to void)
- * Returns: Nothing
- */
-void do_input (void *ptr)
-{
-    iface_t *ifa = ptr;
-
-    ifa->tid = pthread_self();
-
-    ifa->read(ifa);
 }
 
 /*
@@ -233,8 +225,14 @@ int link_interface(iface_t *ifa)
     pthread_mutex_lock(&ifa->lists->io_mutex);
     /* Set lptr to point to the input or output list, as appropriate */
     lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-    ifa->next=(*lptr);
+    if (*lptr)
+        ifa->next=(*lptr);
+    else
+        ifa->next=NULL;
     (*lptr)=ifa;
+    if (ifa->direction == OUT)
+	    if (--ifa->lists->uninitialized == 0)
+		    pthread_cond_signal(&ifa->lists->init_cond);
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     return(0);
 }
@@ -344,7 +342,7 @@ iface_t *init_interface(char *dev)
 		err++;
 	}
 
-	if (err || (*(dev+1) != ':') || (*(dev+3) != ':')) {
+	if (err || (*(dev+1) != ',') || (*(dev+3) != ',')) {
 		fprintf(stderr,"Incorrect interface specification '%s'\n",dev);
 		exit(1);
 	}
@@ -369,6 +367,10 @@ iface_t *init_interface(char *dev)
 	case 'P':
 		newif->type=PTY;
 		break;
+	case 'r':
+	case 'R':
+		newif->type=ST;
+		break;
 	default:
 		fprintf(stderr,"Unknown interface specification '%s'\n",dev);
 		exit(1);
@@ -381,7 +383,8 @@ main(int argc, char ** argv)
 {
     pthread_t tid;
     struct engine_info e_info;
-    iface_t *ifptr;
+    iface_t *ifptr,*iflist;
+    iface_t **tiptr;
     size_t qsize=DEFQUEUESZ;                            /* For engine only */
     int opt,err=0;;
     void *ret;
@@ -389,6 +392,8 @@ main(int argc, char ** argv)
         .io_mutex = PTHREAD_MUTEX_INITIALIZER,
         .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
+	.init_cond = PTHREAD_COND_INITIALIZER,
+	.uninitialized = 0,
 	.outputs = NULL,
 	.inputs = NULL,
 	.dead = NULL
@@ -413,37 +418,45 @@ main(int argc, char ** argv)
 
     e_info.q = init_q(qsize);
 
-    for (;optind < argc;optind++) {
+    for (ifptr=iflist=NULL,tiptr=&iflist;optind < argc;optind++) {
         /* Remaining arguments should all be interfaces */
         if ((ifptr=init_interface(argv[optind])) == NULL) {
             fprintf(stderr,"%s: Failed to initialize interface specified by \'%s\'\n",argv[0],argv[optind]);
             exit(1);
         }
 
-        /* Place newly constructed interface structure on appropriate list
-         * (input or output) */
-        if (ifptr->direction == OUT) {
-            ifptr->next=lists.outputs;
-            lists.outputs=ifptr;
-        } else {
-            ifptr->q=e_info.q;
-            ifptr->next=lists.inputs;
-            lists.inputs=ifptr;
-        }
-	    ifptr->lists = &lists;
+	(*tiptr) = ifptr;
+	tiptr=&ifptr->next;
+	if (ifptr->direction == IN)
+		ifptr->q=e_info.q;
+	else
+		lists.uninitialized++;
+
+        ifptr->lists = &lists;
     }
 
     e_info.lists = &lists;
 
     pthread_create(&tid,NULL,engine,(void *) &e_info);
-    for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next)
+    for (ifptr=iflist,tiptr=&ifptr;ifptr;ifptr=ifptr->next)
         /* Create a thread to run each output */
-        pthread_create(&tid,NULL,(void *)do_output,(void *) ifptr);
+        if (ifptr->direction == OUT) {
+            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+	    *tiptr=ifptr->next;
+	} else
+            tiptr=(&ifptr->next);
 
-    for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
+    /* I do so love a good linked list */
+
+    for (ifptr=iflist;ifptr;ifptr=ifptr->next) {
         /* Create a thread to run each input */
-        pthread_create(&tid,NULL,(void *)do_input,(void *) ifptr);
-}
+        pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+    }
+
+    pthread_mutex_lock(&lists.io_mutex);
+    while (lists.uninitialized)
+	    pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
+    pthread_mutex_unlock(&lists.io_mutex);
 
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again

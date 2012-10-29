@@ -1,0 +1,264 @@
+kplex: A multiplexer for various nmea 0183 interfaces
+Blurb:
+(c) Keith Young 2012
+Licence to be added when I sort out which version of the GPL is applicable.
+At this stage this software experimental and not for re-distribution.  You
+may use it as you wish for non-commercial purposes.  Commercial use will be
+permitted in accordance with the relevant version of the GPL when the software
+is in a more usable state and the license has been decided upon.  It should
+be obvious that this is probably full of bugs and therefore not for navigation.
+
+Installation
+
+You've got this far so you've unpacked it.  So "make" should be the obvious
+next step.  There's only one executable ("kplex") so you can move it wherever
+you like without some install command doing it for you.
+
+Invocation:
+
+kplex [-q <queue length>] <interface> <interface> [<interface> ...]
+
+Where
+<queue length> is the number of items the main multiplexer engine buffers.
+Individual output interfaces have their own queues. You shouldn't need to
+tune this
+
+<interface> is an interface specifier which takes the form:
+<direction>,<type>,<interface-specific options>
+where:
+    <direction> is either "o" for output or "i" for input
+    <type> is one of:
+        "s": serial nnmea 0183 data
+        "f": file (or standard in/out)
+        "t": nmea over TCP
+        "b": nmea over UDP broadcast
+        "p": serial nmea data over a pseudo terminal
+    <interface-specific options> are discussed with the interface types below.
+You must spoecify at least one input and one output interface.
+
+Interface Types:
+
+Serial Interfaces
+
+This is the traditional way of getting nmea data into your computer.  kplex
+doesn't care whether your device is connected to via a traditional serial
+port or via a USB to serial converter so long as the device on which data are
+presented looks like a character special device and it can be configured with
+baud rate and a minimal set of other parameters. Note that you can't normally
+just plug your nmea tx/rx into a serial port. NMEA is RS422 whereas serial ports
+normally want RS232 input.
+
+    Interface-specific options:
+        [<device name> [,<baud rate>]]
+        Where
+            <device name> is the serial device (e.g. /dev/ttyS0)
+            <baud rate> is one of "4800", "9600" or "38400".  Defaults to
+		4800 if unspecified
+
+You must minimally specify a device name for a serial interface.  usb to serial
+converters often use /dev/ttyUSB0. Check your /var/adm/messages file and/or udev
+rules.  Note that normal users are often not permitted to open serial devices.  This may mean adding your user to a group which *is* allowed to read the device
+(e.g. "dialout", "uucp" or whatever).
+
+
+"File" interfaces
+
+This specification covers both regular files and terminal i/o via standard
+input and standard output.
+
+    Interface-specific options:
+        [<file name>]
+        Where
+            <file name> is either the file name to read from or write to or
+                the magic strings "stdin" (for standard input) or "stdout"
+                (for standard out). If unspecified, defaults to stdin for input
+                interfaces, stdout for outputs.
+
+"File" interfaces are slightly different from other interfaces in that
+sentences are terminated by <LF> rather than <CR><LF>. Because this is *nix
+and we don't want to muck about with redundant '\r's.  Sentences input with
+just a terminating '\n' (ie <LF>) are converted to <CR><LF> translation for
+output to other interface types (i.e. serial, tcp, broadcast etc.).
+
+TCP Interfaces
+
+If specified as an "input" interface, kplex will attempt to open a connection
+to a remote tcp server@ either another instance of kplex or another nmea-to-
+tcp converter.
+If specified as an "output" interface, kplex will create a tcp server which
+other programs (or another instance of kplex) can connect to.  The number of
+other programs which can connect to this server will be system dependent but
+it's almost certainly "enough".
+
+    Interface-specific options:
+	[(<address>|"-")[,<port>]]
+        Where:
+            <address> is the server address to bind to for output interfaces
+                and the remote tcp server to connect to for inputs.  This can
+                be:
+                * A symbolic hostnamne (which must be resolvable on the host)
+                * An IPv4 address in dotted decimal format
+                * An IPv6 address
+            For input interfaces, a remote host MUST be specified.  For outputs,
+            if address is not specified, or specified as "-" a wildcard address
+            will be used and the server run on all available interfaces.
+            Whether this is IPv4 only or IPv4 and IPv6 will depend on system
+            configuration.  IPv6 can be forced (if your systenm supports it)
+            using a wildcard address of "0::0".  An IPv6 server can accept IPv4
+            connections on a dual stacked host. You can happily ignore all
+            mention of IPv6 if you want to.
+            The address, if specified for an output, must correspond to one
+            assigned to a interface on the host
+            <port> is the tcp port to run the server on.  If not specified,
+            defaults to the tcp port returned by a lookup of the service
+            "nmea-0183" and if that fails the IANA assigned port for nmea-0183
+            10110 is used.
+
+For most purposes you can just specify "o,t," to create a tcp server.
+
+Broadcast Interfaces
+This method involves nmea sentences encapsulted within UDP datagrams sent to a
+broadcast address.
+    Interface-specific options:
+	[(<address>|"-")[,<port>]]
+        Where:
+            <address> is the IPv4 interface address to bind to. If unspecified
+            or specified as "-" for an output, the udp server created will bind
+            to all the host's IPv4 interfaces. If specified, this must be a
+            valid 4 address on the host. Note that for inputs, the remote
+            broadcast server address should NOT be specified here.
+            <port> if specified is the udp port or service name. If not
+            specified defaults to the udp port returned by a lookup of the
+            service "nmea-0183" and if that fails the IANA assigned port for
+            nmea-0183 10110 is used.
+
+Note that broadcast is inherently IPv4. And sooo 20th century. Multicast is
+where it's at, but as I know of no clients which support nmea over multicast,
+that's a (near) future enhancement.
+
+Pseudo Terminal (pty) interfaces
+
+Pty interfaces are pretty much the same as serial interfaces except that the
+devices concerned do not correspond to physical input and output devices on
+your system. Actually, in the case of inputs it makes no difference whether you
+specify "i,s," or "i,p,": The code ends up going down the same path.
+
+Where ptys come in handy with kplex is if you want to split a serial input
+between one or more programs running on a computer and possibly some outputs
+too.
+
+
+    Interface-specific options:
+        [(<pty name>|"-") [,<baud rate>]]
+        Where
+            <pty name> is either the pty to connect to (for inputs), a path
+            name specifying a symbolic link that will be created pointing to the
+            slave side of an output pty, or "-" which for outputs instructs
+            kplex simply to display the pathname of the slave pty it has
+            created for output.
+            <baud rate> is one of "4800", "9600" or "38400".  Defaults to
+		4800 if unspecified
+
+<pty name> must be specified for inputs.  For outputs, kplex creates a master/
+slave pty pair. If you give kplex a pathname for an put pty, it will attempt to
+create a symbolic link with that pathname pointing to the slave side of the
+pty it creates. If the path given currently exists as a symbolic link it will
+be replaced. If it exists but is not a symbolic link (e.g. it's a regular file
+or devce) kplex will exit with an error.  If no pty name is given, or if it is
+given as "-", kplex just prints the name of the slave pty created without
+creating a symlink.
+
+Specifying a pathname (and creating a symlink) is useful for providing a
+persistant interface.
+
+For example, if you wish to take AIS input from a serial
+port, make it available to opencpn but also create a tcp server to make the
+data available to inavX on an ipad you might invoke kplex like this:
+kplex i,s,/dev/ttyUSB0,38400 o,p,/home/fred/.opencpn/ais,38400 \
+    o,t,
+
+And add the following to /home/fred/.opencpn/opencpn.conf:
+[Settings/AISPort]
+Port=Serial:/home/fred/.opencpn/ais
+
+This creates the /home/fred/.opencpn/ais, which opencpn will use for its AIS
+input, as a symlink to the slave of a pty which kplex opens at 38400 baud in
+addition to a tcp server.
+
+Example usage
+
+Inputs from ais data on one serial port, other nmea data on a serial to usb
+interface. Output to broadcast udp and one usb to serial interface:
+kplex i,s,/dev/ttyS0,38400 i,s,/dev/ttyUSB0 o,t, o,s,/dev/ttyUSB1,38400
+
+Inputs from tcp server on 192.168.1.50, port 2200. Output to pseudo terminal,
+creating link for opencpn to read at /tmp/nmea, 38400 baud
+kplex i,t,192.168.1.50,2200 o,p,/tmp/nmea,38400
+
+To Do
+
+This is very early days but kplex has been constructed with expandability in
+mind.  Planned enhancements include:
+* Configuration file to avoid having to specify command line inputs
+* Support for seatalk 1 to nmea translation using information from Thomas
+  Knauf's excellent web site.
+* Support for filtering what is copied to which output
+* Support for failover of data sources (iie if no input of type X seen on
+  interface A for N seconds, fail over to interface B)
+* Support for multicast. Not that anything else supports it yet
+* Port to java.  kplex is written in C for POSIX-compliant systems because
+  that's what I know best.  Despite my railing against Object Oriented
+  Fascism, kplex is inherently OO. A java implementation would also be more
+  portable.
+* A set of commands to allow modifying kplex on the fly, for example to add,
+  subtract and modify the current interface list.  The structure of kplex means
+  this would be a relatively straightforward addition
+* A nice GUI.  Obviously.
+
+Q&A
+"FAQ" would be inappropriate as no-one has asked me about this yet.
+
+Q: Is this free software?
+A: It will be when it's finished and I've updated my knowledge of the latest
+incarnation of the GPL. For now it's free for non-commercial use
+
+Q: Hasn't this already been done?
+A: Not in free software for linux that I'm aware of. Although it possibly has.
+   I've seen something for windows.  socat can translate lots of things to lots
+   of things, but this multiplexes lots of things to lots of things. For linux.
+   Including ptys, which is important if you want to tap off a feed for opencpn
+   or somesuch.
+
+Q: If it *has* been done before, why is this even interesting?
+A: It supports IPv6 and it's multithreaded.
+
+Q: Who runs IPv6 on their boat?
+A: Me.  Actually that's about it. I don't have high hopes for nmea-onenet.
+
+Q: Does this run on a rapberry pi?
+A: Yes.  Note the 3.3v werdness of the serial interface though if not using
+   serial to usb adapters.
+
+Q: Can I use this to bridge to an ipad using just my laptop?
+A: Not exactly.  kplex does not create a wireless access point, it just uses
+   a linux computer's existing wireless interfaces. If you want to create a
+   wireless access point using a linux system, check out hostapd.  An
+   Alternative may be to use ad hoc networking to connect to your wireless
+   device (The comar box does this).o
+
+Q: Why "kplex"?
+A: Originally it was called "mplex", but that's the name of an mpeg stream
+   multiplexer for linux. changing only one letter of the name simplified
+   changing the file names.  And "kplex" scores loads in french scrabble.
+
+Q: Is this available for windows/mac/plan9/haiku/solaris/freebsd?
+A: It shouldn't be much work to port to another POSIX-compliant system. If
+   anyone genuinely wants such a thing let me know.  For windows a better plan
+   would be to port it all to java (on the to do list).  That might also make it
+   work for mac.
+
+Q: I am a venture capitalist with $20m dollars to employ someone who can write
+   multithreaded IPv6 network code and also has a yachtmaster certificate. Can
+   I hire you?
+A: Yes.
+

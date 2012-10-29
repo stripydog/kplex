@@ -1,3 +1,9 @@
+/* tcp.c
+ * This file is part of kplex
+ * Copyright Keith Young 2012
+ * For copying information see the file COPYING distributed with this software
+ */
+
 #include "kplex.h"
 #include <netdb.h>
 
@@ -27,7 +33,6 @@ struct iface * read_tcp(struct iface *ifa)
 	fd=ift->fd;
 
 	while ((nread=read(fd,buf,BUFSIZ)) > 0) {
-fprintf(stderr,"DEBUG: read %d chars\n",nread); fflush(stderr);
 		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
 			if (count < SENMAX) {
 				++count;
@@ -96,9 +101,12 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->cleanup=cleanup_tcp;
     newifa->write=write_tcp;
     newifa->lists=ifa->lists;
-    link_interface(newifa);
 
-    pthread_create(&tid,NULL,(void *)do_output,(void *) newifa);
+    pthread_mutex_lock(&ifa->lists->io_mutex);
+    ++ifa->lists->uninitialized;
+    pthread_mutex_unlock(&ifa->lists->io_mutex);
+
+    pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
     return(newifa);
 }
 
@@ -107,7 +115,6 @@ iface_t *tcp_server(iface_t *ifa)
     struct if_tcp *ift=(struct if_tcp *)ifa->info;
     int afd;
 
-    ifa->tid = pthread_self();
     
     if (listen(ift->fd,5) == 0) {
         for(;;) {
@@ -134,11 +141,11 @@ iface_t *init_tcp(char *str,iface_t *ifa)
         exit(1);
     }
 
-    if (host=strtok(str+4,":")) {
+    if (host=strtok(str+4,",")) {
         if (!strcmp(host,"-")) {
             host=NULL;
         }
-        port=strtok(NULL,":");
+        port=strtok(NULL,",");
     }
 
     if (port == NULL) {

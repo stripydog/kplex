@@ -1,3 +1,8 @@
+/* kplex.h
+ * This file is part of kplex
+ * Copyright Keith Young 2012
+ * For copying information see the file COPYING distributed with this software
+ */
 #include <sys/types.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -23,7 +28,8 @@ enum itype {
 	BCAST,
 	TCP,
     PTY,
-	MCAST
+	MCAST,
+	ST
 };
 
 enum iotype {
@@ -53,6 +59,8 @@ struct iolists {
 	pthread_mutex_t	io_mutex;
 	pthread_mutex_t dead_mutex;
 	pthread_cond_t	dead_cond;
+	pthread_cond_t	init_cond;
+	int	uninitialized;
 	struct iface *outputs;
 	struct iface *inputs;
 	struct iface *dead;
@@ -62,7 +70,6 @@ struct iface {
 	pthread_t tid;
 	enum iotype direction;
 	enum itype type;
-	unsigned int index;
 	void *info;
 	ioqueue_t *q;
 	struct iface *next;
@@ -84,6 +91,7 @@ iface_t *init_serial(char *, iface_t *);
 iface_t *init_bcast(char *, iface_t *);
 iface_t *init_tcp(char *, iface_t *);
 iface_t *init_pty(char *, iface_t *);
+iface_t *init_seatalk(char *, iface_t *);
 
 ioqueue_t *init_q(size_t);
 
@@ -92,4 +100,4 @@ void push_senblk(senblk_t *, ioqueue_t *);
 void senblk_free(senblk_t *, ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
-void do_output(void *ptr);
+void start_interface(void *ptr);
