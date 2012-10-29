@@ -1,20 +1,22 @@
 kplex: A multiplexer for various nmea 0183 interfaces
-Blurb:
 (c) Keith Young 2012
-Licence to be added when I sort out which version of the GPL is applicable.
-At this stage this software experimental and not for re-distribution.  You
-may use it as you wish for non-commercial purposes.  Commercial use will be
-permitted in accordance with the relevant version of the GPL when the software
-is in a more usable state and the license has been decided upon.  It should
-be obvious that this is probably full of bugs and therefore not for navigation.
+Blurb:
+Details of the GPLv3 under which this software is distributed can be found in
+the file COPYING in this directory.
+
+This software almost certainly contains bugs and should not be relied on as
+part of a safety critical system, ie as a sole source of marine navigational
+information
 
 Installation
+------------
 
 You've got this far so you've unpacked it.  So "make" should be the obvious
 next step.  There's only one executable ("kplex") so you can move it wherever
 you like without some install command doing it for you.
 
 Invocation:
+-----------
 
 kplex [-q <queue length>] <interface> <interface> [<interface> ...]
 
@@ -28,17 +30,19 @@ tune this
 where:
     <direction> is either "o" for output or "i" for input
     <type> is one of:
-        "s": serial nnmea 0183 data
+        "s": serial nmea 0183 data
         "f": file (or standard in/out)
         "t": nmea over TCP
         "b": nmea over UDP broadcast
         "p": serial nmea data over a pseudo terminal
     <interface-specific options> are discussed with the interface types below.
-You must spoecify at least one input and one output interface.
+You must specify at least one input and one output interface.
 
 Interface Types:
+----------------
 
 Serial Interfaces
+-----------------
 
 This is the traditional way of getting nmea data into your computer.  kplex
 doesn't care whether your device is connected to via a traditional serial
@@ -62,6 +66,7 @@ rules.  Note that normal users are often not permitted to open serial devices.  
 
 
 "File" interfaces
+-----------------
 
 This specification covers both regular files and terminal i/o via standard
 input and standard output.
@@ -81,6 +86,7 @@ just a terminating '\n' (ie <LF>) are converted to <CR><LF> translation for
 output to other interface types (i.e. serial, tcp, broadcast etc.).
 
 TCP Interfaces
+--------------
 
 If specified as an "input" interface, kplex will attempt to open a connection
 to a remote tcp server@ either another instance of kplex or another nmea-to-
@@ -117,7 +123,8 @@ it's almost certainly "enough".
 For most purposes you can just specify "o,t," to create a tcp server.
 
 Broadcast Interfaces
-This method involves nmea sentences encapsulted within UDP datagrams sent to a
+--------------------
+This method involves nmea sentences encapsulated within UDP datagrams sent to a
 broadcast address.
     Interface-specific options:
 	[(<address>|"-")[,<port>]]
@@ -137,6 +144,7 @@ where it's at, but as I know of no clients which support nmea over multicast,
 that's a (near) future enhancement.
 
 Pseudo Terminal (pty) interfaces
+--------------------------------
 
 Pty interfaces are pretty much the same as serial interfaces except that the
 devices concerned do not correspond to physical input and output devices on
@@ -164,12 +172,12 @@ slave pty pair. If you give kplex a pathname for an put pty, it will attempt to
 create a symbolic link with that pathname pointing to the slave side of the
 pty it creates. If the path given currently exists as a symbolic link it will
 be replaced. If it exists but is not a symbolic link (e.g. it's a regular file
-or devce) kplex will exit with an error.  If no pty name is given, or if it is
+or device) kplex will exit with an error.  If no pty name is given, or if it is
 given as "-", kplex just prints the name of the slave pty created without
 creating a symlink.
 
 Specifying a pathname (and creating a symlink) is useful for providing a
-persistant interface.
+persistent interface.
 
 For example, if you wish to take AIS input from a serial
 port, make it available to opencpn but also create a tcp server to make the
@@ -186,6 +194,7 @@ input, as a symlink to the slave of a pty which kplex opens at 38400 baud in
 addition to a tcp server.
 
 Example usage
+-------------
 
 Inputs from ais data on one serial port, other nmea data on a serial to usb
 interface. Output to broadcast udp and one usb to serial interface:
@@ -196,6 +205,7 @@ creating link for opencpn to read at /tmp/nmea, 38400 baud
 kplex i,t,192.168.1.50,2200 o,p,/tmp/nmea,38400
 
 To Do
+-----
 
 This is very early days but kplex has been constructed with expandability in
 mind.  Planned enhancements include:
@@ -203,7 +213,7 @@ mind.  Planned enhancements include:
 * Support for seatalk 1 to nmea translation using information from Thomas
   Knauf's excellent web site.
 * Support for filtering what is copied to which output
-* Support for failover of data sources (iie if no input of type X seen on
+* Support for failover of data sources (ie if no input of type X seen on
   interface A for N seconds, fail over to interface B)
 * Support for multicast. Not that anything else supports it yet
 * Port to java.  kplex is written in C for POSIX-compliant systems because
@@ -235,9 +245,9 @@ A: It supports IPv6 and it's multithreaded.
 Q: Who runs IPv6 on their boat?
 A: Me.  Actually that's about it. I don't have high hopes for nmea-onenet.
 
-Q: Does this run on a rapberry pi?
-A: Yes.  Note the 3.3v werdness of the serial interface though if not using
-   serial to usb adapters.
+Q: Does this run on a raspberry pi?
+A: Yes.  Note the 3.3v weirdness of the serial interface though if not using
+   serial to usb adaptors.
 
 Q: Can I use this to bridge to an ipad using just my laptop?
 A: Not exactly.  kplex does not create a wireless access point, it just uses
@@ -254,11 +264,10 @@ A: Originally it was called "mplex", but that's the name of an mpeg stream
 Q: Is this available for windows/mac/plan9/haiku/solaris/freebsd?
 A: It shouldn't be much work to port to another POSIX-compliant system. If
    anyone genuinely wants such a thing let me know.  For windows a better plan
-   would be to port it all to java (on the to do list).  That might also make it
-   work for mac.
+   would be to port it all to java (on the to do list). 
 
 Q: I am a venture capitalist with $20m dollars to employ someone who can write
-   multithreaded IPv6 network code and also has a yachtmaster certificate. Can
-   I hire you?
+   multithreaded IPv6 network code and also look after my infrequently used
+   superyacht.  I hire you?
 A: Yes.
 
