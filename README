@@ -28,7 +28,8 @@ tune this
 <interface> is an interface specifier which takes the form:
 <direction>,<type>,<interface-specific options>
 where:
-    <direction> is either "o" for output or "i" for input
+    <direction> is either "o" for output, "i" for input or "b" for
+        bi-directional (if supported by the interface type).
     <type> is one of:
         "s": serial nmea 0183 data
         "f": file (or standard in/out)
@@ -88,17 +89,28 @@ output to other interface types (i.e. serial, tcp, broadcast etc.).
 TCP Interfaces
 --------------
 
-If specified as an "input" interface, kplex will attempt to open a connection
-to a remote tcp server@ either another instance of kplex or another nmea-to-
-tcp converter.
-If specified as an "output" interface, kplex will create a tcp server which
-other programs (or another instance of kplex) can connect to.  The number of
-other programs which can connect to this server will be system dependent but
-it's almost certainly "enough".
+kplex can act either as a tcp server (allowing other programs on the same or
+other machines to connect to it) or as a tcp client, connecting to servers
+on the same or other systems. In "client" mode, kplex will attempt to
+connect to the server running on the port and address you specify.  This may be
+a kplex tcp server interface or a commercial product, such as an nmea to wifi
+interface box.  You must specify an ip address (IPv4 and IPv6 supported) for
+a tcp client connection.  You may specify a port. If not specified, the port
+used will be the one your system associates with "nmea-0183", or the IANA
+assigned 10110 if your system doesn't know about "nmea-0183".  If using kplex,
+the server port defaults to 10110. Consult manufacturer's documentation for
+the port to use for other products.
+
+In Server mode, kplex listens for incoming connections. These may be from
+programs like iNavX or other instances of kplex.  No data flows until a
+connection is made.  kplex can accept many client connections simultaneously.
+The exact number will be system dependent but it will certainly be "enough".
 
     Interface-specific options:
-	[(<address>|"-")[,<port>]]
+	c|s,[(<address>|"-")[,<port>]]
         Where:
+            "c" specifies client mode
+            "s" specifies server mode 
             <address> is the server address to bind to for output interfaces
                 and the remote tcp server to connect to for inputs.  This can
                 be:
@@ -127,17 +139,45 @@ Broadcast Interfaces
 This method involves nmea sentences encapsulated within UDP datagrams sent to a
 broadcast address.
     Interface-specific options:
-	[(<address>|"-")[,<port>]]
+	[(<interface>|"-")[,<port>|"-"[,<address>]]]
         Where:
-            <address> is the IPv4 interface address to bind to. If unspecified
-            or specified as "-" for an output, the udp server created will bind
-            to all the host's IPv4 interfaces. If specified, this must be a
-            valid 4 address on the host. Note that for inputs, the remote
-            broadcast server address should NOT be specified here.
+            <interface> specifies the system interface (e.g. "wlan1", "eth0")
+            to use. This must be specified for outbound or bi-directional
+            interfaces. kplex will only broadcast out through one interface.
+            If the kplex interface is inbound and an interface is specified,
+            kplex will attempt to bind to that interface and only accept packets
+            received on that interface.  Unfortunately this is a privileged
+            operation on most GNU/Linux systems and kplex will often silently
+            fail to do this without root privileges.  You can possibly achieve a
+            similar effect without root privileges by use of the <address>
+            specifier (see below). If interface is not specified (or given as
+            "-"), kplex will listen on all interfaces unless an <address> is
+            specified (see below).
             <port> if specified is the udp port or service name. If not
             specified defaults to the udp port returned by a lookup of the
             service "nmea-0183" and if that fails the IANA assigned port for
             nmea-0183 10110 is used.
+            <address> is the IPv4 interface address to bind to for inbound kplex
+            interfaces or the address to send to for outbound interfaces. If
+            unspecified for an input, kplex will receive broadcast and unicast
+            udp to the relevant port on any <interface> specified, or all system
+            interfaces if none was specified or the user as insufficient
+            privileges to bind to a specific system interface. If an address is
+            specified for an inbound broadcast interface, kplex will receive
+            only packets to that address. Note that if you specify the IP
+            address of a system interface, you will NOT receive broadcast
+            traffic.  If you specify a broadcast address (either the subnet
+            broadcast address or the "all hosts" broadcast address
+            255.255.255.255 you will ONLY receive that *type* of broadcast
+            (ie subnet OR all hosts).  For this reason, this parameter is best
+            left unspecified by most users.  For outbound connections, this
+            parameter specifies the broadcast address to use. It must be a
+            broadcast address appropriate for the system interface you have
+            specified and will default to the subnet broadcast address
+            associated with the first address found for the specified system
+            interface.  If your client programs are particularly stupid they
+            may be expecting the all hosts broadcast address of 255.255.255.255.
+            If things don't work with the default, try this in the <address>.
 
 Note that broadcast is inherently IPv4. And sooo 20th century. Multicast is
 where it's at, but as I know of no clients which support nmea over multicast,
@@ -157,18 +197,20 @@ too.
 
 
     Interface-specific options:
-        [(<pty name>|"-") [,<baud rate>]]
+        m|s [(<pty name>|"-") [,<baud rate>]]
         Where
-            <pty name> is either the pty to connect to (for inputs), a path
-            name specifying a symbolic link that will be created pointing to the
-            slave side of an output pty, or "-" which for outputs instructs
-            kplex simply to display the pathname of the slave pty it has
-            created for output.
+            "m" specifies "master mode": create a pty which othes can connect to
+            "s" specifies "slave mode" connect to a pty
+            <pty name> is either the pty to connect to in "slave" mode or, in
+            "master" mode, a path name specifying a symbolic link that will be
+            created pointing to the slave side of an output pty, or "-" which
+            for outputs instructs kplex simply to display the pathname of the
+            slave pty it has created for output.
             <baud rate> is one of "4800", "9600" or "38400".  Defaults to
 		4800 if unspecified
 
-<pty name> must be specified for inputs.  For outputs, kplex creates a master/
-slave pty pair. If you give kplex a pathname for an put pty, it will attempt to
+<pty name> must be specified in slave mode.  In master mode, kplex creates a
+master/ slave pty pair. If you give kplex a pathname it will attempt to
 create a symbolic link with that pathname pointing to the slave side of the
 pty it creates. If the path given currently exists as a symbolic link it will
 be replaced. If it exists but is not a symbolic link (e.g. it's a regular file
@@ -182,8 +224,7 @@ persistent interface.
 For example, if you wish to take AIS input from a serial
 port, make it available to opencpn but also create a tcp server to make the
 data available to inavX on an ipad you might invoke kplex like this:
-kplex i,s,/dev/ttyUSB0,38400 o,p,/home/fred/.opencpn/ais,38400 \
-    o,t,
+kplex i,s,/dev/ttyUSB0,38400 o,p,/home/fred/.opencpn/ais,38400 o,t,s,
 
 And add the following to /home/fred/.opencpn/opencpn.conf:
 [Settings/AISPort]
@@ -198,11 +239,12 @@ Example usage
 
 Inputs from ais data on one serial port, other nmea data on a serial to usb
 interface. Output to broadcast udp and one usb to serial interface:
-kplex i,s,/dev/ttyS0,38400 i,s,/dev/ttyUSB0 o,t, o,s,/dev/ttyUSB1,38400
+kplex i,s,/dev/ttyS0,38400 i,s,/dev/ttyUSB0 o,t,s o,s,/dev/ttyUSB1,38400
 
-Inputs from tcp server on 192.168.1.50, port 2200. Output to pseudo terminal,
-creating link for opencpn to read at /tmp/nmea, 38400 baud
-kplex i,t,192.168.1.50,2200 o,p,/tmp/nmea,38400
+Bi-directional communication with tcp server on 192.168.1.50, port 2200. Output
+to pseudo terminal, creating link for opencpn to read and write at /tmp/nmea,
+38400 baud
+kplex b,t,c,192.168.1.50,2200 b,p,m,/tmp/nmea,38400
 
 To Do
 -----

@@ -11,4 +11,14 @@ iface_t *(*init_func[])(char *, iface_t *) = {
     init_pty,
     init_bcast,
     init_seatalk
-    };
+};
+
+void *(*ifdup_func[])(void *) = {
+    ifdup_file,
+    ifdup_serial,
+    ifdup_bcast,
+    ifdup_tcp,
+    ifdup_serial,
+    ifdup_bcast,
+    ifdup_serial
+};

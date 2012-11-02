@@ -34,11 +34,13 @@ enum itype {
 
 enum iotype {
 	IN,
-	OUT
+	OUT,
+    BOTH
 };
 
 struct senblk {
 	size_t len;
+    struct iface *src;
 	struct senblk *next;
 	char data[SENMAX];
 };
@@ -68,6 +70,7 @@ struct iolists {
 
 struct iface {
 	pthread_t tid;
+    struct iface *pair;
 	enum iotype direction;
 	enum itype type;
 	void *info;
@@ -93,6 +96,11 @@ iface_t *init_tcp(char *, iface_t *);
 iface_t *init_pty(char *, iface_t *);
 iface_t *init_seatalk(char *, iface_t *);
 
+void *ifdup_serial(void *);
+void *ifdup_file(void *);
+void *ifdup_bcast(void *);
+void *ifdup_tcp(void *);
+
 ioqueue_t *init_q(size_t);
 
 senblk_t *next_senblk(ioqueue_t *q);
@@ -101,3 +109,4 @@ void senblk_free(senblk_t *, ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
 void start_interface(void *ptr);
+iface_t *ifdup(iface_t *);

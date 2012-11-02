@@ -25,10 +25,8 @@ ioqueue_t *init_q(size_t size)
     ioqueue_t *newq;
     senblk_t *sptr;
     int    i;
-
     if ((newq=(ioqueue_t *)malloc(sizeof(ioqueue_t))) == NULL)
         return(NULL);
-
     if ((newq->base=(senblk_t *)calloc(size,sizeof(senblk_t))) ==NULL) {
         free(newq);
         return(NULL);
@@ -62,6 +60,7 @@ ioqueue_t *init_q(size_t size)
 senblk_t *senblk_copy(senblk_t *dptr,senblk_t *sptr)
 {
     dptr->len=sptr->len;
+    dptr->src=sptr->src;
     dptr->next=NULL;
     return (senblk_t *) memcpy((void *)dptr->data,(const void *)sptr->data,
 		    sptr->len);
@@ -180,7 +179,7 @@ void *engine(void *info)
     	pthread_mutex_lock(&eptr->lists->io_mutex);
         /* Traverse list of outputs and push a copy of senblk to each */
         for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-            if (optr->q)
+            if ((optr->direction == OUT) && (sptr->src != optr->pair))
                 push_senblk(sptr,optr->q);
         }
     	pthread_mutex_unlock(&eptr->lists->io_mutex);
@@ -205,11 +204,10 @@ void start_interface (void *ptr)
 
     link_interface(ifa);
 
-    if (ifa->direction == OUT)
-    	ifa->write(ifa);
+    if (ifa->direction == IN)
+	    ifa->read(ifa);
     else
-	ifa->read(ifa);
-
+    	ifa->write(ifa);
 }
 
 /*
@@ -221,7 +219,18 @@ void start_interface (void *ptr)
 int link_interface(iface_t *ifa)
 {
     iface_t **lptr;
+char *dir;
 
+switch (ifa->direction) {
+case IN:
+    dir="IN";
+    break;
+case OUT:
+    dir="OUT";
+    break;
+case BOTH:
+    dir="BOTH";
+}
     pthread_mutex_lock(&ifa->lists->io_mutex);
     /* Set lptr to point to the input or output list, as appropriate */
     lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
@@ -230,7 +239,7 @@ int link_interface(iface_t *ifa)
     else
         ifa->next=NULL;
     (*lptr)=ifa;
-    if (ifa->direction == OUT)
+    if (ifa->direction != IN)
 	    if (--ifa->lists->uninitialized == 0)
 		    pthread_cond_signal(&ifa->lists->init_cond);
     pthread_mutex_unlock(&ifa->lists->io_mutex);
@@ -263,7 +272,7 @@ int unlink_interface(iface_t *ifa)
 	    for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
 	        tptr->next = ifa->next;
     }
-    if ((ifa->direction == OUT) && ifa->q) {
+    if ((ifa->direction != IN) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
         free(ifa->q);
@@ -276,6 +285,9 @@ int unlink_interface(iface_t *ifa)
     pthread_mutex_unlock(&ifa->q->q_mutex);
     ifa->cleanup(ifa);
     free(ifa->info);
+    if (ifa->pair) {
+        ifa->pair->pair=NULL;
+    }
     pthread_mutex_lock(&ifa->lists->dead_mutex);
 
     /* Add to the dead list */
@@ -306,6 +318,36 @@ void iface_destroy(iface_t *ifa,void * ret)
 }
 
 /*
+ * Duplicate an interface
+ * Used when creating IN/OUT pair for bidirectional communication
+ * Args: pointer to interface to be duplicated
+ * Returns: Pointer to duplicate interface
+ */
+iface_t *ifdup (iface_t *ifa)
+{
+    iface_t *newif;
+
+    if ((newif=(iface_t *) malloc(sizeof(iface_t))) == (iface_t *) NULL)
+        return(NULL);
+    if (ifdup_func[ifa->type]) {
+        if ((newif->info=(*ifdup_func[ifa->type])(ifa->info)) == NULL) {
+            free(newif);
+            return(NULL);
+        }
+    } else
+        newif->info = NULL;
+
+    newif->pair=ifa;
+    newif->type=ifa->type;
+    newif->lists=ifa->lists;
+    newif->read=ifa->read;
+    newif->write=ifa->write;
+    newif->cleanup=ifa->cleanup;
+    newif->next=NULL;
+    return(newif);
+}
+
+/*
  * Interface initialisation routine. Check an interface specification string
  * to determine the direction (input or output) and type f the interface and
  * calls the interface-specific initialisation routine
@@ -327,7 +369,7 @@ iface_t *init_interface(char *dev)
 		perror("Could not allocate memory");
 		exit (1);
 	}
-
+    (void) memset((void *)newif,0,sizeof(iface_t));
 
 	switch (*dev) {
 	case 'i':
@@ -337,6 +379,10 @@ iface_t *init_interface(char *dev)
 	case 'o':
 	case 'O':
 		newif->direction=OUT;
+		break;
+	case 'b':
+	case 'B':
+		newif->direction=BOTH;
 		break;
 	default:
 		err++;
@@ -383,7 +429,7 @@ main(int argc, char ** argv)
 {
     pthread_t tid;
     struct engine_info e_info;
-    iface_t *ifptr,*iflist;
+    iface_t *ifptr,*ifptr2,*iflist;
     iface_t **tiptr;
     size_t qsize=DEFQUEUESZ;                            /* For engine only */
     int opt,err=0;;
@@ -409,7 +455,7 @@ main(int argc, char ** argv)
                 }
                 break;
             default:
-                fprintf(stderr, "Usage: %s\n",argv[0]);
+                fprintf(stderr, "Usage: %s [-q <size> ] <output interface> <input interface> [<interface> ...]\n",argv[0]);
                 err++;
         }
     }
@@ -418,38 +464,42 @@ main(int argc, char ** argv)
 
     e_info.q = init_q(qsize);
 
-    for (ifptr=iflist=NULL,tiptr=&iflist;optind < argc;optind++) {
+    for (ifptr2=iflist=NULL,tiptr=&iflist;optind < argc;optind++) {
         /* Remaining arguments should all be interfaces */
-        if ((ifptr=init_interface(argv[optind])) == NULL) {
+        if ((ifptr2=init_interface(argv[optind])) == NULL) {
             fprintf(stderr,"%s: Failed to initialize interface specified by \'%s\'\n",argv[0],argv[optind]);
             exit(1);
         }
+        for (ifptr=ifptr2;ifptr;ifptr=ifptr2) {
+            ifptr2=ifptr2->next;
+	        (*tiptr) = ifptr;
+        	tiptr=&ifptr->next;
+            if (ifptr->direction != OUT)
+                ifptr->q=e_info.q;
+            if (ifptr->direction != IN)
+                lists.uninitialized++;
 
-	(*tiptr) = ifptr;
-	tiptr=&ifptr->next;
-	if (ifptr->direction == IN)
-		ifptr->q=e_info.q;
-	else
-		lists.uninitialized++;
-
-        ifptr->lists = &lists;
+            ifptr->lists = &lists;
+        }
     }
 
     e_info.lists = &lists;
 
     pthread_create(&tid,NULL,engine,(void *) &e_info);
-    for (ifptr=iflist,tiptr=&ifptr;ifptr;ifptr=ifptr->next)
+    for (ifptr=iflist,tiptr=&iflist;ifptr;ifptr=(*tiptr)) {
         /* Create a thread to run each output */
-        if (ifptr->direction == OUT) {
+        if (ifptr->direction != IN) {
+    	    *tiptr=ifptr->next;
             pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
-	    *tiptr=ifptr->next;
-	} else
+    	} else
             tiptr=(&ifptr->next);
+    }
 
     /* I do so love a good linked list */
 
-    for (ifptr=iflist;ifptr;ifptr=ifptr->next) {
+    for (ifptr=iflist;ifptr;ifptr=ifptr2) {
         /* Create a thread to run each input */
+        ifptr2=ifptr->next;
         pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
     }
 

@@ -33,6 +33,31 @@ struct if_serial {
 };
 
 /*
+ * Duplicate struct if_serial
+ * Args: if_serial to be duplicated
+ * Returns: pointer to new if_serial
+ * Should we dup, copy or re-open the fd here?
+ */
+void *ifdup_serial(void *ifs)
+{
+    struct if_serial *oldif,*newif;
+
+    if ((newif = (struct if_serial *) malloc(sizeof(struct if_serial)))
+        == (struct if_serial *) NULL)
+        return(NULL);
+
+    oldif = (struct if_serial *) ifs;
+
+    if ((newif->fd=dup(oldif->fd)) <0) {
+        free(newif);
+        return(NULL);
+    }
+
+    memcpy(&newif->otermios,&oldif->otermios,sizeof(struct termios));
+    return((void *)newif);
+}
+
+/*
  * Cleanup interface on exit
  * Args: pointer to interface
  * Returns: Nothing
@@ -42,8 +67,10 @@ void cleanup_serial(iface_t *ifa)
     struct if_serial *ifs = (struct if_serial *)ifa->info;
 
         /* Restore saved settings */
-    if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
-        perror("Warning: Failed to restore serial line");
+    if (!ifa->pair) {
+        if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
+            perror("Warning: Failed to restore serial line");
+        }
     }
     close(ifs->fd);
 }
@@ -71,7 +98,7 @@ int ttyopen(char *device, enum iotype direction)
 
     /* Open device (RW for now..let's ignore direction...) */
     if ((dev=open(device,
-        ((direction == OUT)?O_WRONLY:O_RDONLY)|O_NOCTTY)) < 0) {
+        ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY)) < 0) {
         fprintf(stderr,"failed to open %s: %s\n",device,strerror(errno));
         return(-1);
     }
@@ -144,6 +171,7 @@ struct iface * read_serial(struct iface *ifa)
     int fd;
 
     senptr=sblk.data;
+    sblk.src=ifa;
     fd=ifs->fd;
 
     /* Read up to BUFSIZ data */
@@ -268,20 +296,30 @@ struct iface *init_serial (char *str, struct iface *ifa)
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,0) < 0)
         exit(1);
 
+    /* Assign pointers to read, write and cleanup routines */
+    ifa->read=read_serial;
+    ifa->write=write_serial;
+    ifa->cleanup=cleanup_serial;
 
     /* Allocate queue for outbound interfaces */
-    if (ifa->direction == OUT)
+    if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
             perror("Could not create queue");
             exit(1);
         }
 
-    /* Assign pointers to read, write and cleanup routines */
-    ifa->read=read_serial;
-    ifa->write=write_serial;
-    ifa->cleanup=cleanup_serial;
     /* Link in serial specific data */
     ifa->info=(void *)ifs;
+
+    if (ifa->direction == BOTH) {
+        if ((ifa->pair=ifdup(ifa)) == NULL) {
+            perror("Interface duplication failed");
+            exit(1);
+        }
+        ifa->next=ifa->pair;
+        ifa->direction=OUT;
+        ifa->pair->direction=IN;
+    }
     return(ifa);
 }
 
@@ -297,34 +335,36 @@ struct iface *init_pty (char *str, struct iface *ifa)
     int baud=B4800,slavefd;
     tcflag_t cflag;
     int st=0;
+    char *master;
     struct stat statbuf;
     char slave[PATH_MAX];
+    char * link=NULL;
 
-    /* Get device name. Required for inputs.  For outputs, this is used to
-     * create a symlink to the actual slave pty. If unspecified for an output,
-     * the pty name is printed for the user to use as s/he sees fit */
-    if ((devname=strtok(str+4,",")) == NULL) {
-        if (ifa->direction == IN) {
-            fprintf(stderr,"Bad specification for serial device: \'%s\'\n",
-                str);
-            exit(1);
-        }
+    /* Create new pty (master) or use existing (slave)? */
+    if (((master=strtok(str+4,",")) == NULL) ||
+        (strcmp(master,"m") && strcmp(master,"s"))) {
+        fprintf(stderr,"Incorrect interface specifier %s\n",str);
+        exit(1);
     }
 
-    /* Baud rate (default 4800 */
-    if ((option = strtok(NULL,",")) != NULL) {
-        if (!strcmp(option,"38400"))
-            baud=B38400;
-        else if (!strcmp(option,"9600"))
-            baud=B9600;
-        else if (!strcmp(option,"4800"))
-            baud=B4800;
-        else {
-            fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",option,devname);
-            exit(1);
+    if (devname=strtok(NULL,",")) {
+        if (!strcmp(devname,"-"))
+            devname=NULL;
+
+        /* Baud rate (default 4800) */
+        if ((option = strtok(NULL,",")) != NULL) {
+            if (!strcmp(option,"38400"))
+                baud=B38400;
+            else if (!strcmp(option,"9600"))
+                baud=B9600;
+            else if (!strcmp(option,"4800") || (!strcmp(option,"-")))
+                baud=B4800;
+            else {
+                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",option,devname);
+                exit(1);
+            }
         }
     }
-
     cflag=baud|CS8|CLOCAL|CREAD;
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
@@ -332,13 +372,13 @@ struct iface *init_pty (char *str, struct iface *ifa)
         exit(1);
     }
 
-    if (ifa->direction == OUT) {
+    if (*master == 'm') {
         if (openpty(&ifs->fd,&slavefd,slave,NULL,NULL) < 0) {
             perror("error opening pty");
             exit (1);
         }
 
-        if (devname && strcmp(devname,"-")) {
+        if (devname) {
 		/* Device name has been specified: Create symlink to slave */
             if (lstat(devname,&statbuf) == 0) {
                 /* file exists */
@@ -362,13 +402,8 @@ struct iface *init_pty (char *str, struct iface *ifa)
         } else
 	/* No device name was given: Just print the pty name */
             printf("Slave pty for output at %s baud is %s\n",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
-
-        if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
-            perror("Could not create queue");
-            exit(1);
-        }
     } else
-	/* Input: This is no different from a serial line */
+	/* Slave mode: This is no different from a serial line */
         if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
             exit (1);
         }
@@ -376,10 +411,25 @@ struct iface *init_pty (char *str, struct iface *ifa)
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,0) < 0)
         exit(1);
 
+    if (ifa->direction != IN)
+        if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
+            perror("Could not create queue");
+            exit(1);
+        }
+
     ifa->read=read_serial;
     ifa->write=write_serial;
     ifa->cleanup=cleanup_serial;
     ifa->info=(void *)ifs;
+    if (ifa->direction == BOTH) {
+        if ((ifa->pair=ifdup(ifa)) == NULL) {
+            perror("Interface duplication failed");
+            exit(1);
+        }
+        ifa->next=ifa->pair;
+        ifa->direction=OUT;
+        ifa->pair->direction=IN;
+    }
     return(ifa);
 }
 
@@ -459,6 +509,8 @@ iface_t * read_seatalk(struct iface *ifa)
     unsigned char buf[18],*bufp;
     unsigned char *cmd=buf,*attr=buf+1,*b=buf+2;
     senblk_t sblk;
+
+    sblk.src=ifa;
 
     /* Here's what happens here. With PARMRK set, parity errors are signalled
      * by 0xff00 in the byte stream.  We have space parity set. A command bit
@@ -549,7 +601,7 @@ struct iface *init_seatalk (char *str, struct iface *ifa)
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,st) < 0)
         exit(1);
 
-    if (ifa->direction == OUT)
+    if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
             perror("Could not create queue");
             exit(1);
@@ -558,5 +610,14 @@ struct iface *init_seatalk (char *str, struct iface *ifa)
     ifa->write=write_seatalk;
     ifa->cleanup=cleanup_serial;
     ifa->info=(void *)ifs;
+    if (ifa->direction == BOTH) {
+        if ((ifa->pair=ifdup(ifa)) == NULL) {
+            perror("Interface duplication failed");
+            exit(1);
+        }
+        ifa->next=ifa->pair;
+        ifa->direction=OUT;
+        ifa->pair->direction=IN;
+    }
     return(ifa);
 }
