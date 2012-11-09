@@ -106,6 +106,7 @@ iface_t *read_bcast(struct iface *ifa)
 
     senptr=sblk.data;
     sblk.src=ifa;
+
     while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
                     > 0) {
                 /* Probably superfluous check that we got the right size
@@ -152,50 +153,54 @@ iface_t *read_bcast(struct iface *ifa)
         iface_destroy(ifa,(void *) &errno);
 }
 
-struct iface *init_bcast(char *str,struct iface *ifa)
+struct iface *init_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
-    char *pptr,*ifname,*bname;
+    char *ifname,*bname;
     struct in_addr  baddr;
-    short port=DEFBCASTPORT;
+    int port=0;
     struct servent *svent;
     const int on = 1;
     static struct ifaddrs *ifap;
     struct ifaddrs *ifp=NULL;
     struct ignore_addr **igpp,*newig;
+    size_t qsize = DEFBCASTQSIZE;
+    struct kopts *opt;
     
-    if ((ifb =malloc(sizeof(struct if_bcast))) == NULL) {
+    if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
         perror("Could not allocate memory");
         exit(1);
     }
     memset(ifb,0,sizeof(struct if_bcast));
 
-    pptr=ifname=bname=NULL;
+    ifname=bname=NULL;
 
-    if ((ifname=strtok(str+4,","))) {
-        if (!strcmp(ifname,"-")) {
-            ifname=NULL;
-        }
-        if (pptr=strtok(NULL,",")) {
-            if (!strcmp(pptr,"-"))
-                pptr=NULL;
-            if (bname=strtok(NULL,",")) {
-                if (inet_pton(AF_INET,bname,&baddr) <1) {
-                    fprintf(stderr,"%s is not a valid IPv4 address\n",bname);
-                    exit(1);
-                }
+    for(opt=ifa->options;opt;opt=opt->next) {
+        if (!strcasecmp(opt->var,"device"))
+            ifname=opt->val;
+        else if (!strcasecmp(opt->var,"address"))
+            bname=opt->val;
+        else if (!strcasecmp(opt->var,"port")) {
+            if (((port=atoi(opt->val)) > 0) && (port > 2^(sizeof(short) -1))) {
+                fprintf(stderr,"port %s out of range\n",opt->val);
+                exit(1);
             }
+        }  else if (!strcasecmp(opt->var,"qsize")) {
+            if (!(qsize=atoi(opt->val))) {
+                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
+                exit(1);
+            }
+        } else  {
+            fprintf(stderr,"unknown interface option %s\n",opt->var);
+            exit(1);
         }
     }
 
-    if (pptr) {
-        if ((port=atoi(pptr)) > 2^(sizeof(short) -1)) {
-            fprintf(stderr,"port %s out of range\n",pptr);
-            exit(1);
-        }
-    } else {
+    if (!port) {
         if ((svent = getservbyname("nmea-0183","udp")) != NULL)
             port=svent->s_port;
+        else
+            port=DEFBCASTPORT;
     }
 
     ifb->addr.sin_family = ifb->laddr.sin_family = AF_INET;
@@ -288,7 +293,7 @@ struct iface *init_bcast(char *str,struct iface *ifa)
             *igpp=newig;
 
         /* write queue initialization */
-        if ((ifa->q = init_q(DEFBCASTQSIZE)) == NULL) {
+        if ((ifa->q = init_q(qsize)) == NULL) {
             perror("Could not create queue\n");
             exit(1);
         }
@@ -299,11 +304,11 @@ struct iface *init_bcast(char *str,struct iface *ifa)
     ifa->cleanup=cleanup_bcast;
     ifa->info = (void *) ifb;
     if (ifa->direction == BOTH) {
-        if ((ifa->pair=ifdup(ifa)) == NULL) {
+        if ((ifa->next=ifdup(ifa)) == NULL) {
             perror("Interface duplication failed");
             exit(1);
         }
-        ifa->next=ifa->pair;
+
         ifa->direction=OUT;
         ifa->pair->direction=IN;
         ifb = (struct if_bcast *) ifa->pair->info;
@@ -322,6 +327,6 @@ struct iface *init_bcast(char *str,struct iface *ifa)
         }
 
     }
-
+    free_options(ifa->options);
     return(ifa);
 }

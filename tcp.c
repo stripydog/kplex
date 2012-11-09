@@ -51,7 +51,6 @@ void cleanup_tcp(iface_t *ifa)
         how=SHUT_RDWR;
     }
 
-    shutdown(ift->fd,how);
     close(ift->fd);
 }
 
@@ -68,7 +67,7 @@ struct iface * read_tcp(struct iface *ifa)
     sblk.src=ifa;
 	fd=ift->fd;
 
-	while ((nread=read(fd,buf,BUFSIZ)) > 0) {
+	while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
 		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
 			if (count < SENMAX) {
 				++count;
@@ -102,14 +101,20 @@ struct iface * write_tcp(struct iface *ifa)
 	senblk_t *sptr;
 	int n;
 
+#ifndef MSG_NOSIGNAL
+    #define MSG_NOSIGNAL 0
+    n=1;
+    setsockopt(ift->fd,SOL_SOCKET, SO_NOSIGPIPE, (void *)&n, sizeof(int));
+#endif
+
 	for(;;) {
 		if ((sptr = next_senblk(ifa->q)) == NULL)
 			break;
-        if ((send(ift->fd,sptr->data,sptr->len,0)) <0)
+        if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0)
 		    break;
-
 		senblk_free(sptr,ifa->q);
 	}
+
 	iface_destroy(ifa,(void *) &errno);
 }
 
@@ -141,7 +146,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->read=read_tcp;
     newifa->lists=ifa->lists;
     if (ifa->direction == BOTH) {
-        if ((newifa->pair=ifdup(newifa)) == NULL) {
+        if ((newifa->next=ifdup(newifa)) == NULL) {
             perror("Interface duplication failed");
             free(newifa->q);
             free(newift);
@@ -151,15 +156,11 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         newifa->direction=OUT;
         newifa->pair->direction=IN;
         newifa->pair->q=ifa->q;
+        link_to_initialized(newifa->pair);
         pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
     }
 
-    if (newifa->direction == OUT) {
-        pthread_mutex_lock(&ifa->lists->io_mutex);
-        ++ifa->lists->uninitialized;
-        pthread_mutex_unlock(&ifa->lists->io_mutex);
-    }
-
+    link_to_initialized(newifa);
     pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
     return(newifa);
 }
@@ -171,7 +172,7 @@ iface_t *tcp_server(iface_t *ifa)
 
 
     if (listen(ift->fd,5) == 0) {
-        for(;;) {
+        while(ifa->direction != NONE) {
          if ((afd = accept(ift->fd,NULL,NULL)) < 0)
              break;
     
@@ -182,32 +183,52 @@ iface_t *tcp_server(iface_t *ifa)
     iface_destroy(ifa,(void *)&errno);
 }
 
-iface_t *init_tcp(char *str,iface_t *ifa)
+iface_t *init_tcp(iface_t *ifa)
 {
     struct if_tcp *ift;
-    char *host,*port=NULL;
+    char *host,*port;
     struct addrinfo hints,*aptr;
     struct servent *svent;
-    int err,on=1;
+    int tport,err,on=1;
     char *conntype;
+    size_t qsize=DEFTCPQSIZE;
+    struct kopts *opt;
+
+    host=port=NULL;
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
         perror("Could not allocate memory");
         exit(1);
     }
 
-    if (((conntype=strtok(str+4,",")) == NULL) || ((*conntype != 's')
-                                        && (*conntype != 'c'))) {
-        fprintf(stderr,"Invalid interface specification %s\n",str);
+    for(opt=ifa->options;opt;opt=opt->next) {
+        if (!strcasecmp(opt->var,"address"))
+            host=opt->val;
+        else if (!strcasecmp(opt->var,"mode")) {
+            if (strcasecmp(opt->val,"client") && strcasecmp(opt->val,"server")){
+                fprintf(stderr,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
+                exit(1);
+            }
+            conntype=opt->val;
+        } else if (!strcasecmp(opt->var,"port")) {
+            port=opt->val;
+        }  else if (!strcasecmp(opt->var,"qsize")) {
+            if (!(qsize=atoi(opt->val))) {
+                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
+                exit(1);
+            }
+        } else  {
+            fprintf(stderr,"unknown interface option %s\n",opt->var);
+            exit(1);
+        }
+    }
+
+    if (*conntype == 'c' && !host) {
+        fprintf(stderr,"Must specify address for tcp client mode\n");
         exit(1);
     }
-    if (host=strtok(NULL,",")) {
-        if (!strcmp(host,"-")) {
-            host=NULL;
-        }
-        port=strtok(NULL,",");
-    }
-    if (port == NULL) {
+
+    if (!port) {
         if ((svent=getservbyname("nmea-0183","tcp")) != NULL)
             port=svent->s_name;
         else
@@ -258,11 +279,10 @@ iface_t *init_tcp(char *str,iface_t *ifa)
         ifa->read=read_tcp;
         ifa->write=write_tcp;
         if (ifa->direction == BOTH) {
-            if ((ifa->pair=ifdup(ifa)) == NULL) {
+            if ((ifa->next=ifdup(ifa)) == NULL) {
                 perror("Interface duplication failed");
                 exit(1);
             }
-            ifa->next=ifa->pair;
             ifa->direction=OUT;
             ifa->pair->direction=IN;
         }
@@ -270,5 +290,6 @@ iface_t *init_tcp(char *str,iface_t *ifa)
         ifa->write=tcp_server;
         ifa->read=tcp_server;
     }
+    free_options(ifa->options);
     return(ifa);
 }

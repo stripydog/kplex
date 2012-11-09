@@ -12,7 +12,13 @@
 
 #include "kplex.h"
 #include "kplex_mods.h"
+#include <signal.h>
 #include <unistd.h>
+#include <pwd.h>
+
+
+void terminate (int sig)
+{}
 
 /*
  *  Initialise an ioqueue
@@ -63,7 +69,7 @@ senblk_t *senblk_copy(senblk_t *dptr,senblk_t *sptr)
     dptr->src=sptr->src;
     dptr->next=NULL;
     return (senblk_t *) memcpy((void *)dptr->data,(const void *)sptr->data,
-		    sptr->len);
+            sptr->len);
 }
 
 /*
@@ -97,7 +103,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
         /* If there is anything on the queue already, set it's "next" member
            to point to the new senblk */
         if (q->qtail)
-        	q->qtail->next=tptr;
+            q->qtail->next=tptr;
     
         /* Set tail pointer to the new senblk */
         q->qtail=tptr;
@@ -128,9 +134,9 @@ senblk_t *next_senblk(ioqueue_t *q)
         /* No data available for reading */
         if (!q->active) {
             /* Return NULL if the queue has been sgut down */
-	    	pthread_mutex_unlock(&q->q_mutex);
-	    	return ((senblk_t *)NULL);
-	    }
+            pthread_mutex_unlock(&q->q_mutex);
+            return ((senblk_t *)NULL);
+        }
         /* Wait until something is available */
         pthread_cond_wait(&q->freshmeat,&q->q_mutex);
     }
@@ -158,34 +164,48 @@ void senblk_free(senblk_t *sptr, ioqueue_t *q)
     pthread_mutex_unlock(&q->q_mutex);
 }
 
+iface_t *get_default_global()
+{
+    iface_t *ifp;
+
+    if ((ifp = (iface_t *) malloc(sizeof(iface_t))) == NULL)
+        return(NULL);
+
+    ifp->type = GLOBAL;
+    ifp->options = NULL;
+
+    return(ifp);
+}
+
 /*
  * This is the heart of the multiplexer.  All inputs add to the tail of the
  * Engine's queue.  The engine takes from the head of its queue and copies
  * to all outputs on its output list.
- * Args: Pointer to information structure (struct engine_info, cast to void)
+ * Args: Pointer to information structure (iface_t, cast to void)
  * Returns: Nothing
  */
 void *engine(void *info)
 {
     senblk_t *sptr;
     iface_t *optr;
-    struct engine_info *eptr = (struct engine_info *)info;
+    iface_t *eptr = (iface_t *)info;
     int retval=0;
 
     (void) pthread_detach(pthread_self());
 
     for (;;) {
         sptr = next_senblk(eptr->q);
-    	pthread_mutex_lock(&eptr->lists->io_mutex);
+        pthread_mutex_lock(&eptr->lists->io_mutex);
         /* Traverse list of outputs and push a copy of senblk to each */
         for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-            if ((optr->direction == OUT) && (sptr->src != optr->pair))
+            if ((optr->direction == OUT) && ((!sptr) || (sptr->src != optr->pair))) {
                 push_senblk(sptr,optr->q);
+            }
         }
-    	pthread_mutex_unlock(&eptr->lists->io_mutex);
-    	if (sptr==NULL)
+        pthread_mutex_unlock(&eptr->lists->io_mutex);
+        if (sptr==NULL)
             /* Queue has been marked inactive */
-    		break;
+            break;
         senblk_free(sptr,eptr->q);
     }
     pthread_exit(&retval);
@@ -200,14 +220,11 @@ void start_interface (void *ptr)
 {
     iface_t *ifa = ptr;
 
-    ifa->tid = pthread_self();
-
     link_interface(ifa);
-
     if (ifa->direction == IN)
-	    ifa->read(ifa);
+        ifa->read(ifa);
     else
-    	ifa->write(ifa);
+        ifa->write(ifa);
 }
 
 /*
@@ -219,19 +236,30 @@ void start_interface (void *ptr)
 int link_interface(iface_t *ifa)
 {
     iface_t **lptr;
-char *dir;
+    iface_t **iptr;
+    int ret=0;
+    sigset_t set,saved;
 
-switch (ifa->direction) {
-case IN:
-    dir="IN";
-    break;
-case OUT:
-    dir="OUT";
-    break;
-case BOTH:
-    dir="BOTH";
-}
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &set, &saved);
     pthread_mutex_lock(&ifa->lists->io_mutex);
+    ifa->tid = pthread_self();
+
+    if (ifa->direction == NONE) {
+        pthread_mutex_unlock(&ifa->lists->io_mutex);
+        pthread_sigmask(SIG_SETMASK,&set, &saved);
+        iface_destroy(ifa,(void *)&ret);
+    }
+
+    for (iptr=&ifa->lists->initialized;*iptr!=ifa;iptr=&(*iptr)->next)
+        if (*iptr == NULL) {
+            perror("interface does not exist on initialized list!");
+            exit(1);
+        }
+
+    *iptr=(*iptr)->next;
+
     /* Set lptr to point to the input or output list, as appropriate */
     lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
     if (*lptr)
@@ -239,9 +267,28 @@ case BOTH:
     else
         ifa->next=NULL;
     (*lptr)=ifa;
-    if (ifa->direction != IN)
-	    if (--ifa->lists->uninitialized == 0)
-		    pthread_cond_signal(&ifa->lists->init_cond);
+
+    if (ifa->lists->initialized == NULL)
+        pthread_cond_signal(&ifa->lists->init_cond);
+    pthread_mutex_unlock(&ifa->lists->io_mutex);
+    pthread_sigmask(SIG_SETMASK,&saved,NULL);
+    return(0);
+}
+
+/*
+ * link an interface into the initialized list
+ * Args: interface structure pointer
+ * Returns: 0 on success. There is no failure condition
+ * Side Effects: links interface to the initialized list
+ */
+int link_to_initialized(iface_t *ifa)
+{
+    iface_t **iptr;
+
+    pthread_mutex_lock(&ifa->lists->io_mutex);
+    for (iptr=&ifa->lists->initialized;(*iptr);iptr=&(*iptr)->next);
+    (*iptr)=ifa;
+    ifa->next=NULL;
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     return(0);
 }
@@ -258,49 +305,64 @@ int unlink_interface(iface_t *ifa)
     iface_t **lptr;
     iface_t *tptr;
 
+    sigset_t set,saved;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &set, &saved);
     pthread_mutex_lock(&ifa->lists->io_mutex);
     /* Set lptr to point to the input or output list, as appropriate */
     lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-
     if ((*lptr) == ifa) {
         /* If target interface is the head of the list, set the list pointer
            to point to the next interface in the list */
-	    (*lptr)=(*lptr)->next;
+        (*lptr)=(*lptr)->next;
     } else {
         /* Traverse the list until we find the interface before our target and
-           make it's next pointer point to the element after our target */
-	    for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-	        tptr->next = ifa->next;
+           make its next pointer point to the element after our target */
+        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
+            tptr->next = ifa->next;
     }
+
     if ((ifa->direction != IN) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
         free(ifa->q);
     } else {
         if (!ifa->lists->inputs) {
-	    ifa->q->active=0;
-	    pthread_cond_broadcast(&ifa->q->freshmeat);
-	}
+        pthread_mutex_lock(&ifa->q->q_mutex);
+            ifa->q->active=0;
+            pthread_cond_broadcast(&ifa->q->freshmeat);
+        pthread_mutex_unlock(&ifa->q->q_mutex);
+        }
     }
-    pthread_mutex_unlock(&ifa->q->q_mutex);
     ifa->cleanup(ifa);
     free(ifa->info);
     if (ifa->pair) {
         ifa->pair->pair=NULL;
+        if (ifa->pair->direction == OUT) {
+            pthread_mutex_lock(&ifa->pair->q->q_mutex);
+            ifa->pair->q->active=0;
+            pthread_cond_broadcast(&ifa->pair->q->freshmeat);
+            pthread_mutex_unlock(&ifa->pair->q->q_mutex);
+        } else {
+            ifa->pair->direction = NONE;
+            if (ifa->pair->tid)
+                pthread_kill(ifa->pair->tid,SIGUSR1);
+        }
     }
-    pthread_mutex_lock(&ifa->lists->dead_mutex);
 
     /* Add to the dead list */
     if ((tptr=ifa->lists->dead) == NULL)
-	    ifa->lists->dead=ifa;
+        ifa->lists->dead=ifa;
     else {
         for(;tptr->next;tptr=tptr->next);
-	tptr->next=ifa;
+    tptr->next=ifa;
     }
     ifa->next=NULL;
     /* Signal the reaper thread */
     pthread_cond_signal(&ifa->lists->dead_cond);
-    pthread_mutex_unlock(&ifa->lists->dead_mutex);
+    pthread_mutex_unlock(&ifa->lists->io_mutex);
+    pthread_sigmask(SIG_SETMASK,&saved,NULL);
     return(0);
 }
 
@@ -329,123 +391,85 @@ iface_t *ifdup (iface_t *ifa)
 
     if ((newif=(iface_t *) malloc(sizeof(iface_t))) == (iface_t *) NULL)
         return(NULL);
-    if (ifdup_func[ifa->type]) {
-        if ((newif->info=(*ifdup_func[ifa->type])(ifa->info)) == NULL) {
+    if (iftypes[ifa->type].ifdup_func) {
+        if ((newif->info=(*iftypes[ifa->type].ifdup_func)(ifa->info)) == NULL) {
             free(newif);
             return(NULL);
         }
     } else
         newif->info = NULL;
 
+    ifa->pair=newif;
     newif->pair=ifa;
+    newif->next=NULL;
     newif->type=ifa->type;
     newif->lists=ifa->lists;
     newif->read=ifa->read;
     newif->write=ifa->write;
     newif->cleanup=ifa->cleanup;
-    newif->next=NULL;
+    newif->options=NULL;
     return(newif);
 }
 
 /*
- * Interface initialisation routine. Check an interface specification string
- * to determine the direction (input or output) and type f the interface and
- * calls the interface-specific initialisation routine
- * Args: String specifying the interface
- * Returns: Pointer to interface structure
+ * Return the path to the kplex config file
+ * Args: None
+ * Returns: pointer to name of config file
+ *
+ * First choice is conf file in user's home directory, seocnd is global
  */
-iface_t *init_interface(char *dev)
+char *get_def_config()
 {
-	char *ptr;
-	int len,err=0;
-	iface_t *newif;
+    char *confptr;
+    char *buf;
+    struct passwd *pw;
 
-    if ((len=strlen(dev)) < 4) {
-        fprintf(stderr,"interface specifier %s too short\n",dev);
-        exit(1);
+    if (confptr=getenv("KPLEXCONF"))
+        return (confptr);
+    if ((confptr=getenv("HOME")) == NULL)
+        if (pw=getpwuid(getuid()))
+            confptr=pw->pw_dir;
+    if (confptr) {
+        if ((buf = malloc(strlen(confptr)+strlen(KPLEXHOMECONF)+2)) == NULL) {
+            perror("failed to allocate memory");
+            exit(1);
+        }
+        strcpy(buf,confptr);
+        strcat(buf,"/");
+        strcat(buf,KPLEXHOMECONF);
+        if (!access(buf,F_OK))
+            return(buf);
+        free(buf);
     }
-
-	if ((newif = malloc(sizeof(iface_t))) == NULL) {
-		perror("Could not allocate memory");
-		exit (1);
-	}
-    (void) memset((void *)newif,0,sizeof(iface_t));
-
-	switch (*dev) {
-	case 'i':
-	case 'I':
-		newif->direction=IN;
-		break;
-	case 'o':
-	case 'O':
-		newif->direction=OUT;
-		break;
-	case 'b':
-	case 'B':
-		newif->direction=BOTH;
-		break;
-	default:
-		err++;
-	}
-
-	if (err || (*(dev+1) != ',') || (*(dev+3) != ',')) {
-		fprintf(stderr,"Incorrect interface specification '%s'\n",dev);
-		exit(1);
-	}
-	switch(*(dev+2)) {
-	case 's':
-	case 'S':
-		newif->type=SERIAL;
-		break;
-	case 't':
-	case 'T':
-		newif->type=TCP;
-		break;
-	case 'b':
-	case 'B':
-		newif->type=BCAST;
-		break;
-	case 'f':
-	case 'F':
-		newif->type=FILEIO;
-		break;
-	case 'p':
-	case 'P':
-		newif->type=PTY;
-		break;
-	case 'r':
-	case 'R':
-		newif->type=ST;
-		break;
-	default:
-		fprintf(stderr,"Unknown interface specification '%s'\n",dev);
-		exit(1);
-	}
-
-	return((*init_func[newif->type])(dev,newif));
+    if (!access(KPLEXGLOBALCONF,F_OK))
+        return(KPLEXGLOBALCONF);
+    return(NULL);
 }
 
 main(int argc, char ** argv)
 {
     pthread_t tid;
-    struct engine_info e_info;
-    iface_t *ifptr,*ifptr2,*iflist;
+    char *config=NULL;
+    iface_t  *e_info;
+    iface_t *ifptr,*ifptr2;
     iface_t **tiptr;
-    size_t qsize=DEFQUEUESZ;                            /* For engine only */
-    int opt,err=0;;
+    int opt,err=0;
+    struct kopts *option;
+    int qsize=0;
     void *ret;
     struct iolists lists = {
         .io_mutex = PTHREAD_MUTEX_INITIALIZER,
         .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
-	.init_cond = PTHREAD_COND_INITIALIZER,
-	.uninitialized = 0,
-	.outputs = NULL,
-	.inputs = NULL,
-	.dead = NULL
+    .init_cond = PTHREAD_COND_INITIALIZER,
+    .initialized = NULL,
+    .outputs = NULL,
+    .inputs = NULL,
+    .dead = NULL
     };
 
-    while ((opt=getopt(argc,argv,"q:")) != -1) {
+    /* command line argument processing */
+    while ((opt=getopt(argc,argv,"q:f:")) != -1) {
         switch (opt) {
             case 'q':
                 if ((qsize=atoi(optarg)) < 2) {
@@ -454,59 +478,104 @@ main(int argc, char ** argv)
                     err++;
                 }
                 break;
+            case 'f':
+                config=optarg;
+                break;
             default:
-                fprintf(stderr, "Usage: %s [-q <size> ] <output interface> <input interface> [<interface> ...]\n",argv[0]);
+                fprintf(stderr, "Usage: %s [-q <size> ] [ -f <config file>] [<interface specification> ...]\n",argv[0]);
                 err++;
         }
     }
     if (err)
         exit(1);
 
-    e_info.q = init_q(qsize);
-
-    for (ifptr2=iflist=NULL,tiptr=&iflist;optind < argc;optind++) {
-        /* Remaining arguments should all be interfaces */
-        if ((ifptr2=init_interface(argv[optind])) == NULL) {
-            fprintf(stderr,"%s: Failed to initialize interface specified by \'%s\'\n",argv[0],argv[optind]);
+    /* If a config file is specified by a commad line argument, read it.  If
+     * not, look for a default config file unless told not to using "-f-" on the
+     * command line
+     */
+    if ((config && (strcmp(config,"-"))) ||
+            (!config && (config = get_def_config()))) {
+        if ((e_info=parse_file(config)) == NULL) {
+            fprintf(stderr,"Error parsing config file: %s\n",errno?
+                    strerror(errno):"Syntax Error");
             exit(1);
         }
-        for (ifptr=ifptr2;ifptr;ifptr=ifptr2) {
-            ifptr2=ifptr2->next;
-	        (*tiptr) = ifptr;
-        	tiptr=&ifptr->next;
-            if (ifptr->direction != OUT)
-                ifptr->q=e_info.q;
-            if (ifptr->direction != IN)
-                lists.uninitialized++;
+    } else
+        /* global options for engine configuration are also returned in config
+         * file parsing. If we didn't do that, get default options here */
+        e_info = get_default_global();
 
-            ifptr->lists = &lists;
+    /* queue size is taken from (in order of preference), command line arg, 
+     * config file option in [global] section, default */
+    if (!qsize) {
+        if (e_info->options) {
+            for (option=e_info->options;option;option=option->next);
+                if (!strcmp(option->var,"qsize")) {
+                    if(!(qsize = atoi(option->val))) {
+                        fprintf(stderr,"Invalid queue size: %s\n",option->val);
+                        exit(1);
+                    }
+                }
         }
     }
 
-    e_info.lists = &lists;
-
-    pthread_create(&tid,NULL,engine,(void *) &e_info);
-    for (ifptr=iflist,tiptr=&iflist;ifptr;ifptr=(*tiptr)) {
-        /* Create a thread to run each output */
-        if (ifptr->direction != IN) {
-    	    *tiptr=ifptr->next;
-            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
-    	} else
-            tiptr=(&ifptr->next);
+    if ((e_info->q = init_q(qsize?qsize:DEFQUEUESZ)) == NULL) {
+        perror("failed to initiate queue");
+        exit(1);
     }
 
-    /* I do so love a good linked list */
+    e_info->lists = &lists;
+    lists.engine=e_info;
 
-    for (ifptr=iflist;ifptr;ifptr=ifptr2) {
-        /* Create a thread to run each input */
-        ifptr2=ifptr->next;
-        pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+    if (e_info->options)
+        free_options(e_info->options);
+
+    for (tiptr=&e_info->next;optind < argc;optind++) {
+        if (!(ifptr=parse_arg(argv[optind]))) {
+            fprintf(stderr,"Failed to parse interface specifier %s\n",
+                    argv[optind]);
+            exit(1);
+        }
+        ifptr->next=(*tiptr);
+        (*tiptr)=ifptr;
+        tiptr=&ifptr->next;
     }
+    /* our list of "real" interfaces starts after the first which is the
+     * dummy "interface" specifying the multiplexing engine
+     * walk the list, initialising the interfaces.  Sometimes "BOTH" interfaces
+     * are initialised to one IN and one OUT which then need to be linked back
+     * into the list
+     */
+    for (ifptr=e_info->next,tiptr=&lists.initialized;ifptr;ifptr=ifptr2) {
+        ifptr2 = ifptr->next;
+        if ((ifptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
+            fprintf(stderr, "Failed to initialize Interface\n");
+            exit(1);
+        }
 
+        for (;ifptr;ifptr = ifptr->next) {
+        /* This loop should be done once for IN or OUT interfaces twice for
+         * interfaces where the initialisation routine has expanded them to an
+         * IN/OUT pair.
+         */
+            if (ifptr->direction != OUT)
+                ifptr->q=e_info->q;
+
+            ifptr->lists = &lists;
+            (*tiptr)=ifptr;
+            tiptr=&ifptr->next;
+            if (ifptr->next==ifptr2)
+                ifptr->next=NULL;
+        }
+    }
+    pthread_create(&tid,NULL,engine,(void *) e_info);
+
+    signal(SIGUSR1,terminate);
     pthread_mutex_lock(&lists.io_mutex);
-    while (lists.uninitialized)
-	    pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
-    pthread_mutex_unlock(&lists.io_mutex);
+    for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
+        /* Create a thread to run each output */
+            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+    }
 
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
@@ -515,16 +584,17 @@ main(int argc, char ** argv)
      * engine's queue inactive causing it to set all the outputs' queues
      * inactive and shutting them down. Thus the last input exiting also shuts
      * everything down */
-    while (lists.outputs) {
-        pthread_mutex_lock(&lists.dead_mutex);
-        while (lists.dead  == NULL)
-            pthread_cond_wait(&lists.dead_cond,&lists.dead_mutex);
+    while (lists.outputs || lists.initialized) {
+        while (lists.dead  == NULL) {
+            pthread_cond_wait(&lists.dead_cond,&lists.io_mutex);
+	}
         for (ifptr=lists.dead;ifptr;ifptr=lists.dead) {
-            pthread_join(ifptr->tid,&ret);
-            lists.dead=ifptr->next;
-            free(ifptr);
-    	}
-        pthread_mutex_unlock(&lists.dead_mutex);
+        	lists.dead=ifptr->next;
+                pthread_join(ifptr->tid,&ret);
+                free(ifptr);
+        }
+        pthread_mutex_unlock(&lists.io_mutex);
     }
+fprintf(stderr,"no more outputs\n");
     exit(0);
 }

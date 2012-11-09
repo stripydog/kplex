@@ -13,26 +13,34 @@
 #include <errno.h>
 #include <string.h>
 
+#define KPLEXHOMECONF ".kplex.conf"
+#define KPLEXGLOBALCONF "/etc/kplex.conf"
 #define DEFQUEUESZ 128
 #define SERIALQUESIZE 128
 #define BCASTQUEUESIZE 64
 #define TCPQUEUESIZE 128
 
+
 #define SENMAX 96
 #define DEFBCASTPORT 10110
 #define DEFTCPPORT "10110"
 
+#define BUFSIZE 1024
+
 enum itype {
+    GLOBAL,
 	FILEIO,
 	SERIAL,
 	BCAST,
 	TCP,
     PTY,
 	MCAST,
-	ST
+	ST,
+    END
 };
 
 enum iotype {
+    NONE,
 	IN,
 	OUT,
     BOTH
@@ -62,10 +70,17 @@ struct iolists {
 	pthread_mutex_t dead_mutex;
 	pthread_cond_t	dead_cond;
 	pthread_cond_t	init_cond;
-	int	uninitialized;
+	struct iface *initialized;
 	struct iface *outputs;
 	struct iface *inputs;
 	struct iface *dead;
+    struct iface *engine;
+};
+
+struct kopts {
+    char *var;
+    char *val;
+    struct kopts *next;
 };
 
 struct iface {
@@ -74,6 +89,7 @@ struct iface {
 	enum iotype direction;
 	enum itype type;
 	void *info;
+    struct kopts *options;
 	ioqueue_t *q;
 	struct iface *next;
 	struct iolists *lists;
@@ -84,17 +100,19 @@ struct iface {
 
 typedef struct iface iface_t;
 
-struct engine_info {
-	struct iolists *lists;
-	ioqueue_t	*q;
+struct iftypedef {
+    enum itype  index;
+    char *name;
+    iface_t *(*init_func)(iface_t *);
+    void *(*ifdup_func)(void *);
 };
 
-iface_t *init_file(char *, iface_t *);
-iface_t *init_serial(char *, iface_t *);
-iface_t *init_bcast(char *, iface_t *);
-iface_t *init_tcp(char *, iface_t *);
-iface_t *init_pty(char *, iface_t *);
-iface_t *init_seatalk(char *, iface_t *);
+iface_t *init_file( iface_t *);
+iface_t *init_serial(iface_t *);
+iface_t *init_bcast(iface_t *);
+iface_t *init_tcp(iface_t *);
+iface_t *init_pty(iface_t *);
+iface_t *init_seatalk(iface_t *);
 
 void *ifdup_serial(void *);
 void *ifdup_file(void *);
@@ -108,5 +126,15 @@ void push_senblk(senblk_t *, ioqueue_t *);
 void senblk_free(senblk_t *, ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
+int link_to_initialized(iface_t *);
 void start_interface(void *ptr);
 iface_t *ifdup(iface_t *);
+void iface_destroy(iface_t *, void *);
+int next_config(FILE *,unsigned int *,char **,char **);
+
+iface_t *parse_file(char *);
+iface_t *parse_arg(char *);
+iface_t *get_default_global(void);
+void free_options(struct kopts *);
+
+extern struct iftypedef iftypes[];

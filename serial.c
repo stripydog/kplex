@@ -66,7 +66,6 @@ void cleanup_serial(iface_t *ifa)
 {
     struct if_serial *ifs = (struct if_serial *)ifa->info;
 
-        /* Restore saved settings */
     if (!ifa->pair) {
         if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
             perror("Warning: Failed to restore serial line");
@@ -175,7 +174,7 @@ struct iface * read_serial(struct iface *ifa)
     fd=ifs->fd;
 
     /* Read up to BUFSIZ data */
-    while ((nread=read(fd,buf,BUFSIZ)) > 0) {
+    while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
         /* Process the data we just read */
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
             /* Copy to our senblk if we haven't exceeded max
@@ -248,32 +247,38 @@ struct iface * write_serial(struct iface *ifa)
  * Args: interface specification string and pointer to interface structure
  * Retuns: Pointer to (completed) interface structure
  */
-struct iface *init_serial (char *str, struct iface *ifa)
+struct iface *init_serial (struct iface *ifa)
 {
-    char *devname,*option;
+    char *devname;
     struct if_serial *ifs;
     int baud=B4800;        /* Default for NMEA 0183. AIS will need
                    explicit baud rate specification */
     tcflag_t cflag;
     int st=0;
-
-    /* Get device name */
-    if ((devname=strtok(str+4,",")) == NULL) {
-        fprintf(stderr,"Bad specification for serial device: \'%s\'\n",
-            str);
-        exit(1);
-    }
-
-    /* Get baud rate: Only the main 3 NMEA rates supported */
-    if ((option = strtok(NULL,",")) != NULL) {
-        if (!strcmp(option,"38400"))
-            baud=B38400;
-        else if (!strcmp(option,"9600"))
-            baud=B9600;
-        else if (!strcmp(option,"4800"))
-            baud=B4800;
-        else {
-            fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",option,devname);
+    struct kopts *opt;
+    int qsize=DEFSERIALQSIZE;
+    
+    for(opt=ifa->options;opt;opt=opt->next) {
+        if (!strcasecmp(opt->var,"filename"))
+            devname=opt->val;
+        else if (!strcasecmp(opt->var,"baud")) {
+            if (!strcmp(opt->val,"38400"))
+                baud=B38400;
+            else if (!strcmp(opt->val,"9600"))
+                baud=B9600;
+            else if (!strcmp(opt->val,"4800"))
+                baud=B4800;
+            else {
+                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",opt->val,devname);
+                exit(1);
+            }
+        } else if (!strcasecmp(opt->var,"qsize")) {
+            if (!(qsize=atoi(opt->val))) {
+                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
+                exit(1);
+            }
+        } else  {
+            fprintf(stderr,"unknown interface option %s\n",opt->var);
             exit(1);
         }
     }
@@ -292,6 +297,8 @@ struct iface *init_serial (char *str, struct iface *ifa)
         exit (1);
     }
 
+    free_options(ifa->options);
+
     /* Set up interface or die */
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,0) < 0)
         exit(1);
@@ -305,6 +312,7 @@ struct iface *init_serial (char *str, struct iface *ifa)
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
             perror("Could not create queue");
+            cleanup_serial(ifa);
             exit(1);
         }
 
@@ -312,11 +320,11 @@ struct iface *init_serial (char *str, struct iface *ifa)
     ifa->info=(void *)ifs;
 
     if (ifa->direction == BOTH) {
-        if ((ifa->pair=ifdup(ifa)) == NULL) {
+        if ((ifa->next=ifdup(ifa)) == NULL) {
             perror("Interface duplication failed");
+            cleanup_serial(ifa);
             exit(1);
         }
-        ifa->next=ifa->pair;
         ifa->direction=OUT;
         ifa->pair->direction=IN;
     }
@@ -328,43 +336,53 @@ struct iface *init_serial (char *str, struct iface *ifa)
  * Args: string specifying the interface and pointer to (incomplete) interface
  * Returns: Completed interface structure
  */
-struct iface *init_pty (char *str, struct iface *ifa)
+struct iface *init_pty (struct iface *ifa)
 {
-    char *devname,*option;
+    char *devname=NULL;
     struct if_serial *ifs;
     int baud=B4800,slavefd;
     tcflag_t cflag;
     int st=0;
-    char *master;
+    struct kopts *opt;
+    int qsize=DEFSERIALQSIZE;
+    char *master=NULL;
     struct stat statbuf;
     char slave[PATH_MAX];
     char * link=NULL;
 
-    /* Create new pty (master) or use existing (slave)? */
-    if (((master=strtok(str+4,",")) == NULL) ||
-        (strcmp(master,"m") && strcmp(master,"s"))) {
-        fprintf(stderr,"Incorrect interface specifier %s\n",str);
-        exit(1);
-    }
 
-    if (devname=strtok(NULL,",")) {
-        if (!strcmp(devname,"-"))
-            devname=NULL;
-
-        /* Baud rate (default 4800) */
-        if ((option = strtok(NULL,",")) != NULL) {
-            if (!strcmp(option,"38400"))
-                baud=B38400;
-            else if (!strcmp(option,"9600"))
-                baud=B9600;
-            else if (!strcmp(option,"4800") || (!strcmp(option,"-")))
-                baud=B4800;
-            else {
-                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",option,devname);
+    for(opt=ifa->options;opt;opt=opt->next) {
+        if (!strcasecmp(opt->var,"mode")) {
+            master=opt->val;
+            if(strcmp(master,"master") && strcmp(master,"slave")) {
+                fprintf(stderr,"pty mode \'%s\' unsupported: must be master or slave\n",master);
                 exit(1);
             }
         }
+        else if (!strcasecmp(opt->var,"filename"))
+            devname=opt->val;
+        else if (!strcasecmp(opt->var,"baud")) {
+            if (!strcmp(opt->val,"38400"))
+                baud=B38400;
+            else if (!strcmp(opt->val,"9600"))
+                baud=B9600;
+            else if (!strcmp(opt->val,"4800"))
+                baud=B4800;
+            else {
+                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",opt->val,devname);
+                exit(1);
+            }
+        } else if (!strcasecmp(opt->var,"qsize")) {
+            if (!(qsize=atoi(opt->val))) {
+                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
+                exit(1);
+            }
+        } else {
+            fprintf(stderr,"unknown interface option %s\n",opt->var);
+            exit(1);
+        }
     }
+
     cflag=baud|CS8|CLOCAL|CREAD;
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
@@ -372,7 +390,7 @@ struct iface *init_pty (char *str, struct iface *ifa)
         exit(1);
     }
 
-    if (*master == 'm') {
+    if (*master != 's') {
         if (openpty(&ifs->fd,&slavefd,slave,NULL,NULL) < 0) {
             perror("error opening pty");
             exit (1);
@@ -402,11 +420,16 @@ struct iface *init_pty (char *str, struct iface *ifa)
         } else
 	/* No device name was given: Just print the pty name */
             printf("Slave pty for output at %s baud is %s\n",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
-    } else
+    } else {
 	/* Slave mode: This is no different from a serial line */
+        if (!devname) {
+            fprintf(stderr,"Must Specify a filename for slave mode pty\n");
+            exit(1);
+        }
         if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
             exit (1);
         }
+    }
 
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,0) < 0)
         exit(1);
@@ -414,19 +437,22 @@ struct iface *init_pty (char *str, struct iface *ifa)
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
             perror("Could not create queue");
+            cleanup_serial(ifa);
             exit(1);
         }
+
+    free_options(ifa->options);
 
     ifa->read=read_serial;
     ifa->write=write_serial;
     ifa->cleanup=cleanup_serial;
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {
-        if ((ifa->pair=ifdup(ifa)) == NULL) {
+        if ((ifa->next=ifdup(ifa)) == NULL) {
             perror("Interface duplication failed");
+            cleanup_serial(ifa);
             exit(1);
         }
-        ifa->next=ifa->pair;
         ifa->direction=OUT;
         ifa->pair->direction=IN;
     }
@@ -459,6 +485,10 @@ int st2nmea(unsigned char *st, senblk_t *sptr)
 {
     unsigned char *cmd=st;
     unsigned char *att=st+1;
+    int val=0;
+
+    	static int lastactive=0;
+    	static unsigned char *lastcom[8];
 
 #ifdef DEBUG
     int i;
@@ -467,15 +497,20 @@ int st2nmea(unsigned char *st, senblk_t *sptr)
         fprintf(stderr," %02X",st[i+3]);
     fprintf(stderr,"\n");fflush(stderr);
 #endif
-
     /* Only water temperature defined at this point. Probably wrongly */
     switch (*cmd) {
+    case 0x00:
+	    val=((*st+3)<<8)+(*st+4);
+	    sprintf(sptr->data,"$DBT,%.1f,f,%.1f,m,%.1f,F",val/10.0,val*0.3048,
+			    val*0.6);
+	    break;
     case 0x23:
         if (st[2]&0x40)
 	/* Transducer not functional */
             return(1);
         sprintf(sptr->data,"$MTW,%d,C",(char) st[3]);
         break;
+
     default:
         return(1);
     }
@@ -511,7 +546,6 @@ iface_t * read_seatalk(struct iface *ifa)
     senblk_t sblk;
 
     sblk.src=ifa;
-
     /* Here's what happens here. With PARMRK set, parity errors are signalled
      * by 0xff00 in the byte stream.  We have space parity set. A command bit
      * will will generate a parity error, so if we see 0xff followed by 0x00
@@ -521,7 +555,7 @@ iface_t * read_seatalk(struct iface *ifa)
      */
     for (;;) {
         for(rsize=5,perr=0;perr<5;rsize=5-perr) {
-            if ((n=read(ifs->fd,b,rsize)) < 0){
+            if ((ifa->direction == NONE ) || (n=read(ifs->fd,b,rsize)) < 0){
 		    /* OMG goto! but we're allowed outdated control structures
 		     * with outdated protocols, right? */
                 goto out;
@@ -556,7 +590,7 @@ iface_t * read_seatalk(struct iface *ifa)
         /* Now we have the command, read the data */
         rsize = *attr & 0xff;
         for(n=0,i=rsize,bufp=buf+1;i;i-=n,bufp+=n) {
-            if ((n = read(ifs->fd,bufp,i)) < 0) {
+            if ((ifa->direction == NONE) || (n = read(ifs->fd,bufp,i)) < 0) {
                 goto out;
             }
         }
@@ -573,18 +607,28 @@ out:
  * Seatalk interface not tested or really supported yet. Consider this a
  * placeholder
  */
-struct iface *init_seatalk (char *str, struct iface *ifa)
+struct iface *init_seatalk (struct iface *ifa)
 {
-    char *devname,*option;
+    char *devname=NULL;
     struct if_serial *ifs;
     int baud=B4800;		/* This is the only supported baud rate */
     tcflag_t cflag;
     int st=1;
+    struct kopts *opt;
+    size_t qsize=0;
 
-    if ((devname=strtok(str+4,",")) == NULL) {
-        fprintf(stderr,"Bad specification for serial device: \'%s\'\n",
-            str);
-        exit(1);
+    for(opt=ifa->options;opt;opt=opt->next) {
+        if (!strcasecmp(opt->var,"filename"))
+            devname=opt->val;
+        else if (!strcasecmp(opt->var,"qsize")) {
+            if (!(qsize=atoi(opt->val))) {
+                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
+                exit(1);
+            }
+        } else  {
+            fprintf(stderr,"unknown interface option %s\n",opt->var);
+            exit(1);
+        }
     }
 
     cflag=baud|CS8|CLOCAL|PARENB|((ifa->direction == OUT)?0:CREAD);
@@ -597,13 +641,16 @@ struct iface *init_seatalk (char *str, struct iface *ifa)
     if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
         exit (1);
     }
+    fprintf(stderr,"fd at %lu\n",&ifs->fd);
+
+    free_options(ifa->options);
 
     if (ttysetup(ifs->fd,&ifs->otermios,cflag,st) < 0)
         exit(1);
-
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
             perror("Could not create queue");
+            cleanup_serial(ifa);
             exit(1);
         }
     ifa->read=read_seatalk;
@@ -611,11 +658,11 @@ struct iface *init_seatalk (char *str, struct iface *ifa)
     ifa->cleanup=cleanup_serial;
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {
-        if ((ifa->pair=ifdup(ifa)) == NULL) {
+        if ((ifa->next=ifdup(ifa)) == NULL) {
             perror("Interface duplication failed");
+            cleanup_serial(ifa);
             exit(1);
         }
-        ifa->next=ifa->pair;
         ifa->direction=OUT;
         ifa->pair->direction=IN;
     }
