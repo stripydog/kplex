@@ -18,9 +18,17 @@ you like without some install command doing it for you.
 Invocation:
 -----------
 
-kplex [-q <queue length>] [-f filename] <interface> <interface> [<interface> ...]
+kplex [-b] [-l <facility>] [-q <queue length>] [-f filename] <interface> <interface> [<interface> ...]
 
 Where
+"-b" tells kplex to run as a daemon after initial argument parsing and set up.
+Why not "-d"?  Well at some stage I'm going to add more debugging options.
+
+<facility> is the log facility to use for warning and error messages.  kplex
+prints error messages to standard error (ie normally the terminal) when run
+without the "-b" flag. If -b is specified, kplex logs to syslog. <facility>
+should be specified as it would be syslog.conf (ie "daemon" rather than
+"LOG_DAEMON", "local7" rather than "LOG_LOCAL7").
 <queue length> is the number of items the main multiplexer engine buffers.
 Individual output interfaces have their own queues. You shouldn't need to
 tune this
@@ -253,6 +261,30 @@ Port=Serial:/home/fred/.opencpn/ais
 This creates the /home/fred/.opencpn/ais, which opencpn will use for its AIS
 input, as a symlink to the slave of a pty which kplex opens at 38400 baud in
 addition to a tcp server.
+
+Stopping
+--------
+kplex closes down if it has no more outputs. If kplex has no more inputs,
+it closes down after all outputs have transmitted any buffered data. Interfaces
+shut down when the end of data input is reached (e.g. on end of file for file
+inputs or a network peer terminates its end of the connection) or on error.
+Outputs terminate when they are unable to write due to a network peer
+terminating or some error condition.
+
+If the process receives a SIGTERM (e.g. from the kill command) or SIGINT (e.g.
+from ctrl-C pressed at the terminal kplex is running in), kplex will shut all
+its interfaces down, allowing any buffered data to be transmitted, before
+exiting.
+
+To stop an instance of kplex which is running in the foreground, hold down the
+"Ctrl" key and hit "c".
+
+To stop an instance of kplex running in daemon mode, send it the termination
+signal, e.g. "pkill kplex".
+
+kplex should always clean up all of its interfaces, including restoring serial
+line settings to what they were when kplex started.  If this doesn't happen
+it's a bug: Please report it.
 
 Example usage
 -------------
