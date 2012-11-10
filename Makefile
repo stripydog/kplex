@@ -1,5 +1,5 @@
 LFLAGS=-pthread -lutil
-objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o
+objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o
 
 kplex: $(objects)
 	cc -o kplex $(objects) $(LFLAGS)

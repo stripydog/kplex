@@ -55,7 +55,7 @@ iface_t *write_file(iface_t *ifa)
 		break;
         senblk_free(sptr,ifa->q);
     }
-    iface_destroy(ifa,(void *) &errno);
+    iface_thread_exit(errno);
 }
 
 iface_t *read_file(iface_t *ifa)
@@ -71,7 +71,7 @@ iface_t *read_file(iface_t *ifa)
             break;
         }
         if (sblk.data[len-1]  != '\n') {
-            fprintf(stderr,"Error: Line exceeds max sentence length (discarding)\n");
+            logwarn("Line exceeds max sentence length (discarding)\n");
             while ((eptr = fgets(sblk.data,SENMAX,ifc->fp)) == sblk.data) {
                 if (sblk.data[strlen(sblk.data)-1]  == '\n') {
                     break;
@@ -86,7 +86,7 @@ iface_t *read_file(iface_t *ifa)
         sblk.len=len+1;
         push_senblk(&sblk,ifa->q);
     }
-    iface_destroy(ifa,(void *) &errno);
+    iface_thread_exit(errno);
 }
 
 iface_t *init_file (iface_t *ifa)
@@ -97,8 +97,7 @@ iface_t *init_file (iface_t *ifa)
     struct kopts *opt,*nextopt;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
-        perror("Could not allocate memory");
-        exit(1);
+        logtermall(errno,"Could not allocate memory");
     }
     ifa->info = (void *) ifc;
 
@@ -107,37 +106,31 @@ iface_t *init_file (iface_t *ifa)
             fname=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else  {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"Unknown interface option %s\n",opt->var);
         }
     }
 
     if (!fname) {
-        fprintf(stderr,"Must specify a filename for file interfaces\n");
-        exit(1);
+        logtermall(0,"Must specify a filename for file interfaces\n");
     }
     if (!strcmp(fname,"-")) {
         ifc->fp = (ifa->direction == IN)?stdin:stdout;
     } else {
         if (ifa->direction == BOTH) {
-            fprintf(stderr,"Bi-directional file I/O only supported for stdin/stdout\n");
-            exit(1);
+            logtermall(0,"Bi-directional file I/O only supported for stdin/stdout\n");
         }
         if ((ifc->fp = fopen(fname,(ifa->direction == IN)?"r":"w"))
                 == NULL) {
-            fprintf(stderr,"Could not open %s: %s\n",fname,strerror(errno));
-            exit(1);
+            logtermall(errno,"Could not open %s: %s\n",fname);
         }
     }
 
     if (ifa->direction != IN)
         if ((ifa->q =init_q(qsize)) == NULL) {
-            perror("Could not create queue");
-            exit(1);
+            logtermall(0,"Could not create queue");
         }
 
     free_options(ifa->options);
@@ -147,8 +140,7 @@ iface_t *init_file (iface_t *ifa)
     ifa->cleanup=cleanup_file;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            perror("Interface duplication failed");
-            exit(1);
+            logtermall(0,"Interface duplication failed");
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;

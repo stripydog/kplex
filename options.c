@@ -259,10 +259,7 @@ iface_t *get_config(FILE *fp, unsigned int *line)
 
     for(opt = &ifp->options;next_config(fp,line,&var,&val) == 0;) {
         if (!var)
-            if (ifp->direction == NONE)
-                break;
-            else
-                return(ifp);
+            return(ifp);
         if ((ret = add_common_opt(var,val,ifp)) == 0)
             continue;
         if ((ret < 0) || (((*opt) = add_option(var,val)) == NULL && (ret=-1))) {
@@ -308,15 +305,21 @@ iface_t *parse_file(char *fname)
             if (line == 0) {
                 perror("Error creating interface");
                 exit(1);
-            } else
+            } else {
                 lineerror(line);
+            }
         }
+
         if ((ifp->type=type) == GLOBAL) {
             ifp->next=list;
             list=ifp;
             if (ifpp == &list)
                 ifpp=&list->next;
         } else {
+            if (ifp->direction == NONE){
+                fprintf(stderr,"Must specify direction (in/out) for interface\n");
+                lineerror(line);
+            }
             (*ifpp)=ifp;
             ifpp=&ifp->next;
         }

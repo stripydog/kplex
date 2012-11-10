@@ -129,12 +129,17 @@ int unlink_interface(iface_t *);
 int link_to_initialized(iface_t *);
 void start_interface(void *ptr);
 iface_t *ifdup(iface_t *);
-void iface_destroy(iface_t *, void *);
+void iface_thread_exit(int);
 int next_config(FILE *,unsigned int *,char **,char **);
 
 iface_t *parse_file(char *);
 iface_t *parse_arg(char *);
 iface_t *get_default_global(void);
 void free_options(struct kopts *);
+void logerr(int,char *,...);
+void logterm(int,char *,...);
+void logtermall(int,char *,...);
+void logwarn(char *,...);
+void initlog(int);
 
 extern struct iftypedef iftypes[];

@@ -68,7 +68,7 @@ void cleanup_serial(iface_t *ifa)
 
     if (!ifa->pair) {
         if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
-            perror("Warning: Failed to restore serial line");
+            logwarn("Failed to restore serial line");
         }
     }
     close(ifs->fd);
@@ -86,19 +86,19 @@ int ttyopen(char *device, enum iotype direction)
 
     /* Check if device exists and is a character special device */
     if (stat(device,&sbuf) < 0) {
-        fprintf(stderr,"Could not stat %s: %s\n",device,strerror(errno));
+        logwarn("Could not stat %s",device,strerror(errno));
         return(-1);
     }
 
     if (!S_ISCHR(sbuf.st_mode)){
-        fprintf(stderr,"%s is not a character device\n",device);
+        logwarn("%s is not a character device",device);
         return(-1);
     }
 
     /* Open device (RW for now..let's ignore direction...) */
     if ((dev=open(device,
         ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY)) < 0) {
-        fprintf(stderr,"failed to open %s: %s\n",device,strerror(errno));
+        logwarn("Failed to open %s: %s",device,strerror(errno));
         return(-1);
     }
 
@@ -118,8 +118,7 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
 
     /* Get existing terminal attributes and save them */
     if (tcgetattr(dev,otermios_p) < 0) {
-        perror("failed to get terminal attributes");
-        return (-1);
+        logtermall(errno,"failed to get terminal attributes");
     }
 
     memset(&ntermios,0,sizeof(struct termios));
@@ -133,22 +132,20 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
     ntermios.c_cc[VTIME]=0;
 
     if (tcflush(dev,TCIOFLUSH) < 0)
-        perror("Warning: Failed to flush serial device");
+        logwarn("Failed to flush serial device");
 
     if (tcsetattr(dev,TCSAFLUSH,&ntermios) < 0) {
-        perror("Failed to set up serial line!");
-        return(-1);
+        logtermall(errno,"Failed to set up serial line!");
     }
 
     /* Read back terminal attributes to check we set what we needed to */
     if (tcgetattr(dev,&ttermios) < 0) {
-        perror("Failed to re-read serial line attributes");
-        return(-1);
+        logtermall(errno,"Failed to re-read serial line attributes");
     }
 
     if ((ttermios.c_cflag != ntermios.c_cflag) ||
         (ttermios.c_iflag != ntermios.c_iflag)) {
-        fprintf(stderr,"Failed to correctly set up serial line");
+        logwarn("Failed to correctly set up serial line");
         return(-1);
     }
 
@@ -209,7 +206,7 @@ struct iface * read_serial(struct iface *ifa)
             }
         }
     }
-    iface_destroy(ifa,(void *) &errno);
+    iface_thread_exit(errno);
 }
 
 /*
@@ -239,7 +236,7 @@ struct iface * write_serial(struct iface *ifa)
         }
         senblk_free(senblk_p,ifa->q);
     }
-    iface_destroy(ifa,(void *) &errno);
+    iface_thread_exit(errno);
 }
 
 /*
@@ -269,17 +266,14 @@ struct iface *init_serial (struct iface *ifa)
             else if (!strcmp(opt->val,"4800"))
                 baud=B4800;
             else {
-                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",opt->val,devname);
-                exit(1);
+                logtermall(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else  {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"unknown interface option %s",opt->var);
         }
     }
 
@@ -288,8 +282,7 @@ struct iface *init_serial (struct iface *ifa)
 
     /* Allocate serial specific data storage */
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
-        perror("Could not allocate memory\n");
-        exit(1);
+        logtermall(errno,"Could not allocate memory");
     }
 
     /* Open interface or die */
@@ -311,9 +304,7 @@ struct iface *init_serial (struct iface *ifa)
     /* Allocate queue for outbound interfaces */
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
-            perror("Could not create queue");
-            cleanup_serial(ifa);
-            exit(1);
+            logtermall(errno,"Could not create queue");
         }
 
     /* Link in serial specific data */
@@ -321,9 +312,7 @@ struct iface *init_serial (struct iface *ifa)
 
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            perror("Interface duplication failed");
-            cleanup_serial(ifa);
-            exit(1);
+            logtermall(0,"Interface duplication failed");
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;
@@ -355,8 +344,7 @@ struct iface *init_pty (struct iface *ifa)
         if (!strcasecmp(opt->var,"mode")) {
             master=opt->val;
             if(strcmp(master,"master") && strcmp(master,"slave")) {
-                fprintf(stderr,"pty mode \'%s\' unsupported: must be master or slave\n",master);
-                exit(1);
+                logtermall(0,"pty mode \'%s\' unsupported: must be master or slave",master);
             }
         }
         else if (!strcasecmp(opt->var,"filename"))
@@ -369,31 +357,26 @@ struct iface *init_pty (struct iface *ifa)
             else if (!strcmp(opt->val,"4800"))
                 baud=B4800;
             else {
-                fprintf(stderr,"Unsupported baud rate \'%s\' in interface specification '\%s\'\n",opt->val,devname);
-                exit(1);
+                logtermall(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"Unknown interface option %s",opt->var);
         }
     }
 
     cflag=baud|CS8|CLOCAL|CREAD;
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
-        perror("Could not allocate memory\n");
-        exit(1);
+        logerr(errno,"Could not allocate memory");
     }
 
     if (*master != 's') {
         if (openpty(&ifs->fd,&slavefd,slave,NULL,NULL) < 0) {
-            perror("error opening pty");
-            exit (1);
+            logtermall(errno,"Error opening pty");
         }
 
         if (devname) {
@@ -402,29 +385,24 @@ struct iface *init_pty (struct iface *ifa)
                 /* file exists */
                 if (!S_ISLNK(statbuf.st_mode)) {
 		/* If it's not a symlink already, don't replace it */
-                    fprintf(stderr,"%s: File exists and is not a symbolic link\n",devname);
-                    exit(1);
+                    logtermall(0,"%s: File exists and is not a symbolic link",devname);
                 }
 		/* It's a symlink. remove it */
                 if (unlink(devname)) {
-                    fprintf(stderr,"Could not unlink %s: %s\n",
-                        devname,strerror(errno));
-                    exit(1);
+                    logtermall(errno,"Could not unlink %s: %s",devname);
                 }
             }
 	    /* link the given name to our new pty */
             if (symlink(slave,devname)) {
-                fprintf(stderr,"Could not create symbolic link %s for %s\n",devname,slave);
-                exit(1);
+                logtermall(errno,"Could not create symbolic link %s for %s",devname,slave);
             }
         } else
 	/* No device name was given: Just print the pty name */
-            printf("Slave pty for output at %s baud is %s\n",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
+            printf("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
     } else {
 	/* Slave mode: This is no different from a serial line */
         if (!devname) {
-            fprintf(stderr,"Must Specify a filename for slave mode pty\n");
-            exit(1);
+            logtermall(0,"Must Specify a filename for slave mode pty");
         }
         if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
             exit (1);
@@ -436,9 +414,7 @@ struct iface *init_pty (struct iface *ifa)
 
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
-            perror("Could not create queue");
-            cleanup_serial(ifa);
-            exit(1);
+            logtermall(errno,"Could not create queue");
         }
 
     free_options(ifa->options);
@@ -449,9 +425,7 @@ struct iface *init_pty (struct iface *ifa)
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            perror("Interface duplication failed");
-            cleanup_serial(ifa);
-            exit(1);
+            logtermall(0,"Interface duplication failed");
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;
@@ -526,10 +500,8 @@ int st2nmea(unsigned char *st, senblk_t *sptr)
  */
 iface_t * write_seatalk(iface_t *ifa)
 {
-    int err = -1;
-
     /* not currently supported */
-    iface_destroy(ifa,(void *) &err);
+    iface_thread_exit(-1);
 }
 
 /*
@@ -598,7 +570,7 @@ iface_t * read_seatalk(struct iface *ifa)
             push_senblk(&sblk,ifa->q);
     }
 out:
-    iface_destroy(ifa,(void *) &errno);
+    iface_thread_exit(errno);
 }
 
 /* Initialise a seatalk interface
@@ -622,26 +594,22 @@ struct iface *init_seatalk (struct iface *ifa)
             devname=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else  {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"unknown interface option %s",opt->var);
         }
     }
 
     cflag=baud|CS8|CLOCAL|PARENB|((ifa->direction == OUT)?0:CREAD);
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
-        perror("Could not allocate memory\n");
-        exit(1);
+        logtermall(errno,"Could not allocate memory");
     }
 
     if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
         exit (1);
     }
-    fprintf(stderr,"fd at %lu\n",&ifs->fd);
 
     free_options(ifa->options);
 
@@ -649,9 +617,7 @@ struct iface *init_seatalk (struct iface *ifa)
         exit(1);
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
-            perror("Could not create queue");
-            cleanup_serial(ifa);
-            exit(1);
+            logtermall(0,"Could not create queue");
         }
     ifa->read=read_seatalk;
     ifa->write=write_seatalk;
@@ -659,9 +625,7 @@ struct iface *init_seatalk (struct iface *ifa)
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            perror("Interface duplication failed");
-            cleanup_serial(ifa);
-            exit(1);
+            logerr(0,"Interface duplication failed");
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;

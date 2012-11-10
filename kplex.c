@@ -15,17 +15,63 @@
 #include <signal.h>
 #include <unistd.h>
 #include <pwd.h>
+#include <syslog.h>
 
 
+/* Globals. Sadly. Used in signal handlers so few other simple options */
+pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
+int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
+
+/* Signal handlers */
+/* This one is used on receipt of SIGUSR1, used to tell an input interface
+ * handler thread to terminate.  Output thread termination is handled a little
+ * more gently giving them the opportunity to transmit buffered data */
 void terminate (int sig)
-{}
+{
+    iface_thread_exit(sig);
+}
+
+/*  Signal handler for externally generated termination signals: Current
+ * implementation this handles SIGTERM and SIGINT */
+void killemall (int sig)
+{
+    struct iolists *listp;
+
+    listp = (struct iolists *) pthread_getspecific(ifkey);
+    timetodie++;
+    pthread_cond_signal(&listp->dead_cond);
+}
+
+/* functions */
+/*
+ * Exit function used by interface handlers.  Interface objects are cleaned
+ * up by the destructor funcitons of thread local storage
+ * Args: exit status (unused)
+ * Returns: Nothing
+ */
+void iface_thread_exit(int ret)
+{
+    pthread_exit((void *)&ret);
+}
+
+/*
+ * Cleanup routine for interfaces, used as destructor for pointer to interface
+ * structure in the handler thread's local storage
+ * Args: pointer to interface structure
+ * Returns: Nothing
+ */
+void iface_destroy(void *ifptr)
+{
+    iface_t *ifa = (iface_t *) ifptr;
+
+    unlink_interface(ifa);
+}
 
 /*
  *  Initialise an ioqueue
  *  Args: size of queue (in senblk structures)
  *  Returns: pointer to new queue
  */
-
 ioqueue_t *init_q(size_t size)
 {
     ioqueue_t *newq;
@@ -212,44 +258,34 @@ void *engine(void *info)
 }
 
 /*
- * Interface startup routine
- * Args: Pointer to interface structure (cast to void)
+ * STart processing an interface and add it to an iolist, input or output, 
+ * depending on direction
+ * Args: Pointer to interface structure (cast to void *)
  * Returns: Nothing
+ * We should come into this with SIGUSR1 blocked
  */
-void start_interface (void *ptr)
+void start_interface(void *ptr)
 {
-    iface_t *ifa = ptr;
-
-    link_interface(ifa);
-    if (ifa->direction == IN)
-        ifa->read(ifa);
-    else
-        ifa->write(ifa);
-}
-
-/*
- * Add an interface structure to an iolist, input or output, depending on
- * direction
- * Args: Pointer to interface structure
- * 0. Other return vals a possible later addition
- */
-int link_interface(iface_t *ifa)
-{
+    iface_t *ifa = (iface_t *)ptr;
     iface_t **lptr;
     iface_t **iptr;
     int ret=0;
-    sigset_t set,saved;
+    sigset_t set;
 
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
+
     pthread_mutex_lock(&ifa->lists->io_mutex);
     ifa->tid = pthread_self();
 
+    if (pthread_setspecific(ifkey,ptr)) {
+        perror("Falied to set key");
+        exit(1);
+    }
+
     if (ifa->direction == NONE) {
         pthread_mutex_unlock(&ifa->lists->io_mutex);
-        pthread_sigmask(SIG_SETMASK,&set, &saved);
-        iface_destroy(ifa,(void *)&ret);
+        iface_thread_exit(0);
     }
 
     for (iptr=&ifa->lists->initialized;*iptr!=ifa;iptr=&(*iptr)->next)
@@ -268,11 +304,22 @@ int link_interface(iface_t *ifa)
         ifa->next=NULL;
     (*lptr)=ifa;
 
+    if (ifa->direction==BOTH) {
+        if (ifa->lists->inputs)
+            ifa->next=ifa->lists->inputs;
+        else
+            ifa->next=NULL;
+        ifa->lists->inputs=ifa;
+    }
+
     if (ifa->lists->initialized == NULL)
         pthread_cond_signal(&ifa->lists->init_cond);
     pthread_mutex_unlock(&ifa->lists->io_mutex);
-    pthread_sigmask(SIG_SETMASK,&saved,NULL);
-    return(0);
+    pthread_sigmask(SIG_UNBLOCK,&set,NULL);
+    if (ifa->direction == IN)
+        ifa->read(ifa);
+    else
+        ifa->write(ifa);
 }
 
 /*
@@ -320,10 +367,20 @@ int unlink_interface(iface_t *ifa)
         /* Traverse the list until we find the interface before our target and
            make its next pointer point to the element after our target */
         for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-            tptr->next = ifa->next;
+        tptr->next = ifa->next;
     }
 
-    if ((ifa->direction != IN) && ifa->q) {
+    /* Unlink from both lists for BOTH interfaces */
+    if (ifa->direction==BOTH) {
+        if (ifa->lists->inputs == ifa)
+            ifa->lists->inputs=ifa->next;
+        else {
+            for (tptr=ifa->lists->inputs;tptr->next != ifa;tptr=tptr->next);
+            tptr->next = ifa->next;
+        } 
+    }
+            
+    if ((ifa->direction == OUT) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
         free(ifa->q);
@@ -364,19 +421,6 @@ int unlink_interface(iface_t *ifa)
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
     return(0);
-}
-
-/*
- * Shut down an interface
- * Args: Pointer to interface structure and pointer to code giving reason
- * for shut down
- * Retruns: Nothing
- * This just unlinks the interface and calls pthread_exit
- */
-void iface_destroy(iface_t *ifa,void * ret)
-{
-    unlink_interface(ifa);
-    pthread_exit(ret);
 }
 
 /*
@@ -446,9 +490,49 @@ char *get_def_config()
     return(NULL);
 }
 
+/*
+ * Translate a string like "local7" to a log facility like LOG_LOCAL7
+ * Args: string representation of log facility
+ * Returns: Numeric representation of log facility, or -1 if string doesn't
+ * map to anything appropriate
+ */
+int string2facility(char *fac)
+{
+    int facnum;
+
+    if (!strcasecmp(fac,"kern"))
+        return(LOG_KERN);
+    if (!strcasecmp(fac,"user"))
+        return(LOG_USER);
+    if (!strcasecmp(fac,"mail"))
+        return(LOG_MAIL);
+    if (!strcasecmp(fac,"daemon"))
+        return(LOG_DAEMON);
+    if (!strcasecmp(fac,"auth"))
+        return(LOG_AUTH);
+    if (!strcasecmp(fac,"syslog"))
+        return(LOG_SYSLOG);
+    if (!strcasecmp(fac,"lpr"))
+        return(LOG_LPR);
+    if (!strcasecmp(fac,"news"))
+        return(LOG_NEWS);
+    if (!strcasecmp(fac,"cron"))
+        return(LOG_CRON);
+    if (!strcasecmp(fac,"authpriv"))
+        return(LOG_AUTHPRIV);
+    if (!strcasecmp(fac,"ftp"))
+        return(LOG_FTP);
+    /* if we don't map to "localX" where X is 0-7, return error */
+    if (strncasecmp(fac,"local",5) || (*fac + 6))
+        return(-1);
+    if ((facnum = (((int) *fac+5) - 32) < 16) || facnum > 23)
+        return(-1);
+    return(facnum<<3);
+}
 main(int argc, char ** argv)
 {
     pthread_t tid;
+    pid_t pid;
     char *config=NULL;
     iface_t  *e_info;
     iface_t *ifptr,*ifptr2;
@@ -456,10 +540,14 @@ main(int argc, char ** argv)
     int opt,err=0;
     struct kopts *option;
     int qsize=0;
+    int background=0;
+    int logto=LOG_DAEMON;
     void *ret;
+    sigset_t set,saved;
     struct iolists lists = {
         .io_mutex = PTHREAD_MUTEX_INITIALIZER,
         .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
+        .init_cond = PTHREAD_COND_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
     .init_cond = PTHREAD_COND_INITIALIZER,
     .initialized = NULL,
@@ -469,8 +557,17 @@ main(int argc, char ** argv)
     };
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"q:f:")) != -1) {
+    while ((opt=getopt(argc,argv,"bl:q:f:")) != -1) {
         switch (opt) {
+            case 'b':
+                background++;
+                break;
+            case 'l':
+                if ((logto = string2facility(option->val)) < 0) {
+                    fprintf(stderr,"Unknown log facility \'%s\' specified in config file\n",option->val);
+                    err++;
+                }
+                break;
             case 'q':
                 if ((qsize=atoi(optarg)) < 2) {
                     fprintf(stderr,"%s: Minimum qsize is 2\n",
@@ -482,10 +579,11 @@ main(int argc, char ** argv)
                 config=optarg;
                 break;
             default:
-                fprintf(stderr, "Usage: %s [-q <size> ] [ -f <config file>] [<interface specification> ...]\n",argv[0]);
+                fprintf(stderr, "Usage: %s [-b] [-l <log facility>] [-q <size> ] [ -f <config file>] [<interface specification> ...]\n",argv[0]);
                 err++;
         }
     }
+
     if (err)
         exit(1);
 
@@ -507,16 +605,29 @@ main(int argc, char ** argv)
 
     /* queue size is taken from (in order of preference), command line arg, 
      * config file option in [global] section, default */
-    if (!qsize) {
-        if (e_info->options) {
-            for (option=e_info->options;option;option=option->next);
-                if (!strcmp(option->var,"qsize")) {
+   if (e_info->options) {
+        for (option=e_info->options;option;option=option->next)
+            if (!strcmp(option->var,"qsize")) {
+                if (!qsize)
                     if(!(qsize = atoi(option->val))) {
                         fprintf(stderr,"Invalid queue size: %s\n",option->val);
                         exit(1);
                     }
+            } else if (!strcmp(option->var,"mode")) {
+                if (!background) {
+                    if (!strcmp(option->val,"background"))
+                        background++;
+                    else
+                        fprintf(stderr,"Warning: unrecognized mode \'%s\' specified in config file\n",option->val);
                 }
-        }
+            } else if (!strcmp(option->var,"logto")) {
+                if ((logto = string2facility(option->val)) < 0) {
+                    fprintf(stderr,"Unknown log facility \'%s\' specified in config file\n",option->val);
+                    exit(1);
+                }
+            } else {
+                fprintf(stderr,"Warning: Unrecognized option \'%s\' in config file\n",option->var);
+            }
     }
 
     if ((e_info->q = init_q(qsize?qsize:DEFQUEUESZ)) == NULL) {
@@ -540,6 +651,36 @@ main(int argc, char ** argv)
         (*tiptr)=ifptr;
         tiptr=&ifptr->next;
     }
+
+    /* We choose to go into the background here before interface initialzation
+     * rather than later. Disadvantage: Errors don't get fed back on stderr.
+     * Advantage: We can close all the file descriptors now rather than pulling
+     * then from under erroneously specified stdin/stdout etc.
+     */
+
+    if (background) {
+         if ((pid = fork()) < 0) {
+            perror("fork failed");
+            exit(1);
+        } else if (pid)
+            exit(0);
+
+        /* Continue here as child */
+
+        /* Really should close all file descriptors. Harder to do in OS
+         * independent way.  Just close the ones we know about for this cut
+         */
+        fclose(stdin);
+        fclose(stdout);
+        fclose(stderr);
+        setsid();
+        chdir("/");
+        umask(0);
+    }
+
+    /* log to stderr or syslog, as appropriate */
+    initlog(background?logto:-1);
+
     /* our list of "real" interfaces starts after the first which is the
      * dummy "interface" specifying the multiplexing engine
      * walk the list, initialising the interfaces.  Sometimes "BOTH" interfaces
@@ -549,8 +690,9 @@ main(int argc, char ** argv)
     for (ifptr=e_info->next,tiptr=&lists.initialized;ifptr;ifptr=ifptr2) {
         ifptr2 = ifptr->next;
         if ((ifptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
-            fprintf(stderr, "Failed to initialize Interface\n");
-            exit(1);
+            logerr(0,"Failed to initialize Interface");
+            timetodie++;
+            break;
         }
 
         for (;ifptr;ifptr = ifptr->next) {
@@ -568,33 +710,67 @@ main(int argc, char ** argv)
                 ifptr->next=NULL;
         }
     }
+
+        
+    /* Create the key for thread local storage: in this case for a pointer to
+     * the interface each thread is handling
+     */
+    if (pthread_key_create(&ifkey,iface_destroy)) {
+        logerr(errno,"Error creating key");
+        timetodie++;
+    }
+
+    if (timetodie) {
+        for (ifptr=lists.initialized;ifptr;ifptr=ifptr2) {
+            ifptr2=ifptr->next;
+            iface_destroy(ifptr);
+        }
+        exit(1);
+    }
+
+    pthread_setspecific(ifkey,(void *)&lists);
+
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &set, &saved);
+    signal(SIGINT,killemall);
+    signal(SIGTERM,killemall);
+    signal(SIGUSR1,terminate);
     pthread_create(&tid,NULL,engine,(void *) e_info);
 
-    signal(SIGUSR1,terminate);
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        /* Create a thread to run each output */
+        /* Create a thread to run each interface */
             pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
     }
+
+    pthread_sigmask(SIG_SETMASK, &saved,NULL);
+    while (lists.initialized)
+        pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
 
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
      * until all the outputs have been reaped
-     * Note that when there are no more inputs, unlink_interface will set the
+     * Note that when there are no more inputs, we set the
      * engine's queue inactive causing it to set all the outputs' queues
      * inactive and shutting them down. Thus the last input exiting also shuts
      * everything down */
-    while (lists.outputs || lists.initialized) {
-        while (lists.dead  == NULL) {
+    while (lists.outputs || lists.inputs || lists.dead) {
+        while (lists.dead  == NULL && !timetodie)
             pthread_cond_wait(&lists.dead_cond,&lists.io_mutex);
-	}
+        if (timetodie || (lists.outputs == NULL)) {
+            timetodie=0;
+            for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
+                pthread_kill(ifptr->tid,SIGUSR1);
+            }
+        }
         for (ifptr=lists.dead;ifptr;ifptr=lists.dead) {
-        	lists.dead=ifptr->next;
+            lists.dead=ifptr->next;
                 pthread_join(ifptr->tid,&ret);
                 free(ifptr);
         }
-        pthread_mutex_unlock(&lists.io_mutex);
     }
-fprintf(stderr,"no more outputs\n");
     exit(0);
 }

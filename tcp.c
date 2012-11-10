@@ -92,7 +92,7 @@ struct iface * read_tcp(struct iface *ifa)
 			}
 		}
 	}
-	iface_destroy(ifa,(void *) &errno);
+	iface_thread_exit(errno);
 }
 
 struct iface * write_tcp(struct iface *ifa)
@@ -106,7 +106,6 @@ struct iface * write_tcp(struct iface *ifa)
     n=1;
     setsockopt(ift->fd,SOL_SOCKET, SO_NOSIGPIPE, (void *)&n, sizeof(int));
 #endif
-
 	for(;;) {
 		if ((sptr = next_senblk(ifa->q)) == NULL)
 			break;
@@ -115,7 +114,7 @@ struct iface * write_tcp(struct iface *ifa)
 		senblk_free(sptr,ifa->q);
 	}
 
-	iface_destroy(ifa,(void *) &errno);
+	iface_thread_exit(errno);
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
@@ -147,7 +146,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->lists=ifa->lists;
     if (ifa->direction == BOTH) {
         if ((newifa->next=ifdup(newifa)) == NULL) {
-            perror("Interface duplication failed");
+            logwarn("Interface duplication failed");
             free(newifa->q);
             free(newift);
             free(newifa);
@@ -180,7 +179,7 @@ iface_t *tcp_server(iface_t *ifa)
              close(afd);
      }
     }
-    iface_destroy(ifa,(void *)&errno);
+    iface_thread_exit(errno);
 }
 
 iface_t *init_tcp(iface_t *ifa)
@@ -197,8 +196,7 @@ iface_t *init_tcp(iface_t *ifa)
     host=port=NULL;
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
-        perror("Could not allocate memory");
-        exit(1);
+        logtermall(errno,"Could not allocate memory");
     }
 
     for(opt=ifa->options;opt;opt=opt->next) {
@@ -206,26 +204,22 @@ iface_t *init_tcp(iface_t *ifa)
             host=opt->val;
         else if (!strcasecmp(opt->var,"mode")) {
             if (strcasecmp(opt->val,"client") && strcasecmp(opt->val,"server")){
-                fprintf(stderr,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
-                exit(1);
+                logtermall(0,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
             }
             conntype=opt->val;
         } else if (!strcasecmp(opt->var,"port")) {
             port=opt->val;
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else  {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"unknown interface option %s\n",opt->var);
         }
     }
 
     if (*conntype == 'c' && !host) {
-        fprintf(stderr,"Must specify address for tcp client mode\n");
-        exit(1);
+        logtermall(0,"Must specify address for tcp client mode\n");
     }
 
     if (!port) {
@@ -242,8 +236,7 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_socktype=SOCK_STREAM;
 
     if (err=getaddrinfo(host,port,&hints,&aptr)) {
-        fprintf(stderr,"Lookup failed for host %s/service %s: %s\n",host,port,gai_strerror(err));
-        exit(1);
+        logtermall(errno,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
     }
 
     do {
@@ -261,15 +254,13 @@ iface_t *init_tcp(iface_t *ifa)
      } while (aptr = aptr->ai_next);
 
     if (aptr == NULL) {
-        fprintf(stderr,"Failed to open tcp %s for %s/%s\n",(*conntype == 's')?"server":"connection",host,port);
-        exit(1);
+        logtermall(errno,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
     }
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
         if ((ifa->q =init_q(DEFTCPQSIZE)) == NULL) {
-            perror("Interface duplication failed");
-            exit(1);
+            logtermall(errno,"Interface duplication failed");
         }
     }
 
@@ -280,8 +271,7 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->write=write_tcp;
         if (ifa->direction == BOTH) {
             if ((ifa->next=ifdup(ifa)) == NULL) {
-                perror("Interface duplication failed");
-                exit(1);
+                logtermall(errno,"Interface duplication failed");
             }
             ifa->direction=OUT;
             ifa->pair->direction=IN;

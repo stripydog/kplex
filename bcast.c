@@ -51,7 +51,7 @@ void *ifdup_bcast(void *ifb)
 
     /* Whole new socket so we can bind() it to a different address */
     if ((newif->fd = socket(AF_INET,SOCK_DGRAM,0)) < 0) {
-        perror("Could not create duplicate socket");
+        logwarn("Could not create duplicate socket: %s",strerror(errno));
         free(newif);
         return(NULL);
     }
@@ -89,7 +89,7 @@ iface_t * write_bcast(struct iface *ifa)
             break;
         senblk_free(sptr,ifa->q);
     }
-    iface_destroy(ifa,&errno);
+    iface_thread_exit(errno);
 }
 
 iface_t *read_bcast(struct iface *ifa)
@@ -150,7 +150,7 @@ iface_t *read_bcast(struct iface *ifa)
                         }
                 }
         }
-        iface_destroy(ifa,(void *) &errno);
+        iface_thread_exit(errno);
 }
 
 struct iface *init_bcast(struct iface *ifa)
@@ -168,8 +168,7 @@ struct iface *init_bcast(struct iface *ifa)
     struct kopts *opt;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
-        perror("Could not allocate memory");
-        exit(1);
+        logtermall(errno,"Could not allocate memory");
     }
     memset(ifb,0,sizeof(struct if_bcast));
 
@@ -182,17 +181,14 @@ struct iface *init_bcast(struct iface *ifa)
             bname=opt->val;
         else if (!strcasecmp(opt->var,"port")) {
             if (((port=atoi(opt->val)) > 0) && (port > 2^(sizeof(short) -1))) {
-                fprintf(stderr,"port %s out of range\n",opt->val);
-                exit(1);
+                logtermall(0,"port %s out of range",opt->val);
             }
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                fprintf(stderr,"Invalid queue size specified: %s",opt->val);
-                exit(1);
+                logtermall(0,"Invalid queue size specified: %s",opt->val);
             }
         } else  {
-            fprintf(stderr,"unknown interface option %s\n",opt->var);
-            exit(1);
+            logtermall(0,"Unknown interface option %s",opt->var);
         }
     }
 
@@ -207,8 +203,7 @@ struct iface *init_bcast(struct iface *ifa)
 
     if (ifname == NULL) {
         if (ifa->direction != IN) {
-            fprintf(stderr,"Must specify interface for outgoing broadcasts\n");
-            exit (1);
+            logtermall(0,"Must specify interface for outgoing broadcasts");
         }
         if (bname)
             ifb->laddr.sin_addr.s_addr = baddr.s_addr;
@@ -217,8 +212,7 @@ struct iface *init_bcast(struct iface *ifa)
     } else {
         if (ifap == NULL)
             if (getifaddrs(&ifap) < 0) {
-                perror("Error getting interface info");
-                exit(1);
+                logtermall(errno,"Error getting interface info");
         }
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
             if ((!strcmp(ifname,ifp->ifa_name)) &&
@@ -228,8 +222,7 @@ struct iface *init_bcast(struct iface *ifa)
                 break;
         }
         if (!ifp) {
-            fprintf(stderr,"No IPv4 interface %s\n",ifname);
-            exit(1);
+            logtermall(0,"No IPv4 interface %s",ifname);
         }
         ifb->addr.sin_addr.s_addr = bname?baddr.s_addr:((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr;
         ifb->laddr.sin_addr.s_addr=((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
@@ -240,18 +233,16 @@ struct iface *init_bcast(struct iface *ifa)
         ifb->laddr.sin_port=htons(port);
 
     if ((ifb->fd=socket(AF_INET,SOCK_DGRAM,0)) < 0) {
-           perror("Could not create UDP socket");
-           exit (1);
+           logtermall(errno,"Could not create UDP socket");
      }
 
      if ((ifa->direction != IN) &&
         (setsockopt(ifb->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0)) {
-        perror("Setsockopt failed");
-        exit(1);
+        logtermall(errno,"Setsockopt failed");
     }
 
     if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
-        perror("setsockopt failed\n");
+        logwarn("setsockopt failed: %s",strerror(errno));
     }
 
     if (ifp)
@@ -260,8 +251,7 @@ struct iface *init_bcast(struct iface *ifa)
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
 
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-        perror("Bind failed");
-        exit(1);
+        logtermall(errno,"Bind failed");
     }
 
     if (ifa->direction != IN) {
@@ -269,8 +259,7 @@ struct iface *init_bcast(struct iface *ifa)
            need to ignore */
         if ((newig = (struct ignore_addr *) malloc(sizeof(struct ignore_addr)))
                 == NULL) {
-            perror("Could not allocate memory");
-            exit(1);
+            logtermall(errno,"Could not allocate memory");
         }
         newig->iaddr.sin_family = AF_INET;
         /* This is the *local* address and the *outgoing* port */
@@ -294,8 +283,7 @@ struct iface *init_bcast(struct iface *ifa)
 
         /* write queue initialization */
         if ((ifa->q = init_q(qsize)) == NULL) {
-            perror("Could not create queue\n");
-            exit(1);
+            logtermall(errno,"Could not create queue");
         }
     }
 
@@ -305,8 +293,7 @@ struct iface *init_bcast(struct iface *ifa)
     ifa->info = (void *) ifb;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            perror("Interface duplication failed");
-            exit(1);
+            logtermall(0,"Interface duplication failed");
         }
 
         ifa->direction=OUT;
@@ -315,15 +302,14 @@ struct iface *init_bcast(struct iface *ifa)
         ifb->laddr.sin_addr.s_addr=bname?baddr.s_addr:INADDR_ANY;
         ifb->laddr.sin_port=ifb->addr.sin_port;
         if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
-            perror("setsockopt failed 2\n");
+            logwarn("setsockopt failed: %s",strerror(errno));
         }
         /* As before, this may be system / privs dependent so let's not stress
          * if it doesn't work */
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
 
         if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-            perror("Duplicate Bind failed");
-            exit(1);
+            logtermall(errno,"Duplicate Bind failed");
         }
 
     }
