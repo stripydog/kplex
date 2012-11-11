@@ -245,11 +245,12 @@ struct iface *init_bcast(struct iface *ifa)
         logwarn("setsockopt failed: %s",strerror(errno));
     }
 
+#ifdef linux
     if (ifp)
         /* This won't work without root priviledges and may be system dependent
          * so let's silently ignore if it doesn't work */
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
-
+#endif
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
         logtermall(errno,"Bind failed");
     }
@@ -304,9 +305,11 @@ struct iface *init_bcast(struct iface *ifa)
         if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
             logwarn("setsockopt failed: %s",strerror(errno));
         }
+#ifdef linux
         /* As before, this may be system / privs dependent so let's not stress
          * if it doesn't work */
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
+#endif
 
         if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
             logtermall(errno,"Duplicate Bind failed");

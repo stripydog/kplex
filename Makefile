@@ -1,4 +1,8 @@
+OS=$(shell uname -s)
+ifeq ($(OS),Linux)
 LFLAGS=-pthread -lutil
+endif
+
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o
 
 kplex: $(objects)

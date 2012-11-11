@@ -189,7 +189,7 @@ iface_t *init_tcp(iface_t *ifa)
     struct addrinfo hints,*aptr;
     struct servent *svent;
     int tport,err,on=1;
-    char *conntype;
+    char *conntype = "c";
     size_t qsize=DEFTCPQSIZE;
     struct kopts *opt;
 

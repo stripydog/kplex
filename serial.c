@@ -21,8 +21,12 @@
 #include "kplex.h"
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <pty.h>
 #include <limits.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
+#include <pty.h>
+#endif
 
 #define DEFSERIALQSIZE 128
 
@@ -398,7 +402,7 @@ struct iface *init_pty (struct iface *ifa)
             }
         } else
 	/* No device name was given: Just print the pty name */
-            printf("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
+            loginfo("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
     } else {
 	/* Slave mode: This is no different from a serial line */
         if (!devname) {

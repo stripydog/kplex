@@ -21,6 +21,23 @@ void initlog(int where)
         openlog(IDENT,LOG_NOWAIT,facility);
 }
 
+loginfo(char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap,fmt);
+
+    if (facility >= 0)
+        vsyslog(LOG_INFO,fmt,ap);
+    else {
+        vfprintf(stderr,fmt,ap);
+        fputc('\n',stderr);
+    }
+    va_end(ap);
+    return;
+}
+
+
 void logwarn(char *fmt, ...)
 {
     va_list ap;
