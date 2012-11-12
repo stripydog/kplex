@@ -6,7 +6,7 @@ the file COPYING in this directory.
 
 This software almost certainly contains bugs and should not be relied on as
 part of a safety critical system, ie as a sole source of marine navigational
-information
+information.
 
 Installation
 ------------
@@ -14,6 +14,13 @@ Installation
 You've got this far so you've unpacked it.  So "make" should be the obvious
 next step.  There's only one executable ("kplex") so you can move it wherever
 you like without some install command doing it for you.
+
+If you want to have kplex start on boot, kplex.init is an example init script
+for debian-derived systems. It expects kplex to be installed in /usr/local/sbin
+and a configuration script in /usr/local/etc/kplex.conf. Change these as
+necessary, install by copying kplex.init to /etc/init.d/kplex and run:
+update-rc.d kplex defaults to create symlinks in the appropriate rc.d
+directories.
 
 Invocation:
 -----------
