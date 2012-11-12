@@ -18,6 +18,7 @@
 #include "kplex.h"
 #include <netdb.h>
 #include <ifaddrs.h>
+#include <net/if.h>
 
 #define DEFBCASTQSIZE 64
 
@@ -166,6 +167,7 @@ struct iface *init_bcast(struct iface *ifa)
     struct ignore_addr **igpp,*newig;
     size_t qsize = DEFBCASTQSIZE;
     struct kopts *opt;
+    struct ifreq ifr;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
         logtermall(errno,"Could not allocate memory");
@@ -249,7 +251,8 @@ struct iface *init_bcast(struct iface *ifa)
     if (ifp)
         /* This won't work without root priviledges and may be system dependent
          * so let's silently ignore if it doesn't work */
-        setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
+        strncpy(ifr.ifr_ifrn.ifrn_name,ifp->ifa_name,IFNAMSIZ);
+        setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
 #endif
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
         logtermall(errno,"Bind failed");
@@ -308,7 +311,7 @@ struct iface *init_bcast(struct iface *ifa)
 #ifdef linux
         /* As before, this may be system / privs dependent so let's not stress
          * if it doesn't work */
-        setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,ifp->ifa_name,strlen(ifp->ifa_name));
+        setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
 #endif
 
         if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {

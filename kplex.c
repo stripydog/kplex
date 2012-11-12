@@ -28,7 +28,7 @@ int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
  * more gently giving them the opportunity to transmit buffered data */
 void terminate (int sig)
 {
-    iface_thread_exit(sig);
+    pthread_exit((void *)&sig);
 }
 
 /*  Signal handler for externally generated termination signals: Current
@@ -39,7 +39,11 @@ void killemall (int sig)
 
     listp = (struct iolists *) pthread_getspecific(ifkey);
     timetodie++;
+
+    /* io_mutex is declared as recursive, so we can do this here */
+    pthread_mutex_lock(&listp->io_mutex);
     pthread_cond_signal(&listp->dead_cond);
+    pthread_mutex_unlock(&listp->io_mutex);
 }
 
 /* functions */
@@ -51,6 +55,12 @@ void killemall (int sig)
  */
 void iface_thread_exit(int ret)
 {
+    sigset_t set;
+
+    sigemptyset(&set);
+    sigaddset(&set,SIGUSR1);
+    pthread_sigmask(SIG_BLOCK,&set,NULL);
+
     pthread_exit((void *)&ret);
 }
 
@@ -304,14 +314,6 @@ void start_interface(void *ptr)
         ifa->next=NULL;
     (*lptr)=ifa;
 
-    if (ifa->direction==BOTH) {
-        if (ifa->lists->inputs)
-            ifa->next=ifa->lists->inputs;
-        else
-            ifa->next=NULL;
-        ifa->lists->inputs=ifa;
-    }
-
     if (ifa->lists->initialized == NULL)
         pthread_cond_signal(&ifa->lists->init_cond);
     pthread_mutex_unlock(&ifa->lists->io_mutex);
@@ -370,26 +372,21 @@ int unlink_interface(iface_t *ifa)
         tptr->next = ifa->next;
     }
 
-    /* Unlink from both lists for BOTH interfaces */
-    if (ifa->direction==BOTH) {
-        if (ifa->lists->inputs == ifa)
-            ifa->lists->inputs=ifa->next;
-        else {
-            for (tptr=ifa->lists->inputs;tptr->next != ifa;tptr=tptr->next);
-            tptr->next = ifa->next;
-        } 
-    }
-            
     if ((ifa->direction == OUT) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
         free(ifa->q);
     } else {
         if (!ifa->lists->inputs) {
-        pthread_mutex_lock(&ifa->q->q_mutex);
-            ifa->q->active=0;
-            pthread_cond_broadcast(&ifa->q->freshmeat);
-        pthread_mutex_unlock(&ifa->q->q_mutex);
+            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
+                if (tptr->direction == BOTH)
+                    break;
+            if (tptr == NULL) {
+                pthread_mutex_lock(&ifa->q->q_mutex);
+                ifa->q->active=0;
+                pthread_cond_broadcast(&ifa->q->freshmeat);
+                pthread_mutex_unlock(&ifa->q->q_mutex);
+            }
         }
     }
     ifa->cleanup(ifa);
@@ -402,9 +399,10 @@ int unlink_interface(iface_t *ifa)
             pthread_cond_broadcast(&ifa->pair->q->freshmeat);
             pthread_mutex_unlock(&ifa->pair->q->q_mutex);
         } else {
-            ifa->pair->direction = NONE;
             if (ifa->pair->tid)
                 pthread_kill(ifa->pair->tid,SIGUSR1);
+            else
+                ifa->pair->direction = NONE;
         }
     }
 
@@ -545,7 +543,7 @@ main(int argc, char ** argv)
     void *ret;
     sigset_t set,saved;
     struct iolists lists = {
-        .io_mutex = PTHREAD_MUTEX_INITIALIZER,
+        /* initialize io_mutex separately below */
         .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
         .init_cond = PTHREAD_COND_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
@@ -555,6 +553,12 @@ main(int argc, char ** argv)
     .inputs = NULL,
     .dead = NULL
     };
+    pthread_mutexattr_t mattr;
+
+    /* io_mutex is 
+    pthread_mutexattr_init(&mattr);
+    pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&matt,&lists.io_mutex);
 
     /* command line argument processing */
     while ((opt=getopt(argc,argv,"bl:q:f:")) != -1) {
@@ -764,6 +768,10 @@ main(int argc, char ** argv)
             timetodie=0;
             for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
                 pthread_kill(ifptr->tid,SIGUSR1);
+            }
+            for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
+                if (ifptr->direction == BOTH)
+                    pthread_kill(ifptr->tid,SIGUSR1);
             }
         }
         for (ifptr=lists.dead;ifptr;ifptr=lists.dead) {
