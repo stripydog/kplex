@@ -49,6 +49,12 @@ iface_t *write_file(iface_t *ifa)
         if ((sptr = next_senblk(ifa->q)) == NULL) {
 		    break;
         }
+
+        if (senfilter(sptr,ifa->ofilter)) {
+            senblk_free(sptr,ifa->q);
+            continue;
+        }
+            
         sptr->data[sptr->len-2] = '\n';
         sptr->data[sptr->len-1] = '\0';
         if (fputs(sptr->data,fp) == EOF)
@@ -84,6 +90,10 @@ iface_t *read_file(iface_t *ifa)
         sblk.data[len-1]='\r';
         sblk.data[len]='\n';
         sblk.len=len+1;
+        if (ifa->checksum && checkcksum(&sblk))
+            continue;
+        if (senfilter(&sblk,ifa->ifilter))
+            continue;
         push_senblk(&sblk,ifa->q);
     }
     iface_thread_exit(errno);

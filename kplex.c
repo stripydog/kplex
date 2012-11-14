@@ -47,6 +47,75 @@ void killemall (int sig)
 }
 
 /* functions */
+
+/*
+ * Check an NMEA 0183 checksum
+ * Args: pointer to struct senblk
+ * Returns: 0 if checksum matches checksum field, -1 otherwise
+ *
+ */
+int checkcksum (senblk_t *sptr)
+{
+    int cksm=0;
+    int rcvdcksum=0,i,end;
+    char *ptr;
+
+    for(i=0,end=sptr->len-5,ptr=sptr->data+1;*ptr != '*'; ptr++,i++)
+        if (i == end)
+            return(-1);
+        else
+            cksm ^= *ptr;
+
+    for (i=0,++ptr;i<2;i++,ptr++) {
+        if (*ptr>47 && *ptr<58)
+            rcvdcksum+=*ptr-48;
+        else if (*ptr>64 && *ptr<71)
+             rcvdcksum+=*ptr-55;
+        else if (*ptr>96 && *ptr<103)
+            rcvdcksum+=*ptr-87;
+        if (!i)
+            rcvdcksum<<=4;
+    }
+
+    if (cksm == rcvdcksum)
+        return (0);
+    else
+        return(1);
+}
+
+/*
+ * Perform filtering on sentences
+ * Args: senblk to be filtered, pointer to filter
+ * Returns: 0 if contents of senblk passes filter, -1 otherwise
+ */
+int senfilter(senblk_t *sptr, sfilter_t *filter)
+{
+    sf_rule_t *fptr;
+    char *cptr;
+    int i;
+
+    /* We shouldn't actually be filtering any NULL packets, but check anyway */
+    if (sptr == NULL || filter == NULL)
+        return(0);
+
+    /* inputs should have ensured all sentences ended with \r\n so if we check
+     * for \r here, we only have to check for \r in the for loops, not \n too */
+    if (*sptr->data == '\r')
+        return(1);
+
+    for (fptr=filter->rules;fptr;fptr=fptr->next) {
+        for (i=0,cptr=sptr->data+1;i<5 && *cptr != '\r';i++,cptr++)
+            if(fptr->match[i] && fptr->match[i] != *cptr)
+                break;
+        if (i==5)
+            if (fptr->info.type)
+                return(0);
+            else
+                return(1);
+    }
+    return(0);
+}
+
 /*
  * Exit function used by interface handlers.  Interface objects are cleaned
  * up by the destructor funcitons of thread local storage
@@ -324,6 +393,40 @@ void start_interface(void *ptr)
         ifa->write(ifa);
 }
 
+void free_filter_rules (sf_rule_t *filter)
+{
+    sf_rule_t *tfptr;
+    
+    for (;filter;filter=tfptr) {
+        tfptr=filter->next;
+        free(filter);
+    }
+}
+
+/*
+ * Free a filter
+ * Args: pointer to filter to be freed
+ * Returns: Nothing
+ */
+void free_filter(sfilter_t *fptr)
+{
+    if (fptr == NULL)
+        return;
+
+    pthread_mutex_lock(&fptr->lock);
+    if (--fptr->refcount) {
+        pthread_mutex_unlock(&fptr->lock);
+        return;
+    }
+
+    if (fptr->rules)
+        if (fptr->type == FILTER) {
+            free_filter_rules(fptr->rules);
+        }
+
+    free(fptr);
+}
+
 /*
  * link an interface into the initialized list
  * Args: interface structure pointer
@@ -389,6 +492,10 @@ int unlink_interface(iface_t *ifa)
             }
         }
     }
+
+    free_filter(ifa->ifilter);
+    free_filter(ifa->ofilter);
+
     ifa->cleanup(ifa);
     free(ifa->info);
     if (ifa->pair) {
@@ -422,6 +529,22 @@ int unlink_interface(iface_t *ifa)
 }
 
 /*
+ * add a filter to an interface
+ * Args: pointer to filter to be added
+ * Returns: pointer to filter to be added
+ */
+sfilter_t *addfilter(sfilter_t *filter)
+{
+    if (!filter)
+        return (NULL);
+
+    pthread_mutex_lock(&filter->lock);
+    ++filter->refcount;
+    pthread_mutex_unlock(&filter->lock);
+    return(filter);
+}
+
+/*
  * Duplicate an interface
  * Used when creating IN/OUT pair for bidirectional communication
  * Args: pointer to interface to be duplicated
@@ -450,6 +573,9 @@ iface_t *ifdup (iface_t *ifa)
     newif->write=ifa->write;
     newif->cleanup=ifa->cleanup;
     newif->options=NULL;
+    newif->ifilter=addfilter(ifa->ifilter);
+    newif->ofilter=addfilter(ifa->ofilter);
+    newif->checksum=ifa->checksum;
     return(newif);
 }
 
@@ -540,6 +666,7 @@ main(int argc, char ** argv)
     int qsize=0;
     int background=0;
     int logto=LOG_DAEMON;
+    int dochecksum=0;
     void *ret;
     sigset_t set,saved;
     struct iolists lists = {
@@ -606,7 +733,6 @@ main(int argc, char ** argv)
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
         e_info = get_default_global();
-
     /* queue size is taken from (in order of preference), command line arg, 
      * config file option in [global] section, default */
    if (e_info->options) {
@@ -621,6 +747,8 @@ main(int argc, char ** argv)
                 if (!background) {
                     if (!strcmp(option->val,"background"))
                         background++;
+                    else if (!strcmp(option->val,"foreground"))
+                        background=0;
                     else
                         fprintf(stderr,"Warning: unrecognized mode \'%s\' specified in config file\n",option->val);
                 }
@@ -638,6 +766,9 @@ main(int argc, char ** argv)
         perror("failed to initiate queue");
         exit(1);
     }
+
+    if (e_info->checksum >= 0)
+        dochecksum=e_info->checksum;
 
     e_info->lists = &lists;
     lists.engine=e_info;
@@ -707,6 +838,8 @@ main(int argc, char ** argv)
             if (ifptr->direction != OUT)
                 ifptr->q=e_info->q;
 
+            if (ifptr->checksum <0)
+                ifptr->checksum = dochecksum;
             ifptr->lists = &lists;
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;

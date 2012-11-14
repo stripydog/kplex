@@ -86,6 +86,12 @@ iface_t * write_bcast(struct iface *ifa)
     for (;;) {
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
+
+        if (senfilter(sptr,ifa->ofilter)) {
+            senblk_free(sptr,ifa->q);
+            continue;
+        }
+
         if ((n=sendto(ifb->fd,sptr->data,sptr->len,0,(struct sockaddr *)&ifb->addr,sizeof(struct sockaddr))) < 0)
             break;
         senblk_free(sptr,ifa->q);
@@ -110,48 +116,50 @@ iface_t *read_bcast(struct iface *ifa)
 
     while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
                     > 0) {
-                /* Probably superfluous check that we got the right size
-                 * structure back */
-                if (sz != (socklen_t) sizeof(src)) {
-                    sz = (socklen_t) sizeof(src);
-                    continue;
-                }
-
-                /* Compare the source address to the list of interfaces we're
-                 * ignoringing */
-                for (igp=ignore;igp;igp=igp->next)
-                    if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
-                        break;
-                /* If igp points to anything, we broke out of the above loop
-                 * on a match. Drop the packet and carry on */
-                if (igp)
-                    continue;
-
-                for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-                        if (count < SENMAX) {
-                                ++count;
-                                *senptr++=*bptr;
-                        } else
-                                ++overrun;
-
-                        if ((*bptr) == '\r') {
-                                ++cr;
-                        } else {
-                                if (*bptr == '\n' && cr) {
-                                        if (overrun) {
-                                                overrun=0;
-                                        } else {
-                                                sblk.len=count;
-                                                push_senblk(&sblk,ifa->q);
-                                        }
-                                        senptr=sblk.data;
-                                        count=0;
-                                }
-                                cr=0;
-                        }
-                }
+        /* Probably superfluous check that we got the right size
+         * structure back */
+        if (sz != (socklen_t) sizeof(src)) {
+            sz = (socklen_t) sizeof(src);
+            continue;
         }
-        iface_thread_exit(errno);
+
+        /* Compare the source address to the list of interfaces we're
+         * ignoringing */
+        for (igp=ignore;igp;igp=igp->next)
+            if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
+                break;
+        /* If igp points to anything, we broke out of the above loop
+         * on a match. Drop the packet and carry on */
+        if (igp)
+            continue;
+
+        for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
+            if (count < SENMAX) {
+                ++count;
+                *senptr++=*bptr;
+            } else
+                ++overrun;
+
+            if ((*bptr) == '\r') {
+                ++cr;
+            } else {
+                if (*bptr == '\n' && cr) {
+                    if (overrun) {
+                        overrun=0;
+                    } else {
+                        sblk.len=count;
+                        if (!(ifa->checksum && checkcksum(&sblk)) &&
+                                senfilter(&sblk,ifa->ifilter) == 0)
+                            push_senblk(&sblk,ifa->q);
+                    }
+                    senptr=sblk.data;
+                    count=0;
+                }
+                cr=0;
+            }
+        }
+    }
+    iface_thread_exit(errno);
 }
 
 struct iface *init_bcast(struct iface *ifa)
@@ -227,7 +235,10 @@ struct iface *init_bcast(struct iface *ifa)
             logtermall(0,"No IPv4 interface %s",ifname);
         }
         ifb->addr.sin_addr.s_addr = bname?baddr.s_addr:((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr;
-        ifb->laddr.sin_addr.s_addr=((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
+        if (ifa->direction == IN)
+            ifb->laddr.sin_addr.s_addr=ifb->addr.sin_addr.s_addr;
+        else
+            ifb->laddr.sin_addr.s_addr=((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
     }
 
     ifb->addr.sin_port=htons(port);

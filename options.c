@@ -10,6 +10,7 @@
 #include "kplex.h"
 
 #define ARGDELIM ','
+#define FILTERDELIM ':'
 
 static char configbuf[BUFSIZE];
 
@@ -214,6 +215,65 @@ struct kopts *add_option(char *var, char *val)
     return(vv);
 }
 
+sfilter_t *getfilter(char *fstring)
+{
+    char *sptr;
+    sfilter_t *head;
+    sf_rule_t *filter=NULL;
+    sf_rule_t *tfilter,**fptr;
+    int i,ok=1;
+    fptr=&filter;
+
+    for (;*fstring;fstring++) {
+        ok=0;
+        if ((tfilter=(sf_rule_t *)malloc(sizeof(sf_rule_t))) == NULL)
+            break;
+        tfilter->next=NULL;
+        if (*fstring == '+')
+            tfilter->info.type=1;
+        else if (*fstring == '-')
+            tfilter->info.type=0;
+        else
+            break;
+
+        if (!strncmp(++fstring,"all",3)) {
+            memset(tfilter->match,0,5);
+            fstring+=3;
+        } else {
+            for (sptr=tfilter->match,i=0;i<5;i++,fstring++) {
+                if (*fstring == '\0' || *fstring == FILTERDELIM)
+                    break;
+                *sptr++=(*fstring == '*')?0:*fstring;
+            }
+        }
+
+        if ((*fstring == FILTERDELIM) || (*fstring == '\0')) {
+            (*fptr)=tfilter;
+            fptr=&tfilter->next;
+            ok=1;
+            if (*fstring == '\0')
+                break;
+        } else
+            break;
+    }
+    if (ok) {
+        if ((head=(sfilter_t *)malloc(sizeof(sfilter_t))) == NULL)
+            free_filter_rules(filter);
+        else {
+            head->type=FILTER;
+            pthread_mutex_init(&head->lock,NULL);
+            head->refcount=0;
+            head->rules=NULL;
+        }
+        return(head);
+    }
+
+    if (tfilter)
+        free(tfilter);
+    free_filter_rules(filter);
+    return(NULL);
+}
+        
 int add_common_opt(char *var, char *val,iface_t *ifp)
 {
     if (!strcasecmp(var,"direction")) {
@@ -224,6 +284,17 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
         else if (!strcasecmp(val,"both"))
             ifp->direction = BOTH;
         else return(-2);
+    } else if (!strcmp(var,"ifilter")) {
+        ifp->ifilter=getfilter(val);
+    } else if (!strcmp(var,"ofilter")) {
+        ifp->ofilter=getfilter(val); 
+    } else if (!strcmp(var,"checksum")) {
+        if (!strcasecmp(val,"yes")) {
+            ifp->checksum=1;
+        } else if (!strcasecmp(val,"no")) {
+            ifp->checksum=0;
+        } else
+            return(-2);
     } else
         return(1);
 
@@ -255,7 +326,10 @@ iface_t *get_config(FILE *fp, unsigned int *line)
     }
     memset((void *) ifp,0,sizeof(iface_t));
 
-    ifp->direction = NONE;
+    ifp->direction = BOTH;
+    ifp->ifilter=NULL;
+    ifp->ofilter=NULL;
+    ifp->checksum=-1;
 
     for(opt = &ifp->options;next_config(fp,line,&var,&val) == 0;) {
         if (!var)
@@ -316,10 +390,6 @@ iface_t *parse_file(char *fname)
             if (ifpp == &list)
                 ifpp=&list->next;
         } else {
-            if (ifp->direction == NONE){
-                fprintf(stderr,"Must specify direction (in/out) for interface\n");
-                lineerror(line);
-            }
             (*ifpp)=ifp;
             ifpp=&ifp->next;
         }
@@ -343,7 +413,7 @@ iface_t *parse_arg(char *arg)
 
     memset((void *) ifp,0,sizeof(iface_t));
 
-    ifp->direction = NONE;
+    ifp->direction = BOTH;
 
     for(ptr=arg;*ptr && *ptr != ':';ptr++);
     if (!*ptr) {
@@ -396,9 +466,7 @@ iface_t *parse_arg(char *arg)
             val=NULL;
         }
     }
-    if (ifp->direction == NONE)
-        fprintf(stderr,"Interface direction (in/out/both) not specified\n");
-    else if (done)
+    if (done)
         return(ifp);
 
     free_options(ifp->options);

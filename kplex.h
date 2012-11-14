@@ -39,6 +39,11 @@ enum itype {
     END
 };
 
+enum filtertype {
+    FILTER,
+    FAILOVER
+};
+
 enum iotype {
     NONE,
 	IN,
@@ -83,6 +88,32 @@ struct kopts {
     struct kopts *next;
 };
 
+struct srclist {
+    void *  src;
+    unsigned int    failtime;
+    struct srclist *next;
+};
+
+struct sfilter_rule {
+    union { 
+        char type;
+        struct srclist *source;
+    } info;
+    char match[5];
+    struct sfilter_rule *next;
+};
+
+typedef struct sfilter_rule sf_rule_t;
+
+struct sfilter {
+    enum filtertype type;
+    pthread_mutex_t lock;
+    unsigned int refcount;
+    sf_rule_t *rules;
+};
+
+typedef struct sfilter sfilter_t;
+
 struct iface {
 	pthread_t tid;
     struct iface *pair;
@@ -93,6 +124,9 @@ struct iface {
 	ioqueue_t *q;
 	struct iface *next;
 	struct iolists *lists;
+    int checksum;
+    sfilter_t *ifilter;
+    sfilter_t *ofilter;
 	void (*cleanup)(struct iface *);
 	struct iface *(*read)(struct iface *);
 	struct iface *(*write)(struct iface *);
@@ -141,5 +175,6 @@ void logterm(int,char *,...);
 void logtermall(int,char *,...);
 void logwarn(char *,...);
 void initlog(int);
+sfilter_t *addfilter(sfilter_t *);
 
 extern struct iftypedef iftypes[];

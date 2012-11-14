@@ -83,7 +83,9 @@ struct iface * read_tcp(struct iface *ifa)
 						overrun=0;
 					} else {
 						sblk.len=count;
-						push_senblk(&sblk,ifa->q);
+                        if (!(ifa->checksum && checkcksum(&sblk)) &&
+                                senfilter(&sblk,ifa->ifilter) == 0)
+                            push_senblk(&sblk,ifa->q);
 					}
 					senptr=sblk.data;
 					count=0;
@@ -109,6 +111,12 @@ struct iface * write_tcp(struct iface *ifa)
 	for(;;) {
 		if ((sptr = next_senblk(ifa->q)) == NULL)
 			break;
+
+        if (senfilter(sptr,ifa->ofilter)) {
+            senblk_free(sptr,ifa->q);
+            continue;
+        }
+
         if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0)
 		    break;
 		senblk_free(sptr,ifa->q);
@@ -144,6 +152,9 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->write=write_tcp;
     newifa->read=read_tcp;
     newifa->lists=ifa->lists;
+    newifa->ifilter=addfilter(ifa->ifilter);
+    newifa->ofilter=addfilter(ifa->ifilter);
+    newifa->checksum=ifa->checksum;
     if (ifa->direction == BOTH) {
         if ((newifa->next=ifdup(newifa)) == NULL) {
             logwarn("Interface duplication failed");

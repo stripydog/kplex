@@ -1,5 +1,5 @@
 kplex: A multiplexer for various nmea 0183 interfaces
-(c) Keith Young 2012
+Copyright Keith Young 2012 <stripydog7@gmail.com>
 Blurb:
 Details of the GPLv3 under which this software is distributed can be found in
 the file COPYING in this directory.
@@ -25,11 +25,22 @@ directories.
 Invocation:
 -----------
 
-kplex [-b] [-l <facility>] [-q <queue length>] [-f filename] <interface> <interface> [<interface> ...]
+kplex [-b] [-c] [-l <facility>] [-q <queue length>] [-f filename] <interface> <interface> [<interface> ...]
 
 Where
 "-b" tells kplex to run as a daemon after initial argument parsing and set up.
-Why not "-d"?  Well at some stage I'm going to add more debugging options.
+This may also be specified in the configuration file's global section as:
+mode=background
+Why not "-d"?  Well at some stage kplex will have more debugging options...
+
+"-c" tells kplex to checksum all incoming sentences and drop any that don't
+match the sentence checksum.  The default is not to do this (this may change in
+future releases) to save on a little processor overhead as it is assumed that
+end consumer applications will perform this check themselves on received data.
+Checksumming can be controlled on a per-interface basis using the "checksum"
+option. Specifying "-c" is equivalent to specifying:
+checksum=yes
+in the global section of the configuration file.
 
 <facility> is the log facility to use for warning and error messages.  kplex
 prints error messages to standard error (ie normally the terminal) when run
@@ -57,14 +68,21 @@ where:
         "pty": serial nmea data over a pseudo terminal
     <option> is one or more options of the form <var>=<val>. Some options are
         not optional. Options applicable to all interface types are:
-        "direction":  Must be specified. May normally be one of "in" specifying
-            an input, "out" specifying an output, or "both" specifying a bi-
-            directional interface. Not all directions are applicable to all
-            interface types.
+        "direction":  May normally be one of "in" specifying an input, "out"
+            specifying an output, or "both" specifying a bi-directional
+            interface. Not all directions are applicable to all interface types.
+            The default is "both" if an interface type permits bi-directional
+            commnuication. It is more efficient to specify "in" or "out" if that
+            is all an interface needs to do.
         "qsize": Size of the interface's output queue. Not used for input only
             interfaces.  Defaults should be fine. This should only need to be
             increased from defalut in the case of a bursty high-speed input
             feeding a slow ouput.
+        "checksum": May be "yes" to enable checksumming of incoming sentences on
+            an interface or "no" to disable it. This option overrides the global
+            checksum option.
+        "ifilter": Specifies an input filter (see below)
+        "ofilter": Specifies an output filter (see below)
 
 Interface Types:
 ----------------
@@ -269,6 +287,42 @@ This creates the /home/fred/.opencpn/ais, which opencpn will use for its AIS
 input, as a symlink to the slave of a pty which kplex opens at 38400 baud in
 addition to a tcp server.
 
+Filtering
+---------
+kplex allows you specify two types of filter: Input and Output
+Input Filters dictate what sentences an input interface forwards
+Output filters dictate which sentences get passed out of an output interface.
+An input filter is used by input and bi-directional interfaces but ignored by
+output interfaces. Likewise, an output filter is used by output and
+bi-directional interfaces and ignored by input interfaces.
+Connections spawned by servers inherit their parent's filters, so connections to
+a tcp server will be filtered according to the server's filters.
+A filter consists of a series of filter rules. Each filter rule
+consists of either a "+" or "-" (to specify an "ALLOW" rule or a "DENY" rule)
+followed by a "match string" which is either the word "all" or 5
+characters.  Filter rules are separated by a colon (":" character).  Filter
+rules are applied in the order they are specified to a sentence being filtered.
+A filter rule wihch specifies the word "all" matches all sentences.  If a filter
+rule specifies a 5 character match stroing, these are compared with the 5
+character NMEA 0183 talker/message type of the sentence being filtered. The
+filter rule matches if each character is the same as the corresponding character
+in the sentence being filtered. A "*" in a filter matches any character.  Thus a
+filter rule specifying:
+GP***
+would match any sentences produced by a GPS talker (excluding any proprietary
+sentences not specifying talker as "GP".
+When a filter rule "matches" a sentence, it "fires". If the rule was an "allow"
+rule (ie prepended by a "+", the sentence is allowed.  If the rule was a "deny"
+rule (ie prepended by a "-"), the sentence is dropped.  If no rules are matched
+the sentence is allowed.  Thus a filter such as:
+ifilter=+GP**:+AI**:+SDDBT
+is pointless. It allows all sentences as it denies none. To *only* allow AIS,
+GPS and Depth below transducer sentences, you need to deny what is not
+explicitly allowed by adding "-all" to the end of the filter specification:
+ifilter=+GP**:+AI**:+SDDBT:-all
+Obviously order is important.  Putting "-all" at the beginning would simply deny
+all sentences.
+
 Stopping
 --------
 kplex closes down if it has no more outputs. If kplex has no more inputs,
@@ -326,6 +380,18 @@ qsize=<qsize>
     Where:
     <qsize> is the size (in sentences) of kplex's central multiplexing queue
     and corresponds to (but is overridden by) kplex's command line -q switch.
+mode=<mode>
+    Where:
+    <mode> is either "foreground" (the default) or "background", the latter
+    corresponding to kplex's "-b" command line switch telling kplex to run as a
+    daemon
+checksum=<checsum mode>
+    Where <checksum mode> is either "no" (the default) or "yes", equivalent to
+    the "-c" command line switch, telling kplex to checksum al lincoming
+    nmea sentences (except for interfaces whree per-interface configuration
+    overrides this)
+logto=<facility>
+    Where <facility> is the syslog facility to use for logging
 
 As an example, the first example from the "example usage" section above could
 be specified in a configuration file:
@@ -357,7 +423,6 @@ This is very early days but kplex has been constructed with expandability in
 mind.  Planned enhancements include:
 * Support for seatalk 1 to nmea translation using information from Thomas
   Knauf's excellent web site.
-* Support for filtering what is copied to which output
 * Support for failover of data sources (ie if no input of type X seen on
   interface A for N seconds, fail over to interface B)
 * Support for multicast. Not that anything else supports it yet

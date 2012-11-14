@@ -199,7 +199,9 @@ struct iface * read_serial(struct iface *ifa)
                     } else {
                     /* send the sentence on its way */
                         sblk.len=count;
-                        push_senblk(&sblk,ifa->q);
+                        if ((!(ifa->checksum && checkcksum(&sblk)) &&
+                                senfilter(&sblk,ifa->ifilter) == 0))
+                            push_senblk(&sblk,ifa->q);
                     }
                     /* Reset the sentence */
                     senptr=sblk.data;
@@ -231,6 +233,12 @@ struct iface * write_serial(struct iface *ifa)
          * down. Time to die */
         if ((senblk_p = next_senblk(ifa->q)) == NULL)
             break;
+
+        if (senfilter(senblk_p,ifa->ofilter)) {
+            senblk_free(senblk_p,ifa->q);
+            continue;
+        }
+
         ptr=senblk_p->data;
         while(senblk_p->len) {
             if ((n=write(fd,ptr,senblk_p->len)) < 0)
@@ -571,7 +579,9 @@ iface_t * read_seatalk(struct iface *ifa)
             }
         }
         if (st2nmea(buf,&sblk) == 0)
-            push_senblk(&sblk,ifa->q);
+            if (!((ifa->checksum && checkcksum(&sblk)) ||
+                    senfilter(&sblk,ifa->ifilter)))
+                push_senblk(&sblk,ifa->q);
     }
 out:
     iface_thread_exit(errno);
