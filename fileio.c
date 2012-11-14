@@ -123,10 +123,7 @@ iface_t *init_file (iface_t *ifa)
         }
     }
 
-    if (!fname) {
-        logtermall(0,"Must specify a filename for file interfaces\n");
-    }
-    if (!strcmp(fname,"-")) {
+    if (!fname || !strcmp(fname,"-")) {
         ifc->fp = (ifa->direction == IN)?stdin:stdout;
     } else {
         if (ifa->direction == BOTH) {

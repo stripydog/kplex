@@ -124,6 +124,7 @@ input and standard output.
             <file> is either the file name to read from or write to or "-".
                 In the latter case, standard input is used for inputs, standard
                 out for outputs, and standard in and standard out for "BOTH".
+                If not specified deafults to "-".
 
 "File" interfaces are slightly different from other interfaces in that
 sentences are terminated by <LF> rather than <CR><LF>. Because this is *nix
@@ -133,6 +134,8 @@ output to other interface types (i.e. serial, tcp, broadcast etc.).
 
 "BOTH" is not supported as an I/O direction for the "file" type except for
 standard in / standard out.
+
+If no "filename" option is given, standard in/out are used.
 
 TCP Interfaces
 --------------
@@ -159,7 +162,8 @@ The exact number will be system dependent but it will certainly be "enough".
     address=<address>
     port=<port>
         Where:
-            <mode> is either "server" or "client"
+            <mode> is either "server" or "client". If not specified, defaults to
+            "client".
             <address> is the server address to bind to for output interfaces
                 and the remote tcp server to connect to for inputs.  This can
                 be:

@@ -447,8 +447,11 @@ iface_t *parse_arg(char *arg)
             *ptr='\0';
             val=ptr+1;
         } else if (*ptr == ARGDELIM || *ptr == '\0') {
-            if (!val)
+            if (!val) {
+                if (ptr == var)
+                    done=1;
                 break;
+            }
             if (*ptr)
                 *ptr='\0';
             else

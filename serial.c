@@ -72,7 +72,8 @@ void cleanup_serial(iface_t *ifa)
 
     if (!ifa->pair) {
         if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
-            logwarn("Failed to restore serial line");
+            if (ifa->type != PTY || errno != EIO)
+                logwarn("Failed to restore serial line: %s",strerror(errno));
         }
     }
     close(ifs->fd);
