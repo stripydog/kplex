@@ -178,22 +178,23 @@ void link_src_to_rule (struct srclist **list, struct srclist *src)
     *list=src;
 }
 
-int isactive(sf_rule_t *rule,senblk_t *sptr)
+int isactive(sfilter_t *filter,senblk_t *sptr)
 {
     time_t now=time(NULL);
     unsigned int mask = (unsigned int) -1 ^ IDMINORMASK;
     unsigned int src;
     char *cptr,*mptr;
+    sf_rule_t *rule;
     struct srclist *rptr;
     time_t last;
     int i;
 
-    if (sptr == NULL)
+    if (filter == NULL || sptr == NULL)
         return(1);
 
     src = sptr->src & mask;
 
-    for(;rule;rule=rule->next) {
+    for(rule=filter->rules;rule;rule=rule->next) {
         for (i=0,cptr=sptr->data+1,mptr=rule->match;i<5;i++,cptr++,mptr++)
             if(*mptr && *cptr != *mptr)
                 break;
@@ -494,7 +495,7 @@ void *engine(void *info)
 
     for (;;) {
         sptr = next_senblk(eptr->q);
-        if (eptr->ofilter && isactive(eptr->ofilter->rules,sptr)) {
+        if (isactive(eptr->ofilter,sptr)) {
             pthread_mutex_lock(&eptr->lists->io_mutex);
             /* Traverse list of outputs and push a copy of senblk to each */
             for (optr=eptr->lists->outputs;optr;optr=optr->next) {
@@ -812,6 +813,9 @@ int name2id(sfilter_t *filter)
     sf_rule_t *rptr;
     struct srclist *sptr;
 
+    if (!filter)
+        return(0);
+
     for (rptr=filter->rules;rptr;rptr=rptr->next)
         for (sptr=rptr->info.source;sptr;sptr=sptr->next) {
             if (!(id=namelookup(sptr->src.name))) {
@@ -820,7 +824,9 @@ int name2id(sfilter_t *filter)
             }
             sptr->src.id=id;
         }
+    return(0);
 }
+
 main(int argc, char ** argv)
 {
     pthread_t tid;
