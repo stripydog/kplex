@@ -64,7 +64,7 @@ struct iface * read_tcp(struct iface *ifa)
 	int fd;
 
 	senptr=sblk.data;
-    sblk.src=ifa;
+    sblk.src=ifa->id;
 	fd=ift->fd;
 
 	while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
@@ -145,8 +145,11 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
             return(NULL);
     }
     newift->fd=fd;
+    newifa->id=ifa->id+fd&(2^IDMINORBITS-1);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
+    newifa->id=ifa->id;
+    newifa->name=NULL;
     newifa->info=newift;
     newifa->cleanup=cleanup_tcp;
     newifa->write=write_tcp;

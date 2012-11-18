@@ -71,7 +71,7 @@ iface_t *read_file(iface_t *ifa)
     int len;
     char *eptr;
 
-    sblk.src=ifa;
+    sblk.src=ifa->id;
     while (fgets(sblk.data,SENMAX,ifc->fp) == sblk.data) {
         if ((len = strlen(sblk.data)) == 0) {
             break;

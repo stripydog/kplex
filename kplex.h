@@ -24,6 +24,9 @@
 #define SENMAX 96
 #define DEFBCASTPORT 10110
 #define DEFTCPPORT "10110"
+#define IDMINORBITS 16
+#define IDMINORMASK ((1<<IDMINORBITS)-1)
+#define MAXINTERFACES 65535
 
 #define BUFSIZE 1024
 
@@ -53,7 +56,7 @@ enum iotype {
 
 struct senblk {
 	size_t len;
-    struct iface *src;
+    unsigned int src;
 	struct senblk *next;
 	char data[SENMAX];
 };
@@ -89,8 +92,12 @@ struct kopts {
 };
 
 struct srclist {
-    void *  src;
-    unsigned int    failtime;
+    union {
+    unsigned int  id;
+    char *        name;
+    } src;
+    time_t    failtime;
+    time_t lasttime;
     struct srclist *next;
 };
 
@@ -116,6 +123,8 @@ typedef struct sfilter sfilter_t;
 
 struct iface {
 	pthread_t tid;
+    unsigned int id;
+    char *name;
     struct iface *pair;
 	enum iotype direction;
 	enum itype type;
@@ -176,5 +185,8 @@ void logtermall(int,char *,...);
 void logwarn(char *,...);
 void initlog(int);
 sfilter_t *addfilter(sfilter_t *);
+unsigned int namelookup(char *);
+int insertname(char *, unsigned int);
+void freenames(void);
 
 extern struct iftypedef iftypes[];

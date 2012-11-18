@@ -172,7 +172,7 @@ struct iface * read_serial(struct iface *ifa)
     int fd;
 
     senptr=sblk.data;
-    sblk.src=ifa;
+    sblk.src=ifa->id;
     fd=ifs->fd;
 
     /* Read up to BUFSIZ data */
@@ -530,7 +530,7 @@ iface_t * read_seatalk(struct iface *ifa)
     unsigned char *cmd=buf,*attr=buf+1,*b=buf+2;
     senblk_t sblk;
 
-    sblk.src=ifa;
+    sblk.src=ifa->id;
     /* Here's what happens here. With PARMRK set, parity errors are signalled
      * by 0xff00 in the byte stream.  We have space parity set. A command bit
      * will will generate a parity error, so if we see 0xff followed by 0x00

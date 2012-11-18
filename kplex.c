@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <syslog.h>
+#include <sys/resource.h>
 
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
@@ -95,7 +96,7 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
     int i;
 
     /* We shouldn't actually be filtering any NULL packets, but check anyway */
-    if (sptr == NULL || filter == NULL)
+    if (sptr == NULL || filter == NULL || filter->rules == NULL)
         return(0);
 
     /* inputs should have ensured all sentences ended with \r\n so if we check
@@ -115,6 +116,179 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
     }
     return(0);
 }
+
+/*
+ * Free a failover rule and any attached source list
+ * Args: Pointer to rule structure
+ * Returns: Nothing
+ */
+void free_srclist(struct srclist *src)
+{
+    struct srclist *tsrc;
+
+    for (;src;src=tsrc) {
+        tsrc=src->next;
+        free(src);
+    }
+}
+
+/*
+ * Free a filter
+ * Args: pointer to filter to be freed
+ * Returns: Nothing
+ */
+void free_filter(sfilter_t *fptr)
+{
+    sf_rule_t *rptr,*trptr;
+
+    if (fptr == NULL)
+        return;
+
+    pthread_mutex_lock(&fptr->lock);
+    if (--fptr->refcount) {
+        pthread_mutex_unlock(&fptr->lock);
+        return;
+    }
+
+    if (fptr->rules)
+        for (rptr=fptr->rules;rptr;rptr=trptr) {
+            trptr=rptr->next;
+            if (fptr->type == FAILOVER)
+                free_srclist(rptr->info.source);
+            free(rptr);
+        }
+
+    free(fptr);
+}
+
+/*
+ * Add a failover source to a failover rule
+ * Args: address of head of the source list and new source item
+ * Returns: Nothing
+ * Side Effect: source item linked into source list according to failover time
+ */
+void link_src_to_rule (struct srclist **list, struct srclist *src)
+{
+    struct srclist *tptr;
+
+    for (;*list;list=&(*list)->next)
+        if ((*list)->failtime > src->failtime)
+            break;
+    src->next=(*list);
+    *list=src;
+}
+
+int isactive(sf_rule_t *rule,senblk_t *sptr)
+{
+    time_t now=time(NULL);
+    unsigned int mask = (unsigned int) -1 ^ IDMINORMASK;
+    unsigned int src;
+    char *cptr,*mptr;
+    struct srclist *rptr;
+    time_t last;
+    int i;
+
+    if (sptr == NULL)
+        return(1);
+
+    src = sptr->src & mask;
+
+    for(;rule;rule=rule->next) {
+        for (i=0,cptr=sptr->data+1,mptr=rule->match;i<5;i++,cptr++,mptr++)
+            if(*mptr && *cptr != *mptr)
+                break;
+        if (i == 5)
+            break;
+    }
+    if (!rule)
+        return(1);
+    for (last=0,rptr=rule->info.source;rptr;rptr=rptr->next) {
+        if (rptr->src.id == src) {
+            rptr->lasttime = now;
+            if (last+rptr->failtime < now)
+                return(1);
+            else
+                return(0);
+        }
+        if (rptr->lasttime > last)
+            last = rptr->lasttime;
+    }
+    return(0);
+}
+/*
+ *  Add a failover specification
+ *  Args: address of ofilter pointer and pointer to string containing failover
+ *  spec
+ *  Returns: 0 on success, -1 on error
+ *  Side effects: New Failover added to ofilter
+ */
+int addfailover(sfilter_t **head,char *spec)
+{
+    sf_rule_t *newrule,*tptr;
+    struct srclist *src;
+    char *cptr,*val;
+    int n,done;
+    time_t now;
+
+    if ((newrule=(sf_rule_t *)malloc(sizeof(sf_rule_t))) == NULL) {
+        return(-1);
+    }
+
+    for (errno=0,cptr=spec,n=0;n<5;spec++,n++,cptr++) {
+        if (!*cptr || *cptr== ':') {
+            free(newrule);
+            return(-1);
+        }
+        newrule->match[n] = (*cptr == '*')?0:*cptr;
+    }
+
+    if (*cptr++ != ':') {
+        free(newrule);
+        return(-1);
+    }
+    for (now=time(NULL),done=0;!done && *cptr;cptr++) {
+        if ((src=(struct srclist *)malloc(sizeof(struct srclist))) == NULL) {
+            free(newrule);
+            return(-1);
+        }
+        for(src->failtime=0;*cptr && *cptr >= '0' && *cptr <= '9';cptr++)
+            src->failtime=src->failtime*10+(*cptr - '0');
+
+        if (*cptr++ != ':')
+            break;
+
+        for(src->src.name=cptr;*cptr && *cptr != ':';)
+            cptr++;
+        if (*cptr)
+            *cptr='\0';
+        else
+            done++;
+
+        src->lasttime=now;
+        link_src_to_rule(&newrule->info.source,src);
+    }
+    if (done)
+        if (!*head) {
+            if ((*head)=(sfilter_t *)malloc(sizeof(sfilter_t))) {
+                (*head)->type=FAILOVER;
+                (*head)->refcount=1;
+                pthread_mutex_init(&(*head)->lock,NULL);
+                (*head)->rules=NULL;
+            }
+        }
+        if (*head) {
+            newrule->next=(*head)->rules;
+            (*head)->rules=newrule;
+            return(0);
+    }
+    if (src)
+        free(src);
+    if (newrule->info.source)
+        free_srclist(newrule->info.source);
+    free(newrule);
+    return(-1);
+}
+
 
 /*
  * Exit function used by interface handlers.  Interface objects are cleaned
@@ -320,14 +494,16 @@ void *engine(void *info)
 
     for (;;) {
         sptr = next_senblk(eptr->q);
-        pthread_mutex_lock(&eptr->lists->io_mutex);
-        /* Traverse list of outputs and push a copy of senblk to each */
-        for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-            if ((optr->direction == OUT) && ((!sptr) || (sptr->src != optr->pair))) {
-                push_senblk(sptr,optr->q);
+        if (eptr->ofilter && isactive(eptr->ofilter->rules,sptr)) {
+            pthread_mutex_lock(&eptr->lists->io_mutex);
+            /* Traverse list of outputs and push a copy of senblk to each */
+            for (optr=eptr->lists->outputs;optr;optr=optr->next) {
+                if ((optr->direction == OUT) && ((!sptr) || (sptr->src != optr->id))) {
+                    push_senblk(sptr,optr->q);
+                }
             }
+            pthread_mutex_unlock(&eptr->lists->io_mutex);
         }
-        pthread_mutex_unlock(&eptr->lists->io_mutex);
         if (sptr==NULL)
             /* Queue has been marked inactive */
             break;
@@ -337,7 +513,7 @@ void *engine(void *info)
 }
 
 /*
- * STart processing an interface and add it to an iolist, input or output, 
+ * Start processing an interface and add it to an iolist, input or output, 
  * depending on direction
  * Args: Pointer to interface structure (cast to void *)
  * Returns: Nothing
@@ -393,40 +569,6 @@ void start_interface(void *ptr)
         ifa->write(ifa);
 }
 
-void free_filter_rules (sf_rule_t *filter)
-{
-    sf_rule_t *tfptr;
-    
-    for (;filter;filter=tfptr) {
-        tfptr=filter->next;
-        free(filter);
-    }
-}
-
-/*
- * Free a filter
- * Args: pointer to filter to be freed
- * Returns: Nothing
- */
-void free_filter(sfilter_t *fptr)
-{
-    if (fptr == NULL)
-        return;
-
-    pthread_mutex_lock(&fptr->lock);
-    if (--fptr->refcount) {
-        pthread_mutex_unlock(&fptr->lock);
-        return;
-    }
-
-    if (fptr->rules)
-        if (fptr->type == FILTER) {
-            free_filter_rules(fptr->rules);
-        }
-
-    free(fptr);
-}
-
 /*
  * link an interface into the initialized list
  * Args: interface structure pointer
@@ -458,6 +600,7 @@ int unlink_interface(iface_t *ifa)
     iface_t *tptr;
 
     sigset_t set,saved;
+
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
@@ -511,8 +654,10 @@ int unlink_interface(iface_t *ifa)
             else
                 ifa->pair->direction = NONE;
         }
-    }
-
+    } else
+        if (ifa->name && !(ifa->id & IDMINORMASK)) {
+            free(ifa->name);
+       }
     /* Add to the dead list */
     if ((tptr=ifa->lists->dead) == NULL)
         ifa->lists->dead=ifa;
@@ -565,6 +710,8 @@ iface_t *ifdup (iface_t *ifa)
         newif->info = NULL;
 
     ifa->pair=newif;
+    newif->id=ifa->id;
+    newif->name=ifa->name;
     newif->pair=ifa;
     newif->next=NULL;
     newif->type=ifa->type;
@@ -653,6 +800,27 @@ int string2facility(char *fac)
         return(-1);
     return(facnum<<3);
 }
+
+/*
+ * Convert interface names to IDs
+ * Args: Pointer to engine output filter, pointer to initialized interface list
+ * Returns: -1 on failure, 0 on success
+ */
+int name2id(sfilter_t *filter)
+{
+    unsigned int id;
+    sf_rule_t *rptr;
+    struct srclist *sptr;
+
+    for (rptr=filter->rules;rptr;rptr=rptr->next)
+        for (sptr=rptr->info.source;sptr;sptr=sptr->next) {
+            if (!(id=namelookup(sptr->src.name))) {
+               logwarn("Unknown interface \'%s\' in failover rules",sptr->src.name);
+                return(-1);
+            }
+            sptr->src.id=id;
+        }
+}
 main(int argc, char ** argv)
 {
     pthread_t tid;
@@ -661,6 +829,7 @@ main(int argc, char ** argv)
     iface_t  *e_info;
     iface_t *ifptr,*ifptr2;
     iface_t **tiptr;
+    unsigned int i=1;
     int opt,err=0;
     struct kopts *option;
     int qsize=0;
@@ -681,14 +850,14 @@ main(int argc, char ** argv)
     .dead = NULL
     };
     pthread_mutexattr_t mattr;
+    struct rlimit lim;
 
-    /* io_mutex is 
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&matt,&lists.io_mutex);
+    pthread_mutex_init(&lists.io_mutex,&mattr);
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"bl:q:f:")) != -1) {
+    while ((opt=getopt(argc,argv,"bl:q:f:o:")) != -1) {
         switch (opt) {
             case 'b':
                 background++;
@@ -757,6 +926,11 @@ main(int argc, char ** argv)
                     fprintf(stderr,"Unknown log facility \'%s\' specified in config file\n",option->val);
                     exit(1);
                 }
+            } else if (!strcasecmp(option->var,"failover")) {
+                if (addfailover(&e_info->ofilter,option->val) != 0) {
+                    fprintf(stderr,"Failed to add failover %s\n",option->val);
+                    exit(1);
+                }
             } else {
                 fprintf(stderr,"Warning: Unrecognized option \'%s\' in config file\n",option->var);
             }
@@ -772,9 +946,6 @@ main(int argc, char ** argv)
 
     e_info->lists = &lists;
     lists.engine=e_info;
-
-    if (e_info->options)
-        free_options(e_info->options);
 
     for (tiptr=&e_info->next;optind < argc;optind++) {
         if (!(ifptr=parse_arg(argv[optind]))) {
@@ -816,14 +987,38 @@ main(int argc, char ** argv)
     /* log to stderr or syslog, as appropriate */
     initlog(background?logto:-1);
 
+    /* Lower max open files if necessary. We do this to ensure that ids for
+     * all connections can be represented in IDMINORBITS. Actually we only
+     * need to do that per server, so this is a bit of a hack and should be
+     * corrected
+     */
+    if (getrlimit(RLIMIT_NOFILE,&lim) < 0)
+            logterm(errno,"Couldn't get resource limits");
+    if (lim.rlim_cur > 1<<IDMINORBITS) {
+        logwarn("Lowering NOFILE from %u to %u",lim.rlim_cur,1<<IDMINORBITS);
+        lim.rlim_cur=1<<IDMINORBITS;
+        if(setrlimit(RLIMIT_NOFILE,&lim) < 0)
+            logterm(errno,"Could not set file descriptor limit");
+    }
+
     /* our list of "real" interfaces starts after the first which is the
      * dummy "interface" specifying the multiplexing engine
      * walk the list, initialising the interfaces.  Sometimes "BOTH" interfaces
      * are initialised to one IN and one OUT which then need to be linked back
      * into the list
      */
-    for (ifptr=e_info->next,tiptr=&lists.initialized;ifptr;ifptr=ifptr2) {
+    for (ifptr=e_info->next,tiptr=&lists.initialized,i=0;ifptr;ifptr=ifptr2) {
         ifptr2 = ifptr->next;
+
+        if (i == MAXINTERFACES)
+            logterm(0,"Too many interfaces");
+
+        ifptr->id=++i<<IDMINORBITS;
+        if (ifptr->name) {
+            if (insertname(ifptr->name,ifptr->id) < 0)
+                logterm(errno,"Failed to associate interface name and id");
+        }
+
         if ((ifptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
             logerr(0,"Failed to initialize Interface");
             timetodie++;
@@ -848,7 +1043,12 @@ main(int argc, char ** argv)
         }
     }
 
-        
+    if (name2id(e_info->ofilter))
+            logterm(errno,"Failed to translate interface names to IDs");
+
+    if (e_info->options)
+        free_options(e_info->options);
+
     /* Create the key for thread local storage: in this case for a pointer to
      * the interface each thread is handling
      */

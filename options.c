@@ -257,25 +257,28 @@ sfilter_t *getfilter(char *fstring)
             break;
     }
     if (ok) {
-        if ((head=(sfilter_t *)malloc(sizeof(sfilter_t))) == NULL)
-            free_filter_rules(filter);
-        else {
+        if ((head=(sfilter_t *)malloc(sizeof(sfilter_t))) != NULL) {
             head->type=FILTER;
             pthread_mutex_init(&head->lock,NULL);
             head->refcount=0;
             head->rules=NULL;
+            return(head);
         }
-        return(head);
     }
 
     if (tfilter)
         free(tfilter);
-    free_filter_rules(filter);
+    for(;filter;filter=tfilter) {
+        tfilter=filter->next;
+        free(filter);
+    }
     return(NULL);
 }
-        
+
 int add_common_opt(char *var, char *val,iface_t *ifp)
 {
+    char *ptr;
+
     if (!strcasecmp(var,"direction")) {
         if (!strcasecmp(val,"in"))
             ifp->direction = IN;
@@ -294,7 +297,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
         } else if (!strcasecmp(val,"no")) {
             ifp->checksum=0;
         } else
-            return(-2);
+            return(1);
+    } else if (!strcasecmp(var,"name")) {
+        if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
+            return(-1);
+        /* Normalize to lower case */
+        for (ptr=ifp->name;*val;)
+                *ptr++=tolower(*val++);
     } else
         return(1);
 
@@ -327,6 +336,7 @@ iface_t *get_config(FILE *fp, unsigned int *line)
     memset((void *) ifp,0,sizeof(iface_t));
 
     ifp->direction = BOTH;
+    ifp->name=NULL;
     ifp->ifilter=NULL;
     ifp->ofilter=NULL;
     ifp->checksum=-1;

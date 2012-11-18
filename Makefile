@@ -1,9 +1,10 @@
 OS=$(shell uname -s)
+CFLAGS= -g
 ifeq ($(OS),Linux)
 LFLAGS=-pthread -lutil
 endif
 
-objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o
+objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o
 
 kplex: $(objects)
 	cc -o kplex $(objects) $(LFLAGS)

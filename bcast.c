@@ -112,7 +112,7 @@ iface_t *read_bcast(struct iface *ifa)
     ifb=(struct if_bcast *) ifa->info;
 
     senptr=sblk.data;
-    sblk.src=ifa;
+    sblk.src=ifa->id;
 
     while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
                     > 0) {
