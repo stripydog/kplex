@@ -179,6 +179,7 @@ iface_t *parse_file(char *);
 iface_t *parse_arg(char *);
 iface_t *get_default_global(void);
 void free_options(struct kopts *);
+void free_filter(sfilter_t *);
 void logerr(int,char *,...);
 void logterm(int,char *,...);
 void logtermall(int,char *,...);

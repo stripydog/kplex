@@ -25,37 +25,21 @@ directories.
 Invocation:
 -----------
 
-kplex [-b] [-c] [-l <facility>] [-q <queue length>] [-f filename] <interface> <interface> [<interface> ...]
+kplex [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
 
 Where
-"-b" tells kplex to run as a daemon after initial argument parsing and set up.
-This may also be specified in the configuration file's global section as:
-mode=background
-Why not "-d"?  Well at some stage kplex will have more debugging options...
-
-"-c" tells kplex to checksum all incoming sentences and drop any that don't
-match the sentence checksum.  The default is not to do this (this may change in
-future releases) to save on a little processor overhead as it is assumed that
-end consumer applications will perform this check themselves on received data.
-Checksumming can be controlled on a per-interface basis using the "checksum"
-option. Specifying "-c" is equivalent to specifying:
-checksum=yes
-in the global section of the configuration file.
-
-<facility> is the log facility to use for warning and error messages.  kplex
-prints error messages to standard error (ie normally the terminal) when run
-without the "-b" flag. If -b is specified, kplex logs to syslog. <facility>
-should be specified as it would be syslog.conf (ie "daemon" rather than
-"LOG_DAEMON", "local7" rather than "LOG_LOCAL7").
-<queue length> is the number of items the main multiplexer engine buffers.
-Individual output interfaces have their own queues. You shouldn't need to
-tune this
-
 <filename> is the path of a configuration file to use where default options and
 interfaces are defined. If not specified, kplex will look for a configuration
 file in ~/.kplex.conf, then /etc/kplex.conf and if nothing is found will use
 only command line directives.  specifying filename as "-" disables looking
 for the default configuration files.
+
+<option> is an option specifier for the form:
+    <varable>=<value>
+These correspond to configuration options which may otherwise be specified in
+"global" section of the configuration file (discussed in the "Configuration
+File" secction below).  Command line configuration options always override
+options given in the configuration file.
 
 <interface> is an interface specifier which takes the form:
 <interface_type>:<option>[,<option> ...]
@@ -83,6 +67,12 @@ where:
             checksum option.
         "ifilter": Specifies an input filter (see below)
         "ofilter": Specifies an output filter (see below)
+        "name": Attaches a symbolic name to an interface.  This is only required
+        if you intend to use the interface for failover (see below).  The value
+        associated with "name" can be any string consisting of letters and or
+        numbers which is not used as the "name" for another interface.  Names
+        are NOT case sensitive, so do not call one interface "Serial" and
+        another "serial".
 
 Interface Types:
 ----------------
@@ -326,6 +316,52 @@ explicitly allowed by adding "-all" to the end of the filter specification:
 ifilter=+GP**:+AI**:+SDDBT:-all
 Obviously order is important.  Putting "-all" at the beginning would simply deny
 all sentences.
+IMPORTANT NOTE:
+proprietary sentences start with "$P" followed by a three character vendor code,
+followed by a vendor-specified string which may be, and often is, more than one
+character in length.  kplex can only filter on the 5 characters following the
+"$" and thus cannot precisely filter all proprietary sentences.
+Similarly kplex cannot completely filter Query sentences which consist of "$"
+followed by the two letter talker id of the requester, the two letter talker id
+of the target talker, the character "Q", a comman and the three character
+sentence mnemonic.  Only the 5 characters after the "$" (ie requester/target
+pair) can be filtered on.
+
+Failover
+--------
+kplex allows you to specify special filters which are intended to allow you to
+use a particular source for one type of data if it is available, but allowing
+that type of data to be passed from another interface if it hasn't been seen
+on the preferred input interface for a specified period of time.  This behaviour
+is specified using the "failover=" directive in the [global] section of the
+configuration file or as a -o optoin on the command line. The format is:
+failover=<filter>:<delay>:<interface>[:<delay>:<interface>]...
+Where:
+    <filter> is a filter specifier as described in "Filtering" above
+    <delay> is the number of seconds without seeing data which matches the
+    filter on a higher priority interface before the datum is passed
+    <interface> is the name of the interface to which the <delay> specifier
+    applies.  An interface must be given a "name=" option to be usable with
+    failover.
+Any number of :<delay>:<interface> specifiers may be added. Any interface not
+specified on a "failover" line will never pass sentences matching the filter.
+
+"Primary" interfaces (ie those where the data should "normally" come from)
+should be specified with a <delay> of 0.
+
+Example:
+You have 3 GPS sources available. The main GPS is fed via a serial connection
+you have named "serial1".  A second is available from a USB GPS you have
+named "USBpuck".  As a last resort you have your phone transmitting nmea over
+tcp on an input you have named "phone".  You might specify:
+failover:GP***:0:serial1:30:USBpuck:60:phone
+This will always pass sentences with a talker id of "GP" from the interface
+named "serial1". If no "GP" sentences are seen on serial1 for 30 seconds, 
+kplex will pass sentences matching "GP***" from USBpuck until a "GP***" sentence
+is next seen on serial1.  If no "GP***" sentences are seen on either serial1 or
+USBpuck for 60 seconds, kplex will statr passing such sentences from the "phone"
+connection until such point as those sentences are seen on either of the higher
+priority interfaces.
 
 Stopping
 --------
@@ -383,19 +419,24 @@ specific to a particular interface. "global" options currently suppotred are:
 qsize=<qsize>
     Where:
     <qsize> is the size (in sentences) of kplex's central multiplexing queue
-    and corresponds to (but is overridden by) kplex's command line -q switch.
+    This should not normally need changing.
 mode=<mode>
     Where:
-    <mode> is either "foreground" (the default) or "background", the latter
-    corresponding to kplex's "-b" command line switch telling kplex to run as a
-    daemon
+    <mode> is either "foreground" (the default) or "background", the former
+    is the default. The latter tells kplex to detach form its controlling
+    terminal and run as a daemon process.
 checksum=<checsum mode>
-    Where <checksum mode> is either "no" (the default) or "yes", equivalent to
-    the "-c" command line switch, telling kplex to checksum al lincoming
-    nmea sentences (except for interfaces whree per-interface configuration
-    overrides this)
+    Where <checksum mode> is either "no" (the default) or "yes", which tells
+    kplex to checksum al lincoming nmea sentences (except for interfaces where
+    per-interface configuration overrides this). Sentences which do not
+    match their calculated checksums are discarded.  The deafult is not to
+    calculate checksums as it is assumed that this will be done by end consumer
+    applications.
 logto=<facility>
-    Where <facility> is the syslog facility to use for logging
+    Where <facility> is the syslog facility to use for logging.  The default is
+    "daemon", telling kplex to use the LOG_DAEMON syslog facility. <facility> is
+    the same string as would be used in a syslog.conf(5) file, so to log to
+    LOG_LOCAL7, specify "logto=local7".
 
 As an example, the first example from the "example usage" section above could
 be specified in a configuration file:

@@ -260,8 +260,8 @@ sfilter_t *getfilter(char *fstring)
         if ((head=(sfilter_t *)malloc(sizeof(sfilter_t))) != NULL) {
             head->type=FILTER;
             pthread_mutex_init(&head->lock,NULL);
-            head->refcount=0;
-            head->rules=NULL;
+            head->refcount=1;
+            head->rules=filter;
             return(head);
         }
     }
@@ -288,8 +288,12 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             ifp->direction = BOTH;
         else return(-2);
     } else if (!strcmp(var,"ifilter")) {
+        if (ifp->ifilter)
+            free_filter(ifp->ifilter);
         ifp->ifilter=getfilter(val);
     } else if (!strcmp(var,"ofilter")) {
+        if (ifp->ofilter)
+            free_filter(ifp->ofilter);
         ifp->ofilter=getfilter(val); 
     } else if (!strcmp(var,"checksum")) {
         if (!strcasecmp(val,"yes")) {
@@ -424,6 +428,7 @@ iface_t *parse_arg(char *arg)
     memset((void *) ifp,0,sizeof(iface_t));
 
     ifp->direction = BOTH;
+    ifp->checksum=-1;
 
     for(ptr=arg;*ptr && *ptr != ':';ptr++);
     if (!*ptr) {
@@ -487,3 +492,25 @@ iface_t *parse_arg(char *arg)
     return(NULL);
 }
 
+int cmdlineopt(struct kopts **options, char *arg)
+{
+    char *val,*ptr;
+    struct kopts *optr;
+
+    for (val=arg;*val && *val != '=';val++);
+    if (*val != '=') {
+        logerr(0,"Badly formatted option %s\n",arg);
+        return(-1);
+    }
+
+    for(*val++ = '\0',ptr=val;*ptr;ptr++);
+
+    if ((optr=add_option(arg,val)) == NULL) {
+        logerr(errno,"Failed to add option");
+        return(-1);
+    }
+
+    optr->next=*options;
+    *options=optr;
+    return(0);
+}    

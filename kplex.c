@@ -47,6 +47,15 @@ void killemall (int sig)
     pthread_mutex_unlock(&listp->io_mutex);
 }
 
+/*
+ * Definition of engine information structure (this is a hack to hold some
+ * options)
+ */
+struct if_engine {
+    int background;
+    int logto;
+};
+
 /* functions */
 
 /*
@@ -234,6 +243,7 @@ int addfailover(sfilter_t **head,char *spec)
     if ((newrule=(sf_rule_t *)malloc(sizeof(sf_rule_t))) == NULL) {
         return(-1);
     }
+    newrule->info.source=NULL;
 
     for (errno=0,cptr=spec,n=0;n<5;spec++,n++,cptr++) {
         if (!*cptr || *cptr== ':') {
@@ -247,7 +257,7 @@ int addfailover(sfilter_t **head,char *spec)
         free(newrule);
         return(-1);
     }
-    for (now=time(NULL),done=0;!done && *cptr;cptr++) {
+    for (now=time(NULL),done=0;!done && *cptr;src=NULL,cptr++) {
         if ((src=(struct srclist *)malloc(sizeof(struct srclist))) == NULL) {
             free(newrule);
             return(-1);
@@ -467,12 +477,20 @@ void senblk_free(senblk_t *sptr, ioqueue_t *q)
 iface_t *get_default_global()
 {
     iface_t *ifp;
+    struct if_engine *ifg;
 
     if ((ifp = (iface_t *) malloc(sizeof(iface_t))) == NULL)
         return(NULL);
 
     ifp->type = GLOBAL;
     ifp->options = NULL;
+    if ((ifg = (struct if_engine *)malloc(sizeof(struct if_engine))) == NULL) {
+        free(ifp);
+        return(NULL);
+    }
+    ifg->background=0;
+    ifg->logto=LOG_DAEMON;
+    ifp->info = (void *)ifg;
 
     return(ifp);
 }
@@ -685,7 +703,7 @@ sfilter_t *addfilter(sfilter_t *filter)
         return (NULL);
 
     pthread_mutex_lock(&filter->lock);
-    ++filter->refcount;
+    ++(filter->refcount);
     pthread_mutex_unlock(&filter->lock);
     return(filter);
 }
@@ -827,22 +845,78 @@ int name2id(sfilter_t *filter)
     return(0);
 }
 
+int proc_engine_options(iface_t *e_info,struct kopts *options)
+{
+    struct kopts *optr;
+    size_t qsize=DEFQUEUESZ;
+    struct if_engine *ifg = (struct if_engine *) e_info->info;
+
+    if (e_info->options) {
+        for (optr=e_info->options;optr->next;optr=optr->next);
+        optr->next=options;
+    } else {
+        e_info->options = options;
+    }
+
+    for (optr=e_info->options;optr;optr=optr->next) {
+        if (!strcasecmp(optr->var,"qsize")) {
+            if(!(qsize = atoi(optr->val))) {
+                fprintf(stderr,"Invalid queue size: %s\n",optr->val);
+                exit(1);
+            }
+        } else if (!strcasecmp(optr->var,"mode")) {
+            if (!strcasecmp(optr->val,"background"))
+                ifg->background=1;
+            else if (!strcasecmp(optr->val,"foreground"))
+                ifg->background=0;
+            else
+                fprintf(stderr,"Warning: unrecognized mode \'%s\' specified\n",optr->val);
+        } else if (!strcasecmp(optr->var,"logto")) {
+            if ((ifg->logto = string2facility(optr->val)) < 0) {
+                fprintf(stderr,"Unknown log facility \'%s\' specified\n",optr->val);
+                exit(1);
+            }
+        } else if (!strcasecmp(optr->var,"checksum")) {
+            if (!strcasecmp(optr->val,"yes"))
+                e_info->checksum=1;
+            else if (!strcasecmp(optr->val,"no"))
+                e_info->checksum=0;
+            else {
+                fprintf(stderr,"Checksum option must be either \'yes\' or \'no\'\n");
+                exit(1);
+            }
+        } else if (!strcasecmp(optr->var,"failover")) {
+            if (addfailover(&e_info->ofilter,optr->val) != 0) {
+                fprintf(stderr,"Failed to add failover %s\n",optr->val);
+                exit(1);
+            }
+        } else {
+            fprintf(stderr,"Warning: Unrecognized option \'%s\'\n",optr->var);
+            exit(0);
+        }
+    }
+
+    if ((e_info->q = init_q(qsize)) == NULL) {
+        perror("failed to initiate queue");
+        exit(1);
+    }
+    return(0);
+}
+
+
 main(int argc, char ** argv)
 {
     pthread_t tid;
     pid_t pid;
     char *config=NULL;
     iface_t  *e_info;
+    struct if_engine *ifg;
     iface_t *ifptr,*ifptr2;
     iface_t **tiptr;
     unsigned int i=1;
     int opt,err=0;
-    struct kopts *option;
-    int qsize=0;
-    int background=0;
-    int logto=LOG_DAEMON;
-    int dochecksum=0;
     void *ret;
+    struct kopts *options=NULL;
     sigset_t set,saved;
     struct iolists lists = {
         /* initialize io_mutex separately below */
@@ -863,29 +937,17 @@ main(int argc, char ** argv)
     pthread_mutex_init(&lists.io_mutex,&mattr);
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"bl:q:f:o:")) != -1) {
+    while ((opt=getopt(argc,argv,"f:o:")) != -1) {
         switch (opt) {
-            case 'b':
-                background++;
-                break;
-            case 'l':
-                if ((logto = string2facility(option->val)) < 0) {
-                    fprintf(stderr,"Unknown log facility \'%s\' specified in config file\n",option->val);
+            case 'o':
+                if (cmdlineopt(&options,optarg) < 0)
                     err++;
-                }
-                break;
-            case 'q':
-                if ((qsize=atoi(optarg)) < 2) {
-                    fprintf(stderr,"%s: Minimum qsize is 2\n",
-                            argv[0]);
-                    err++;
-                }
                 break;
             case 'f':
                 config=optarg;
                 break;
             default:
-                fprintf(stderr, "Usage: %s [-b] [-l <log facility>] [-q <size> ] [ -f <config file>] [<interface specification> ...]\n",argv[0]);
+                fprintf(stderr, "Usage: %s [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
                 err++;
         }
     }
@@ -908,47 +970,8 @@ main(int argc, char ** argv)
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
         e_info = get_default_global();
-    /* queue size is taken from (in order of preference), command line arg, 
-     * config file option in [global] section, default */
-   if (e_info->options) {
-        for (option=e_info->options;option;option=option->next)
-            if (!strcmp(option->var,"qsize")) {
-                if (!qsize)
-                    if(!(qsize = atoi(option->val))) {
-                        fprintf(stderr,"Invalid queue size: %s\n",option->val);
-                        exit(1);
-                    }
-            } else if (!strcmp(option->var,"mode")) {
-                if (!background) {
-                    if (!strcmp(option->val,"background"))
-                        background++;
-                    else if (!strcmp(option->val,"foreground"))
-                        background=0;
-                    else
-                        fprintf(stderr,"Warning: unrecognized mode \'%s\' specified in config file\n",option->val);
-                }
-            } else if (!strcmp(option->var,"logto")) {
-                if ((logto = string2facility(option->val)) < 0) {
-                    fprintf(stderr,"Unknown log facility \'%s\' specified in config file\n",option->val);
-                    exit(1);
-                }
-            } else if (!strcasecmp(option->var,"failover")) {
-                if (addfailover(&e_info->ofilter,option->val) != 0) {
-                    fprintf(stderr,"Failed to add failover %s\n",option->val);
-                    exit(1);
-                }
-            } else {
-                fprintf(stderr,"Warning: Unrecognized option \'%s\' in config file\n",option->var);
-            }
-    }
 
-    if ((e_info->q = init_q(qsize?qsize:DEFQUEUESZ)) == NULL) {
-        perror("failed to initiate queue");
-        exit(1);
-    }
-
-    if (e_info->checksum >= 0)
-        dochecksum=e_info->checksum;
+    proc_engine_options(e_info,options);
 
     e_info->lists = &lists;
     lists.engine=e_info;
@@ -970,7 +993,8 @@ main(int argc, char ** argv)
      * then from under erroneously specified stdin/stdout etc.
      */
 
-    if (background) {
+    ifg=(struct if_engine *)e_info->info;
+    if (ifg->background) {
          if ((pid = fork()) < 0) {
             perror("fork failed");
             exit(1);
@@ -991,7 +1015,7 @@ main(int argc, char ** argv)
     }
 
     /* log to stderr or syslog, as appropriate */
-    initlog(background?logto:-1);
+    initlog(ifg->background?ifg->logto:-1);
 
     /* Lower max open files if necessary. We do this to ensure that ids for
      * all connections can be represented in IDMINORBITS. Actually we only
@@ -1018,7 +1042,6 @@ main(int argc, char ** argv)
 
         if (i == MAXINTERFACES)
             logterm(0,"Too many interfaces");
-
         ifptr->id=++i<<IDMINORBITS;
         if (ifptr->name) {
             if (insertname(ifptr->name,ifptr->id) < 0)
@@ -1030,7 +1053,6 @@ main(int argc, char ** argv)
             timetodie++;
             break;
         }
-
         for (;ifptr;ifptr = ifptr->next) {
         /* This loop should be done once for IN or OUT interfaces twice for
          * interfaces where the initialisation routine has expanded them to an
@@ -1040,7 +1062,7 @@ main(int argc, char ** argv)
                 ifptr->q=e_info->q;
 
             if (ifptr->checksum <0)
-                ifptr->checksum = dochecksum;
+                ifptr->checksum = e_info->checksum;
             ifptr->lists = &lists;
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;
