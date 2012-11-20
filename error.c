@@ -70,7 +70,7 @@ void logerr2(int err, char *fmt, va_list args)
     } else {
         vfprintf(stderr,fmt,args);
         if (err)
-            fprintf(stderr,": %s",strerror(err));
+            fprintf(stderr,": %s\n",strerror(err));
         else
             fputc('\n',stderr);
     }

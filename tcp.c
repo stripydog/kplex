@@ -145,10 +145,9 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
             return(NULL);
     }
     newift->fd=fd;
-    newifa->id=ifa->id+fd&(2^IDMINORBITS-1);
+    newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
-    newifa->id=ifa->id;
     newifa->name=NULL;
     newifa->info=newift;
     newifa->cleanup=cleanup_tcp;

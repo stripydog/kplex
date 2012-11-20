@@ -654,8 +654,11 @@ int unlink_interface(iface_t *ifa)
     free_filter(ifa->ifilter);
     free_filter(ifa->ofilter);
 
-    ifa->cleanup(ifa);
-    free(ifa->info);
+    if (ifa->info) {
+        ifa->cleanup(ifa);
+        free(ifa->info);
+    }
+
     if (ifa->pair) {
         ifa->pair->pair=NULL;
         if (ifa->pair->direction == OUT) {
