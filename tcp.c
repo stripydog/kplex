@@ -191,7 +191,7 @@ iface_t *tcp_server(iface_t *ifa)
     
          if (new_tcp_conn(afd,ifa) == NULL)
              close(afd);
-     }
+        }
     }
     iface_thread_exit(errno);
 }
@@ -210,7 +210,8 @@ iface_t *init_tcp(iface_t *ifa)
     host=port=NULL;
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
-        logtermall(errno,"Could not allocate memory");
+        logerr(errno,"Could not allocate memory");
+        return(NULL);
     }
 
     for(opt=ifa->options;opt;opt=opt->next) {
@@ -218,22 +219,26 @@ iface_t *init_tcp(iface_t *ifa)
             host=opt->val;
         else if (!strcasecmp(opt->var,"mode")) {
             if (strcasecmp(opt->val,"client") && strcasecmp(opt->val,"server")){
-                logtermall(0,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
+                logerr(0,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
+                return(NULL);
             }
             conntype=opt->val;
         } else if (!strcasecmp(opt->var,"port")) {
             port=opt->val;
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logtermall(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,"Invalid queue size specified: %s",opt->val);
+                return(NULL);
             }
         } else  {
-            logtermall(0,"unknown interface option %s\n",opt->var);
+            logerr(0,"unknown interface option %s\n",opt->var);
+            return(NULL);
         }
     }
 
     if (*conntype == 'c' && !host) {
-        logtermall(0,"Must specify address for tcp client mode\n");
+        logerr(0,"Must specify address for tcp client mode\n");
+        return(NULL);
     }
 
     if (!port) {
@@ -250,7 +255,8 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_socktype=SOCK_STREAM;
 
     if (err=getaddrinfo(host,port,&hints,&aptr)) {
-        logtermall(errno,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
+        logerr(errno,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
+        return(NULL);
     }
 
     do {
@@ -268,13 +274,15 @@ iface_t *init_tcp(iface_t *ifa)
      } while (aptr = aptr->ai_next);
 
     if (aptr == NULL) {
-        logtermall(errno,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
+        logerr(errno,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
+        return(NULL);
     }
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
         if ((ifa->q =init_q(DEFTCPQSIZE)) == NULL) {
-            logtermall(errno,"Interface duplication failed");
+            logerr(errno,"Interface duplication failed");
+            return(NULL);
         }
     }
 
@@ -285,7 +293,8 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->write=write_tcp;
         if (ifa->direction == BOTH) {
             if ((ifa->next=ifdup(ifa)) == NULL) {
-                logtermall(errno,"Interface duplication failed");
+                logerr(errno,"Interface duplication failed");
+                return(NULL);
             }
             ifa->direction=OUT;
             ifa->pair->direction=IN;

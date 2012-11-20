@@ -47,15 +47,6 @@ void killemall (int sig)
     pthread_mutex_unlock(&listp->io_mutex);
 }
 
-/*
- * Definition of engine information structure (this is a hack to hold some
- * options)
- */
-struct if_engine {
-    int background;
-    int logto;
-};
-
 /* functions */
 
 /*
@@ -187,6 +178,11 @@ void link_src_to_rule (struct srclist **list, struct srclist *src)
     *list=src;
 }
 
+/*
+ * Test if a sentence came from a failover input that is active
+ * Args: Pointer to filter head, pointer to senblk to be tested
+ * Returns: 1 if  senblk should be passed, 0 if not
+ */
 int isactive(sfilter_t *filter,senblk_t *sptr)
 {
     time_t now=time(NULL);
@@ -502,7 +498,7 @@ iface_t *get_default_global()
  * Args: Pointer to information structure (iface_t, cast to void)
  * Returns: Nothing
  */
-void *engine(void *info)
+void *run_engine(void *info)
 {
     senblk_t *sptr;
     iface_t *optr;
@@ -909,7 +905,7 @@ main(int argc, char ** argv)
     pthread_t tid;
     pid_t pid;
     char *config=NULL;
-    iface_t  *e_info;
+    iface_t  *engine;
     struct if_engine *ifg;
     iface_t *ifptr,*ifptr2;
     iface_t **tiptr;
@@ -923,7 +919,6 @@ main(int argc, char ** argv)
         .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
         .init_cond = PTHREAD_COND_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
-    .init_cond = PTHREAD_COND_INITIALIZER,
     .initialized = NULL,
     .outputs = NULL,
     .inputs = NULL,
@@ -961,7 +956,7 @@ main(int argc, char ** argv)
      */
     if ((config && (strcmp(config,"-"))) ||
             (!config && (config = get_def_config()))) {
-        if ((e_info=parse_file(config)) == NULL) {
+        if ((engine=parse_file(config)) == NULL) {
             fprintf(stderr,"Error parsing config file: %s\n",errno?
                     strerror(errno):"Syntax Error");
             exit(1);
@@ -969,14 +964,14 @@ main(int argc, char ** argv)
     } else
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
-        e_info = get_default_global();
+        engine = get_default_global();
 
-    proc_engine_options(e_info,options);
+    proc_engine_options(engine,options);
 
-    e_info->lists = &lists;
-    lists.engine=e_info;
+    engine->lists = &lists;
+    lists.engine=engine;
 
-    for (tiptr=&e_info->next;optind < argc;optind++) {
+    for (tiptr=&engine->next;optind < argc;optind++) {
         if (!(ifptr=parse_arg(argv[optind]))) {
             fprintf(stderr,"Failed to parse interface specifier %s\n",
                     argv[optind]);
@@ -993,7 +988,7 @@ main(int argc, char ** argv)
      * then from under erroneously specified stdin/stdout etc.
      */
 
-    ifg=(struct if_engine *)e_info->info;
+    ifg=(struct if_engine *)engine->info;
     if (ifg->background) {
          if ((pid = fork()) < 0) {
             perror("fork failed");
@@ -1037,7 +1032,7 @@ main(int argc, char ** argv)
      * are initialised to one IN and one OUT which then need to be linked back
      * into the list
      */
-    for (ifptr=e_info->next,tiptr=&lists.initialized,i=0;ifptr;ifptr=ifptr2) {
+    for (ifptr=engine->next,tiptr=&lists.initialized,i=0;ifptr;ifptr=ifptr2) {
         ifptr2 = ifptr->next;
 
         if (i == MAXINTERFACES)
@@ -1059,10 +1054,10 @@ main(int argc, char ** argv)
          * IN/OUT pair.
          */
             if (ifptr->direction != OUT)
-                ifptr->q=e_info->q;
+                ifptr->q=engine->q;
 
             if (ifptr->checksum <0)
-                ifptr->checksum = e_info->checksum;
+                ifptr->checksum = engine->checksum;
             ifptr->lists = &lists;
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;
@@ -1070,12 +1065,6 @@ main(int argc, char ** argv)
                 ifptr->next=NULL;
         }
     }
-
-    if (name2id(e_info->ofilter))
-            logterm(errno,"Failed to translate interface names to IDs");
-
-    if (e_info->options)
-        free_options(e_info->options);
 
     /* Create the key for thread local storage: in this case for a pointer to
      * the interface each thread is handling
@@ -1093,6 +1082,12 @@ main(int argc, char ** argv)
         exit(1);
     }
 
+    if (name2id(engine->ofilter))
+            logterm(errno,"Failed to translate interface names to IDs");
+
+    if (engine->options)
+        free_options(engine->options);
+
     pthread_setspecific(ifkey,(void *)&lists);
 
     sigemptyset(&set);
@@ -1103,7 +1098,7 @@ main(int argc, char ** argv)
     signal(SIGINT,killemall);
     signal(SIGTERM,killemall);
     signal(SIGUSR1,terminate);
-    pthread_create(&tid,NULL,engine,(void *) e_info);
+    pthread_create(&tid,NULL,run_engine,(void *) engine);
 
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {

@@ -125,9 +125,10 @@ iface_t *read_bcast(struct iface *ifa)
 
         /* Compare the source address to the list of interfaces we're
          * ignoringing */
-        for (igp=ignore;igp;igp=igp->next)
+        for (igp=ignore;igp;igp=igp->next) {
             if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
                 break;
+        }
         /* If igp points to anything, we broke out of the above loop
          * on a match. Drop the packet and carry on */
         if (igp)
@@ -178,7 +179,8 @@ struct iface *init_bcast(struct iface *ifa)
     struct ifreq ifr;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
-        logtermall(errno,"Could not allocate memory");
+        logerr(errno,"Could not allocate memory");
+        return(NULL);
     }
     memset(ifb,0,sizeof(struct if_bcast));
 
@@ -191,14 +193,17 @@ struct iface *init_bcast(struct iface *ifa)
             bname=opt->val;
         else if (!strcasecmp(opt->var,"port")) {
             if (((port=atoi(opt->val)) > 0) && (port > 2^(sizeof(short) -1))) {
-                logtermall(0,"port %s out of range",opt->val);
+                logerr(0,"port %s out of range",opt->val);
+                return(NULL);
             }
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logtermall(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,"Invalid queue size specified: %s",opt->val);
+                return(NULL);
             }
         } else  {
-            logtermall(0,"Unknown interface option %s",opt->var);
+            logerr(0,"Unknown interface option %s",opt->var);
+            return(NULL);
         }
     }
 
@@ -213,7 +218,8 @@ struct iface *init_bcast(struct iface *ifa)
 
     if (ifname == NULL) {
         if (ifa->direction != IN) {
-            logtermall(0,"Must specify interface for outgoing broadcasts");
+            logerr(0,"Must specify interface for outgoing broadcasts");
+            return(NULL);
         }
         if (bname)
             ifb->laddr.sin_addr.s_addr = baddr.s_addr;
@@ -222,7 +228,8 @@ struct iface *init_bcast(struct iface *ifa)
     } else {
         if (ifap == NULL)
             if (getifaddrs(&ifap) < 0) {
-                logtermall(errno,"Error getting interface info");
+                logerr(errno,"Error getting interface info");
+                return(NULL);
         }
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
             if ((!strcmp(ifname,ifp->ifa_name)) &&
@@ -232,7 +239,8 @@ struct iface *init_bcast(struct iface *ifa)
                 break;
         }
         if (!ifp) {
-            logtermall(0,"No IPv4 interface %s",ifname);
+            logerr(0,"No IPv4 interface %s",ifname);
+            return(NULL);
         }
         ifb->addr.sin_addr.s_addr = bname?baddr.s_addr:((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr;
         if (ifa->direction == IN)
@@ -246,12 +254,14 @@ struct iface *init_bcast(struct iface *ifa)
         ifb->laddr.sin_port=htons(port);
 
     if ((ifb->fd=socket(AF_INET,SOCK_DGRAM,0)) < 0) {
-           logtermall(errno,"Could not create UDP socket");
+        logerr(errno,"Could not create UDP socket");
+        return(NULL);
      }
 
      if ((ifa->direction != IN) &&
         (setsockopt(ifb->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0)) {
-        logtermall(errno,"Setsockopt failed");
+        logerr(errno,"Setsockopt failed");
+        return(NULL);
     }
 
     if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
@@ -266,7 +276,8 @@ struct iface *init_bcast(struct iface *ifa)
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
 #endif
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-        logtermall(errno,"Bind failed");
+        logerr(errno,"Bind failed");
+        return(NULL);
     }
 
     if (ifa->direction != IN) {
@@ -274,7 +285,8 @@ struct iface *init_bcast(struct iface *ifa)
            need to ignore */
         if ((newig = (struct ignore_addr *) malloc(sizeof(struct ignore_addr)))
                 == NULL) {
-            logtermall(errno,"Could not allocate memory");
+            logerr(errno,"Could not allocate memory");
+            return(NULL);
         }
         newig->iaddr.sin_family = AF_INET;
         /* This is the *local* address and the *outgoing* port */
@@ -298,7 +310,8 @@ struct iface *init_bcast(struct iface *ifa)
 
         /* write queue initialization */
         if ((ifa->q = init_q(qsize)) == NULL) {
-            logtermall(errno,"Could not create queue");
+            logerr(errno,"Could not create queue");
+            return(NULL);
         }
     }
 
@@ -308,7 +321,8 @@ struct iface *init_bcast(struct iface *ifa)
     ifa->info = (void *) ifb;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logtermall(0,"Interface duplication failed");
+            logerr(0,"Interface duplication failed");
+            return(NULL);
         }
 
         ifa->direction=OUT;
@@ -326,7 +340,8 @@ struct iface *init_bcast(struct iface *ifa)
 #endif
 
         if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-            logtermall(errno,"Duplicate Bind failed");
+            logerr(errno,"Duplicate Bind failed");
+            return(NULL);
         }
 
     }

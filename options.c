@@ -8,6 +8,7 @@
  */
 
 #include "kplex.h"
+#include <syslog.h>
 
 #define ARGDELIM ','
 #define FILTERDELIM ':'
@@ -219,9 +220,11 @@ sfilter_t *getfilter(char *fstring)
 {
     char *sptr;
     sfilter_t *head;
-    sf_rule_t *filter=NULL;
+    sf_rule_t *filter;
     sf_rule_t *tfilter,**fptr;
-    int i,ok=1;
+    int i,ok=0;
+
+    tfilter=filter=NULL;
     fptr=&filter;
 
     for (;*fstring;fstring++) {
@@ -290,18 +293,20 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
     } else if (!strcmp(var,"ifilter")) {
         if (ifp->ifilter)
             free_filter(ifp->ifilter);
-        ifp->ifilter=getfilter(val);
+        if ((ifp->ifilter=getfilter(val)) == NULL)
+		return(-2);
     } else if (!strcmp(var,"ofilter")) {
         if (ifp->ofilter)
             free_filter(ifp->ofilter);
-        ifp->ofilter=getfilter(val); 
+        if ((ifp->ofilter=getfilter(val)) == NULL)
+		return(-2);
     } else if (!strcmp(var,"checksum")) {
         if (!strcasecmp(val,"yes")) {
             ifp->checksum=1;
         } else if (!strcasecmp(val,"no")) {
             ifp->checksum=0;
         } else
-            return(1);
+            return(-2);
     } else if (!strcasecmp(var,"name")) {
         if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
             return(-1);
@@ -344,6 +349,7 @@ iface_t *get_config(FILE *fp, unsigned int *line)
     ifp->ifilter=NULL;
     ifp->ofilter=NULL;
     ifp->checksum=-1;
+    ifp->options=NULL;
 
     for(opt = &ifp->options;next_config(fp,line,&var,&val) == 0;) {
         if (!var)
@@ -369,6 +375,7 @@ iface_t *parse_file(char *fname)
     enum itype type;
     iface_t *ifp,**ifpp;
     iface_t *list = NULL;
+    struct if_engine *ifg;
 
     if ((fp = fopen(fname,"r")) == NULL) {
         fprintf(stderr,"Failed to open config file %s: %s\n",fname,
@@ -399,6 +406,18 @@ iface_t *parse_file(char *fname)
         }
 
         if ((ifp->type=type) == GLOBAL) {
+            if ((ifg = (struct if_engine *)malloc(sizeof(struct if_engine)))
+                    == NULL) {
+                free(ifp);
+                perror("Error creating interface");
+                exit(1);
+            }
+            ifg->background=0;
+            ifg->logto=LOG_DAEMON;
+            ifp->info = (void *)ifg;
+            if (ifp->checksum <0)
+                ifp->checksum = 0;
+
             ifp->next=list;
             list=ifp;
             if (ifpp == &list)
@@ -463,19 +482,28 @@ iface_t *parse_arg(char *arg)
             val=ptr+1;
         } else if (*ptr == ARGDELIM || *ptr == '\0') {
             if (!val) {
-                if (ptr == var)
+                if (ptr == var) {
+                    if (*ptr) {
+                        ++var;
+                        continue;
+                    }
                     done=1;
+                }
                 break;
             }
             if (*ptr)
                 *ptr='\0';
             else
                 done=1;
-            if ((ret = add_common_opt(var,val,ifp)) < 0)
+            if ((ret = add_common_opt(var,val,ifp)) < 0) {
+                done=0;
                 break;
+            }
             if (ret) {
-                if (((*opt) = add_option(var,val)) == NULL)
+                if (((*opt) = add_option(var,val)) == NULL) {
+                    done=0;
                     break;
+                }
                 opt=&(*opt)->next;
             }
             if (done)

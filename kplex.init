@@ -15,6 +15,7 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 DAEMON=/usr/local/sbin/kplex
 KPLEXCONF=/usr/local/etc/kplex.conf
+RUN_AS_USER=root
 
 test -x $DAEMON || exit 5
 test -r $KPLEXCONF || exit 5
@@ -22,7 +23,7 @@ test -r $KPLEXCONF || exit 5
 case $1 in
 	start)
 		log_daemon_msg "Starting kplex multiplexer" "kplex"
-  		start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON -- -f $KPLEXCONF -b
+  		start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON --chuid $RUN_AS_USER -- -f $KPLEXCONF -o mode=background
 		status=$?
 		log_end_msg $status
   		;;

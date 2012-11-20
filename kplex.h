@@ -150,6 +150,11 @@ struct iftypedef {
     void *(*ifdup_func)(void *);
 };
 
+struct if_engine {
+    int background;
+    int logto;
+};
+
 iface_t *init_file( iface_t *);
 iface_t *init_serial(iface_t *);
 iface_t *init_bcast(iface_t *);

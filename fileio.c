@@ -107,7 +107,8 @@ iface_t *init_file (iface_t *ifa)
     struct kopts *opt,*nextopt;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
-        logtermall(errno,"Could not allocate memory");
+        logerr(errno,"Could not allocate memory");
+        return(NULL);
     }
     ifa->info = (void *) ifc;
 
@@ -116,10 +117,12 @@ iface_t *init_file (iface_t *ifa)
             fname=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logtermall(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,"Invalid queue size specified: %s",opt->val);
+                return(NULL);
             }
         } else  {
-            logtermall(0,"Unknown interface option %s\n",opt->var);
+            logerr(0,"Unknown interface option %s\n",opt->var);
+            return(NULL);
         }
     }
 
@@ -127,27 +130,34 @@ iface_t *init_file (iface_t *ifa)
         ifc->fp = (ifa->direction == IN)?stdin:stdout;
     } else {
         if (ifa->direction == BOTH) {
-            logtermall(0,"Bi-directional file I/O only supported for stdin/stdout\n");
+            logerr(0,"Bi-directional file I/O only supported for stdin/stdout\n");
+            return(NULL);
         }
         if ((ifc->fp = fopen(fname,(ifa->direction == IN)?"r":"w"))
                 == NULL) {
-            logtermall(errno,"Could not open %s: %s\n",fname);
+            logerr(errno,"Could not open %s: %s\n",fname);
+            return(NULL);
         }
     }
-
-    if (ifa->direction != IN)
-        if ((ifa->q =init_q(qsize)) == NULL) {
-            logtermall(0,"Could not create queue");
-        }
 
     free_options(ifa->options);
 
     ifa->write=write_file;
     ifa->read=read_file;
     ifa->cleanup=cleanup_file;
+
+    if (ifa->direction != IN)
+        if ((ifa->q =init_q(qsize)) == NULL) {
+            logerr(0,"Could not create queue");
+            cleanup_file(ifa);
+            return(NULL);
+        }
+
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logtermall(0,"Interface duplication failed");
+            logerr(0,"Interface duplication failed");
+            cleanup_file(ifa);
+            return(NULL);
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;
