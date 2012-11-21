@@ -315,19 +315,6 @@ void iface_thread_exit(int ret)
 }
 
 /*
- * Cleanup routine for interfaces, used as destructor for pointer to interface
- * structure in the handler thread's local storage
- * Args: pointer to interface structure
- * Returns: Nothing
- */
-void iface_destroy(void *ifptr)
-{
-    iface_t *ifa = (iface_t *) ifptr;
-
-    unlink_interface(ifa);
-}
-
-/*
  *  Initialise an ioqueue
  *  Args: size of queue (in senblk structures)
  *  Returns: pointer to new queue
@@ -603,52 +590,20 @@ int link_to_initialized(iface_t *ifa)
 }
 
 /*
- * Take an interface off the input or output iolist and place it on the "dead"
- * list waiting to be cleaned up
- * Args: Pointer to interface structure
- * Returns: 0 on success. Might add other possible return vals later
- * Should this be broken into link from input/output then link to dead?
+ * Free all the data associated with an interface except the iface_t itself
+ * Args: Pointer to iface_t to be freed
+ * Returns: Nothing
+ * Side Effects: Cleanup routines invoked, de-coupled from any pair, all data
+ * other than the main interface structure is freed
+ * Because of dealing with the pair, the io_mutex should be locked before
+ * involing this routine
  */
-int unlink_interface(iface_t *ifa)
+void free_if_data(iface_t *ifa)
 {
-    iface_t **lptr;
-    iface_t *tptr;
-
-    sigset_t set,saved;
-
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
-    pthread_mutex_lock(&ifa->lists->io_mutex);
-    /* Set lptr to point to the input or output list, as appropriate */
-    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-    if ((*lptr) == ifa) {
-        /* If target interface is the head of the list, set the list pointer
-           to point to the next interface in the list */
-        (*lptr)=(*lptr)->next;
-    } else {
-        /* Traverse the list until we find the interface before our target and
-           make its next pointer point to the element after our target */
-        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-        tptr->next = ifa->next;
-    }
-
     if ((ifa->direction == OUT) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
         free(ifa->q);
-    } else {
-        if (!ifa->lists->inputs) {
-            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
-                if (tptr->direction == BOTH)
-                    break;
-            if (tptr == NULL) {
-                pthread_mutex_lock(&ifa->q->q_mutex);
-                ifa->q->active=0;
-                pthread_cond_broadcast(&ifa->q->freshmeat);
-                pthread_mutex_unlock(&ifa->q->q_mutex);
-            }
-        }
     }
 
     free_filter(ifa->ifilter);
@@ -676,6 +631,48 @@ int unlink_interface(iface_t *ifa)
         if (ifa->name && !(ifa->id & IDMINORMASK)) {
             free(ifa->name);
        }
+}
+
+/*
+ * Take an interface off the input or output iolist and place it on the "dead"
+ * list waiting to be cleaned up
+ * Args: Pointer to interface structure
+ * Returns: 0 on success. Might add other possible return vals later
+ * Should this be broken into link from input/output then link to dead?
+ */
+int unlink_interface(iface_t *ifa)
+{
+    iface_t **lptr;
+    iface_t *tptr;
+
+    /* Set lptr to point to the input or output list, as appropriate */
+    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
+    if ((*lptr) == ifa) {
+        /* If target interface is the head of the list, set the list pointer
+           to point to the next interface in the list */
+        (*lptr)=(*lptr)->next;
+    } else {
+        /* Traverse the list until we find the interface before our target and
+           make its next pointer point to the element after our target */
+        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
+        tptr->next = ifa->next;
+    }
+
+    if (ifa->direction != OUT)
+        if (!ifa->lists->inputs) {
+            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
+                if (tptr->direction == BOTH)
+                    break;
+            if (tptr == NULL) {
+                pthread_mutex_lock(&ifa->q->q_mutex);
+                ifa->q->active=0;
+                pthread_cond_broadcast(&ifa->q->freshmeat);
+                pthread_mutex_unlock(&ifa->q->q_mutex);
+            }
+        }
+
+    free_if_data(ifa);
+
     /* Add to the dead list */
     if ((tptr=ifa->lists->dead) == NULL)
         ifa->lists->dead=ifa;
@@ -684,11 +681,34 @@ int unlink_interface(iface_t *ifa)
     tptr->next=ifa;
     }
     ifa->next=NULL;
-    /* Signal the reaper thread */
-    pthread_cond_signal(&ifa->lists->dead_cond);
+    return(0);
+}
+
+/*
+ * Cleanup routine for interfaces, used as destructor for pointer to interface
+ * structure in the handler thread's local storage
+ * Args: pointer to interface structure
+ * Returns: Nothing
+ */
+void iface_destroy(void *ifptr)
+{
+    iface_t *ifa = (iface_t *) ifptr;
+
+    sigset_t set,saved;
+
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &set, &saved);
+    pthread_mutex_lock(&ifa->lists->io_mutex);
+    if (ifa->tid) {
+        unlink_interface(ifa);
+        /* Signal the reaper thread */
+        pthread_cond_signal(&ifa->lists->dead_cond);
+    } else
+        free_if_data(ifa);
+
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
-    return(0);
 }
 
 /*

@@ -166,6 +166,7 @@ void *ifdup_serial(void *);
 void *ifdup_file(void *);
 void *ifdup_bcast(void *);
 void *ifdup_tcp(void *);
+void *ifdup_seatalk(void *);
 
 ioqueue_t *init_q(size_t);
 
