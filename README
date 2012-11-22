@@ -468,8 +468,6 @@ This is very early days but kplex has been constructed with expandability in
 mind.  Planned enhancements include:
 * Support for seatalk 1 to nmea translation using information from Thomas
   Knauf's excellent web site.
-* Support for failover of data sources (ie if no input of type X seen on
-  interface A for N seconds, fail over to interface B)
 * Support for multicast. Not that anything else supports it yet
 * Port to java.  kplex is written in C for POSIX-compliant systems because
   that's what I know best.  Despite my railing against Object Oriented
