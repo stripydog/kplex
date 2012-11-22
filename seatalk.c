@@ -14,6 +14,7 @@
  * permission
  */
 
+#define DEBUG 1
 #include "kplex.h"
 
 #define DEFSEATALKQSIZE 128
@@ -79,12 +80,29 @@ int chksum(char*s)
 }
 
 /*
+ * Determines if two times are sufficiently close that the data which arrived
+ * at the earlier time is still valid
+ * Args: Three time values, the last being the maximum that can separate the
+ * first two before the earlier one is considered invalid
+ * Returns: 1 if data are separated by a time less than the 3rd parameter, 0
+ * otherwise
+ */
+int stillvalid(time_t t1, time_t t2, time_t t3)
+{
+    if (abs(t1-t2) <= t3)
+        return(1);
+    else
+        return(0);
+}
+
+/*
  * Convert seatalk input to NMEA sentences
  * See README file. This is dodgy and incomplete
  * Args: pointer to seatalk command buffer and pointer to senblk_t which will
  * contain the output nmea sentence
  * Returns:s	0 on success
  * 		1 is sentence is not translatable
+ * 		2 sentence buffered for later transmission
  * 		-1 on error
  */
 int st2nmea(unsigned char *st, char *nmea)
@@ -92,6 +110,13 @@ int st2nmea(unsigned char *st, char *nmea)
     unsigned char *cmd=st;
     unsigned char *att=st+1;
     int val=0;
+    int validtime=2;
+
+    static float lastawa;
+    static float lastaws;
+    static char lastawu;
+    static time_t lastawatime=0;
+    static time_t lastawstime=0;
 
 #ifdef DEBUG
     int i;
@@ -107,6 +132,21 @@ int st2nmea(unsigned char *st, char *nmea)
 	    sprintf(nmea,"$IIDBT,%.1f,f,%.1f,m,%.1f,F",val/10.0,val*0.3048,
 			    val*0.6);
 	    break;
+    case 0x10:
+    case 0x11:
+        if (*cmd == 0x10) {
+            lastawatime=time(NULL);
+            lastawa=((st[4]<<8)+st[3])/2.0;
+        } else {
+            lastaws=time(NULL);
+            lastaws=st[3]&0x7F+(st[4]&0xF)/10;
+            if (lastawu=st[3]&0x80)
+                lastaws=lastaws/1.9438445;
+        }
+        if (!stillvalid(lastawatime,lastawstime,validtime))
+            return(2);
+        sprintf(nmea,"$IIMWV,%.1f,R,%.1f,%c,A",lastawa+.05,lastaws+.05,lastawu);
+        break;
     case 0x23:
         if (st[2]&0x40)
 	/* Transducer not functional */
@@ -119,6 +159,12 @@ int st2nmea(unsigned char *st, char *nmea)
     }
     sprintf(nmea+strlen(nmea),"*%2X\r\n",chksum(nmea+1));
     return (0);
+}
+
+int nmea2st(senblk_t *sptr, char *stbuf)
+{
+    /* not yet implemented */
+    return(1);
 }
 
 int set_parity(int fd, int ptype, struct termios *termset)
@@ -141,8 +187,28 @@ int set_parity(int fd, int ptype, struct termios *termset)
  */
 iface_t * write_seatalk(iface_t *ifa)
 {
+    senblk_t *senblk_p;
+    int i,n;
+
+    unsigned char stmsg[MAXMSGLEN];
+    unsigned char r;
+
     /* not currently supported */
     iface_thread_exit(-1);
+    for (;;) {
+        if ((senblk_p = next_senblk(ifa->q)) == NULL)
+            break;
+
+        if (senfilter(senblk_p,ifa->ofilter)) {
+                senblk_free(senblk_p,ifa->q);
+            continue;
+        }
+        if (nmea2st(senblk_p,stmsg)) {
+            /* transmit data */
+        }
+        senblk_free(senblk_p,ifa->q);
+    }
+    iface_thread_exit(errno);
 }
 
 /*
@@ -152,13 +218,13 @@ iface_t * write_seatalk(iface_t *ifa)
  */
 iface_t * read_seatalk(struct iface *ifa)
 {
-    struct if_seatalk *ifs=(struct if_seatalk *) ifa;
+    struct if_seatalk *ifs=(struct if_seatalk *) ifa->info;
     int n,toread,perr=0,nocomm=1;
-    char buf[STBUFSIZE];
-    char stdata[MAXMSGLEN];
-    char *cmdp=stdata;
-    char *attr=stdata+1;
-    char *bufp;
+    unsigned char buf[STBUFSIZE];
+    unsigned char stdata[MAXMSGLEN];
+    unsigned char *cmdp=stdata;
+    unsigned char *attr=stdata+1;
+    unsigned char *bufp;
     senblk_t sblk;
 
     sblk.src=ifa->id;
@@ -169,8 +235,9 @@ iface_t * read_seatalk(struct iface *ifa)
      * Note that some USB to serial interfaces don't support MARK/SPACE parity.
      * Some (keyspan springs to mind) are just bad at reporting parity errors.
      */
-    while ((n=read(ifs->fd,&buf,BUFSIZE)) > 0) {
+    while ((n=read(ifs->fd,&buf,STBUFSIZE)) > 0) {
         for (bufp=buf;n;n--,bufp++) {
+            fprintf(stderr,"%02X ",*bufp);
             if (*bufp == 0xff) {
                 if (perr) {
                     perr=0;
@@ -207,6 +274,7 @@ iface_t * read_seatalk(struct iface *ifa)
                 toread=((*attr) & 0xf) + 1;
         }
     }
+    logerr(errno,"failed read");
     iface_thread_exit(errno);
 }
 
@@ -246,8 +314,10 @@ struct iface *init_seatalk (struct iface *ifa)
             return(NULL);
         }
     }
-
-    cflag=baud|CS8|CLOCAL|IGNBRK|PARENB|((ifa->direction == OUT)?0:CREAD);
+/*
+    cflag=baud|CS8|CLOCAL|IGNBRK|PARENB|CMSPAR|((ifa->direction == OUT)?0:CREAD);
+*/
+    cflag=baud|CS8|CLOCAL|IGNBRK|IGNPAR|((ifa->direction == OUT)?0:CREAD);
 
     if ((ifs = malloc(sizeof(struct if_seatalk))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -261,8 +331,7 @@ struct iface *init_seatalk (struct iface *ifa)
     }
 
     free_options(ifa->options);
-
-    if (((ret=ttysetup(ifs->fd,&ifs->otermios,cflag,st)) < 0) ||
+    if (((ret=ttysetup(ifs->fd,&ifs->otermios,cflag,0)) < 0) ||
         (tcgetattr(ifs->fd,&ifs->ctermios) < 0)){
         if (ret == -1) {
             if (tcsetattr(ifs->fd,TCSANOW,&ifs->otermios) < 0) {
@@ -281,7 +350,7 @@ struct iface *init_seatalk (struct iface *ifa)
     if (ifa->direction != IN)
         if ((ifa->q =init_q(DEFSEATALKQSIZE)) == NULL) {
             logerr(0,"Could not create queue");
-            cleanup_serial(ifa);
+            cleanup_seatalk(ifa);
             return(NULL);
         }
 
@@ -290,7 +359,7 @@ struct iface *init_seatalk (struct iface *ifa)
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
             logerr(0,"Interface duplication failed");
-            cleanup_serial(ifa);
+            cleanup_seatalk(ifa);
             return(NULL);
         }
         ifa->direction=OUT;
