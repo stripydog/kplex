@@ -22,6 +22,13 @@ necessary, install by copying kplex.init to /etc/init.d/kplex and run:
 update-rc.d kplex defaults to create symlinks in the appropriate rc.d
 directories.
 
+kplex.init will run kplex as root, but this is neither required nor recommended.
+To automatically run kplex as a different user, change RUN_AS_USER as
+appropriate.  The user kplex runs as does require permissions to read
+/write serial interfaces as necessary.  Typically this will mean being a member
+of the group which owns serial devices. On debian-based systems like ubuntu this
+means adding the user to the "dialout" group.
+
 Invocation:
 -----------
 
