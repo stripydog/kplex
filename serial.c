@@ -158,9 +158,9 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
 /*
  * Read from a serial interface
  * Args: pointer to interface structure
- * Returns: Pointer to interface structure
+ * Returns: Nothing. errno supplied to iface_thread_exit()
  */
-int read_serial(struct iface *ifa)
+void read_serial(struct iface *ifa)
 {
     char buf[BUFSIZ];        /* Buffer for serial reads */
     char *bptr,*eptr=buf+BUFSIZ,*senptr;
@@ -212,16 +212,14 @@ int read_serial(struct iface *ifa)
         }
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 /*
  * Write nmea sentences to serial output
  * Args: pointer to interface
- * Returns: pointer to interface
+ * Returns: Nothing. errno supplied to iface_thread_exit()
  */
-int write_serial(struct iface *ifa)
+void write_serial(struct iface *ifa)
 {
     struct if_serial *ifs = (struct if_serial *) ifa->info;
     senblk_t *senblk_p;
@@ -250,8 +248,6 @@ int write_serial(struct iface *ifa)
         senblk_free(senblk_p,ifa->q);
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 /*

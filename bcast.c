@@ -75,7 +75,7 @@ void cleanup_bcast(iface_t *ifa)
      * we'd have to check they weren't in use by some other interface */
 }
 
-int write_bcast(struct iface *ifa)
+void write_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
     senblk_t *sptr;
@@ -97,11 +97,9 @@ int write_bcast(struct iface *ifa)
         senblk_free(sptr,ifa->q);
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
-int read_bcast(struct iface *ifa)
+void read_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
     senblk_t sblk;
@@ -163,8 +161,6 @@ int read_bcast(struct iface *ifa)
         }
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 struct iface *init_bcast(struct iface *ifa)
@@ -180,7 +176,6 @@ struct iface *init_bcast(struct iface *ifa)
     struct ignore_addr **igpp,*newig;
     size_t qsize = DEFBCASTQSIZE;
     struct kopts *opt;
-    struct ifreq ifr;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -273,6 +268,8 @@ struct iface *init_bcast(struct iface *ifa)
     }
 
 #ifdef linux
+    struct ifreq ifr;
+
     if (ifp)
         /* This won't work without root priviledges and may be system dependent
          * so let's silently ignore if it doesn't work */

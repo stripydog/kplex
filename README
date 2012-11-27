@@ -37,9 +37,10 @@ kplex [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
 Where
 <filename> is the path of a configuration file to use where default options and
 interfaces are defined. If not specified, kplex will look for a configuration
-file in ~/.kplex.conf, then /etc/kplex.conf and if nothing is found will use
-only command line directives.  specifying filename as "-" disables looking
-for the default configuration files.
+file in your home directory (~/.kplex.conf on GNU/Linux,
+~/Library/Preferences/kplex.ini on Mac), then /etc/kplex.conf and if nothing is
+found will use only command line directives.  Specifying filename as "-"
+disables looking for the default configuration files.
 
 <option> is an option specifier for the form:
     <varable>=<value>

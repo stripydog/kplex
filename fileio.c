@@ -39,7 +39,7 @@ void cleanup_file(iface_t *ifa)
     fclose(iff->fp);
 }
 
-int write_file(iface_t *ifa)
+void write_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     FILE *fp = ifc->fp;
@@ -62,11 +62,9 @@ int write_file(iface_t *ifa)
         senblk_free(sptr,ifa->q);
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
-int read_file(iface_t *ifa)
+void read_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t sblk;
@@ -99,8 +97,6 @@ int read_file(iface_t *ifa)
         push_senblk(&sblk,ifa->q);
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 iface_t *init_file (iface_t *ifa)

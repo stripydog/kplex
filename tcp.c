@@ -55,7 +55,7 @@ void cleanup_tcp(iface_t *ifa)
     close(ift->fd);
 }
 
-int read_tcp(struct iface *ifa)
+void read_tcp(struct iface *ifa)
 {
 	char buf[BUFSIZ];
 	char *bptr,*eptr=buf+BUFSIZ,*senptr;
@@ -96,18 +96,16 @@ int read_tcp(struct iface *ifa)
 		}
 	}
 	iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
-int write_tcp(struct iface *ifa)
+void write_tcp(struct iface *ifa)
 {
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
 	senblk_t *sptr;
 
 #ifndef MSG_NOSIGNAL
     #define MSG_NOSIGNAL 0
-    n=1;
+    int n=1;
     setsockopt(ift->fd,SOL_SOCKET, SO_NOSIGPIPE, (void *)&n, sizeof(int));
 #endif
 	for(;;) {
@@ -125,8 +123,6 @@ int write_tcp(struct iface *ifa)
 	}
 
 	iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
@@ -181,7 +177,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     return(newifa);
 }
 
-int tcp_server(iface_t *ifa)
+void tcp_server(iface_t *ifa)
 {
     struct if_tcp *ift=(struct if_tcp *)ifa->info;
     int afd;
@@ -197,8 +193,6 @@ int tcp_server(iface_t *ifa)
         }
     }
     iface_thread_exit(errno);
-    /* Not reached */
-    return(errno);
 }
 
 iface_t *init_tcp(iface_t *ifa)

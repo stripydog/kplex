@@ -14,7 +14,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#define KPLEXHOMECONF "Library/Preferences/kplex.ini"
+#else
 #define KPLEXHOMECONF ".kplex.conf"
+#endif
+
 #define KPLEXGLOBALCONF "/etc/kplex.conf"
 #define DEFQUEUESZ 128
 #define SERIALQUESIZE 128
@@ -138,8 +143,8 @@ struct iface {
     sfilter_t *ifilter;
     sfilter_t *ofilter;
 	void (*cleanup)(struct iface *);
-	int (*read)(struct iface *);
-	int (*write)(struct iface *);
+	void (*read)(struct iface *);
+	void (*write)(struct iface *);
 };
 
 typedef struct iface iface_t;
