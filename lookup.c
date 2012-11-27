@@ -10,6 +10,7 @@ struct nameid {
     struct nameid *next;
 };
 
+/* This is used before we start multiple threads */
 static struct nameid *idlist;
 
 unsigned int namelookup(char *name)

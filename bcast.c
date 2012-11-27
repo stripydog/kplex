@@ -35,6 +35,9 @@ struct if_bcast {
     struct sockaddr_in laddr;       /* local (bind) address */
 };
 
+/* mutex for shared broadcast structures */
+pthread_rwlock_t sysaddr_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 /*
  * Duplicate broadcast specific info
  * Args: if_bcast to be duplicated (cast to void *)
@@ -125,10 +128,12 @@ void read_bcast(struct iface *ifa)
 
         /* Compare the source address to the list of interfaces we're
          * ignoringing */
+        pthread_rwlock_rdlock(&sysaddr_lock);
         for (igp=ignore;igp;igp=igp->next) {
             if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
                 break;
         }
+        pthread_rwlock_unlock(&sysaddr_lock);
         /* If igp points to anything, we broke out of the above loop
          * on a match. Drop the packet and carry on */
         if (igp)
@@ -225,11 +230,13 @@ struct iface *init_bcast(struct iface *ifa)
         else
             ifb->laddr.sin_addr.s_addr = htonl(INADDR_ANY);
     } else {
+        pthread_rwlock_wrlock(&sysaddr_lock);
         if (ifap == NULL)
             if (getifaddrs(&ifap) < 0) {
                 logerr(errno,"Error getting interface info");
                 return(NULL);
         }
+        pthread_rwlock_unlock(&sysaddr_lock);
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
             if ((!strcmp(ifname,ifp->ifa_name)) &&
                 (ifp->ifa_addr->sa_family == AF_INET) &&
@@ -270,11 +277,12 @@ struct iface *init_bcast(struct iface *ifa)
 #ifdef linux
     struct ifreq ifr;
 
-    if (ifp)
+    if (ifp) {
         /* This won't work without root priviledges and may be system dependent
          * so let's silently ignore if it doesn't work */
         strncpy(ifr.ifr_ifrn.ifrn_name,ifp->ifa_name,IFNAMSIZ);
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
+    }
 #endif
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
         logerr(errno,"Bind failed");
@@ -298,6 +306,7 @@ struct iface *init_bcast(struct iface *ifa)
 
         /* find the end of the linked list, or a structure with the
          * ignore address already in it */
+        pthread_rwlock_wrlock(&sysaddr_lock);
         for (igpp=&ignore;*igpp;igpp=&(*igpp)->next)
         /* DANGER! Only checks address, not port. Need to change this later
          * if port becomes significant */
@@ -308,6 +317,7 @@ struct iface *init_bcast(struct iface *ifa)
         /* Tack on new address if not a duplicate */
         if (*igpp == NULL)
             *igpp=newig;
+        pthread_rwlock_unlock(&sysaddr_lock);
 
         /* write queue initialization */
         if ((ifa->q = init_q(qsize)) == NULL) {

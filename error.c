@@ -10,6 +10,7 @@
 
 #define IDENT "kplex"
 
+/* This should not be changed once we start multiple threads */
 static int facility = -1;
 
 void initlog(int where)

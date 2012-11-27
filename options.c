@@ -14,6 +14,7 @@
 #define ARGDELIM ','
 #define FILTERDELIM ':'
 
+/* This is used before we start multiple threads */
 static char configbuf[BUFSIZE];
 
 void lineerror(unsigned int line)
