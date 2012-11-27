@@ -1,5 +1,5 @@
 OS=$(shell uname -s)
-CFLAGS= -g -Wall
+#CFLAGS= -g -Wall
 ifeq ($(OS),Linux)
 LFLAGS=-pthread -lutil
 endif
