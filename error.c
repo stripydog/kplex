@@ -21,7 +21,7 @@ void initlog(int where)
         openlog(IDENT,LOG_NOWAIT,facility);
 }
 
-loginfo(char *fmt, ...)
+void loginfo(char *fmt, ...)
 {
     va_list ap;
 

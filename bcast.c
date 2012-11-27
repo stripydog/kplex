@@ -75,7 +75,7 @@ void cleanup_bcast(iface_t *ifa)
      * we'd have to check they weren't in use by some other interface */
 }
 
-iface_t * write_bcast(struct iface *ifa)
+int write_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
     senblk_t *sptr;
@@ -97,9 +97,11 @@ iface_t * write_bcast(struct iface *ifa)
         senblk_free(sptr,ifa->q);
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
-iface_t *read_bcast(struct iface *ifa)
+int read_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
     senblk_t sblk;
@@ -161,6 +163,8 @@ iface_t *read_bcast(struct iface *ifa)
         }
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 struct iface *init_bcast(struct iface *ifa)
@@ -192,7 +196,7 @@ struct iface *init_bcast(struct iface *ifa)
         else if (!strcasecmp(opt->var,"address"))
             bname=opt->val;
         else if (!strcasecmp(opt->var,"port")) {
-            if (((port=atoi(opt->val)) > 0) && (port > 2^(sizeof(short) -1))) {
+            if (((port=atoi(opt->val)) > 0) && (port > (2^(sizeof(short) -1)))) {
                 logerr(0,"port %s out of range",opt->val);
                 return(NULL);
             }

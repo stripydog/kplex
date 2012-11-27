@@ -39,7 +39,7 @@ void cleanup_file(iface_t *ifa)
     fclose(iff->fp);
 }
 
-iface_t *write_file(iface_t *ifa)
+int write_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     FILE *fp = ifc->fp;
@@ -62,9 +62,11 @@ iface_t *write_file(iface_t *ifa)
         senblk_free(sptr,ifa->q);
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
-iface_t *read_file(iface_t *ifa)
+int read_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t sblk;
@@ -97,6 +99,8 @@ iface_t *read_file(iface_t *ifa)
         push_senblk(&sblk,ifa->q);
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 iface_t *init_file (iface_t *ifa)
@@ -104,7 +108,7 @@ iface_t *init_file (iface_t *ifa)
     char *fname=NULL;
     size_t qsize=DEFFILEQSIZE;
     struct if_file *ifc;
-    struct kopts *opt,*nextopt;
+    struct kopts *opt;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
         logerr(errno,"Could not allocate memory");

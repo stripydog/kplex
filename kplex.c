@@ -13,10 +13,10 @@
 #include "kplex.h"
 #include "kplex_mods.h"
 #include <signal.h>
-#include <unistd.h>
 #include <pwd.h>
 #include <syslog.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
@@ -108,11 +108,13 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
         for (i=0,cptr=sptr->data+1;i<5 && *cptr != '\r';i++,cptr++)
             if(fptr->match[i] && fptr->match[i] != *cptr)
                 break;
-        if (i==5)
-            if (fptr->info.type)
+        if (i==5) {
+            if (fptr->info.type) {
                 return(0);
-            else
+            } else {
                 return(1);
+            }
+        }
     }
     return(0);
 }
@@ -169,8 +171,6 @@ void free_filter(sfilter_t *fptr)
  */
 void link_src_to_rule (struct srclist **list, struct srclist *src)
 {
-    struct srclist *tptr;
-
     for (;*list;list=&(*list)->next)
         if ((*list)->failtime > src->failtime)
             break;
@@ -230,9 +230,9 @@ int isactive(sfilter_t *filter,senblk_t *sptr)
  */
 int addfailover(sfilter_t **head,char *spec)
 {
-    sf_rule_t *newrule,*tptr;
+    sf_rule_t *newrule;
     struct srclist *src;
-    char *cptr,*val;
+    char *cptr;
     int n,done;
     time_t now;
 
@@ -276,7 +276,7 @@ int addfailover(sfilter_t **head,char *spec)
     }
     if (done)
         if (!*head) {
-            if ((*head)=(sfilter_t *)malloc(sizeof(sfilter_t))) {
+            if (((*head)=(sfilter_t *)malloc(sizeof(sfilter_t)))) {
                 (*head)->type=FAILOVER;
                 (*head)->refcount=1;
                 pthread_mutex_init(&(*head)->lock,NULL);
@@ -526,7 +526,6 @@ void start_interface(void *ptr)
     iface_t *ifa = (iface_t *)ptr;
     iface_t **lptr;
     iface_t **iptr;
-    int ret=0;
     sigset_t set;
 
     sigemptyset(&set);
@@ -777,10 +776,10 @@ char *get_def_config()
     char *buf;
     struct passwd *pw;
 
-    if (confptr=getenv("KPLEXCONF"))
+    if ((confptr=getenv("KPLEXCONF")))
         return (confptr);
     if ((confptr=getenv("HOME")) == NULL)
-        if (pw=getpwuid(getuid()))
+        if ((pw=getpwuid(getuid())))
             confptr=pw->pw_dir;
     if (confptr) {
         if ((buf = malloc(strlen(confptr)+strlen(KPLEXHOMECONF)+2)) == NULL) {
@@ -923,7 +922,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
 }
 
 
-main(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     pthread_t tid;
     pid_t pid;

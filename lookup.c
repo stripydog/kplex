@@ -1,6 +1,8 @@
+#include "kplex.h"
 #include<stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 
 struct nameid {
     unsigned int id;
@@ -16,7 +18,7 @@ unsigned int namelookup(char *name)
     struct nameid *nptr;
 
     for (nptr=idlist;nptr;nptr=nptr->next) {
-        if(ret=strcmp(name,nptr->name)) {
+        if((ret=strcmp(name,nptr->name))) {
             if (ret<0)
                 return(-1);
         } else {

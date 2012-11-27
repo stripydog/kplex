@@ -38,6 +38,7 @@ void *ifdup_tcp(void *ift)
 void cleanup_tcp(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *)ifa->info;
+/*
     int how;
 
     switch(ifa->direction) {
@@ -50,11 +51,11 @@ void cleanup_tcp(iface_t *ifa)
     case BOTH:
         how=SHUT_RDWR;
     }
-
+*/
     close(ift->fd);
 }
 
-struct iface * read_tcp(struct iface *ifa)
+int read_tcp(struct iface *ifa)
 {
 	char buf[BUFSIZ];
 	char *bptr,*eptr=buf+BUFSIZ,*senptr;
@@ -95,13 +96,14 @@ struct iface * read_tcp(struct iface *ifa)
 		}
 	}
 	iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
-struct iface * write_tcp(struct iface *ifa)
+int write_tcp(struct iface *ifa)
 {
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
 	senblk_t *sptr;
-	int n;
 
 #ifndef MSG_NOSIGNAL
     #define MSG_NOSIGNAL 0
@@ -123,12 +125,14 @@ struct iface * write_tcp(struct iface *ifa)
 	}
 
 	iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
 {
     iface_t *newifa;
-    struct if_tcp *newift=NULL,*ift=( struct if_tcp *)ifa->info;
+    struct if_tcp *newift=NULL;
     pthread_t tid;
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL)
@@ -177,7 +181,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     return(newifa);
 }
 
-iface_t *tcp_server(iface_t *ifa)
+int tcp_server(iface_t *ifa)
 {
     struct if_tcp *ift=(struct if_tcp *)ifa->info;
     int afd;
@@ -193,6 +197,8 @@ iface_t *tcp_server(iface_t *ifa)
         }
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 iface_t *init_tcp(iface_t *ifa)
@@ -201,7 +207,7 @@ iface_t *init_tcp(iface_t *ifa)
     char *host,*port;
     struct addrinfo hints,*aptr;
     struct servent *svent;
-    int tport,err,on=1;
+    int err,on=1;
     char *conntype = "c";
     size_t qsize=DEFTCPQSIZE;
     struct kopts *opt;
@@ -253,7 +259,7 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_STREAM;
 
-    if (err=getaddrinfo(host,port,&hints,&aptr)) {
+    if ((err=getaddrinfo(host,port,&hints,&aptr))) {
         logerr(errno,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
         return(NULL);
     }
@@ -270,7 +276,7 @@ iface_t *init_tcp(iface_t *ifa)
                 break;
         }
         close(ift->fd);
-     } while (aptr = aptr->ai_next);
+     } while ((aptr = aptr->ai_next));
 
     if (aptr == NULL) {
         logerr(errno,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);

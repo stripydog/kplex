@@ -9,6 +9,7 @@
 
 #include "kplex.h"
 #include <syslog.h>
+#include <ctype.h>
 
 #define ARGDELIM ','
 #define FILTERDELIM ':'
@@ -133,7 +134,7 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
 {
     char *ptr;
     char quote;
-    while (ptr=fgets(configbuf,BUFSIZE,fp)) {
+    while ((ptr=fgets(configbuf,BUFSIZE,fp))) {
         /* discard white space */
         for (++(*line);*ptr==' '||*ptr=='\t';++ptr);
 
@@ -170,14 +171,14 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
         *ptr++='\0';
     } else {
         *ptr='\0';
-        for (*ptr++='\0';(*ptr == ' ') || (*ptr == '\t');*ptr++);
+        for (*ptr++='\0';*ptr == ' ' || *ptr == '\t';ptr++);
         if (*ptr++ != '=')
             return(-1);
     }
 
-    for (;(*ptr == ' ') || (*ptr == '\t');*ptr++);
+    for (;(*ptr == ' ') || (*ptr == '\t');ptr++);
     if (*ptr == '\'' || *ptr == '"') {
-        for (quote=*ptr++,*val=ptr;*ptr != quote; *ptr++)
+        for (quote=*ptr++,*val=ptr;*ptr != quote; ptr++)
             if (*ptr == '\0' || *ptr == '\n');
                 return(-1);
     } else {
@@ -193,7 +194,7 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
 		}
     }
     *ptr++='\0';
-    for (;*ptr == ' ' || *ptr == '\t';*ptr++);
+    for (;*ptr == ' ' || *ptr == '\t';ptr++);
         if (*ptr == '\n' || *ptr == '#' || *ptr == '\0')
             return(0);
     return(-1);
@@ -436,7 +437,7 @@ iface_t *parse_file(char *fname)
 iface_t *parse_arg(char *arg)
 {
     iface_t *ifp;
-    char *ptr,**pptr;
+    char *ptr;
     char *var,*val;
     int ret,done=0;
     struct kopts **opt;

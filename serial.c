@@ -160,7 +160,7 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
  * Args: pointer to interface structure
  * Returns: Pointer to interface structure
  */
-struct iface * read_serial(struct iface *ifa)
+int read_serial(struct iface *ifa)
 {
     char buf[BUFSIZ];        /* Buffer for serial reads */
     char *bptr,*eptr=buf+BUFSIZ,*senptr;
@@ -212,6 +212,8 @@ struct iface * read_serial(struct iface *ifa)
         }
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 /*
@@ -219,7 +221,7 @@ struct iface * read_serial(struct iface *ifa)
  * Args: pointer to interface
  * Returns: pointer to interface
  */
-struct iface * write_serial(struct iface *ifa)
+int write_serial(struct iface *ifa)
 {
     struct if_serial *ifs = (struct if_serial *) ifa->info;
     senblk_t *senblk_p;
@@ -248,6 +250,8 @@ struct iface * write_serial(struct iface *ifa)
         senblk_free(senblk_p,ifa->q);
     }
     iface_thread_exit(errno);
+    /* Not reached */
+    return(errno);
 }
 
 /*
@@ -262,7 +266,6 @@ struct iface *init_serial (struct iface *ifa)
     int baud=B4800;        /* Default for NMEA 0183. AIS will need
                    explicit baud rate specification */
     tcflag_t cflag;
-    int st=0;
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
@@ -358,15 +361,12 @@ struct iface *init_pty (struct iface *ifa)
     struct if_serial *ifs;
     int baud=B4800,slavefd;
     tcflag_t cflag;
-    int st=0;
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
     char *master="s";
     struct stat statbuf;
     char slave[PATH_MAX];
-    char * link=NULL;
-
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"mode")) {

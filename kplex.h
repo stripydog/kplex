@@ -12,6 +12,7 @@
 #include <termios.h>
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 
 #define KPLEXHOMECONF ".kplex.conf"
 #define KPLEXGLOBALCONF "/etc/kplex.conf"
@@ -137,8 +138,8 @@ struct iface {
     sfilter_t *ifilter;
     sfilter_t *ofilter;
 	void (*cleanup)(struct iface *);
-	struct iface *(*read)(struct iface *);
-	struct iface *(*write)(struct iface *);
+	int (*read)(struct iface *);
+	int (*write)(struct iface *);
 };
 
 typedef struct iface iface_t;
@@ -190,10 +191,14 @@ void logerr(int,char *,...);
 void logterm(int,char *,...);
 void logtermall(int,char *,...);
 void logwarn(char *,...);
+void loginfo(char *,...);
 void initlog(int);
 sfilter_t *addfilter(sfilter_t *);
+int senfilter(senblk_t *,sfilter_t *);
+int checkcksum(senblk_t *);
 unsigned int namelookup(char *);
 int insertname(char *, unsigned int);
 void freenames(void);
+int cmdlineopt(struct kopts **, char *);
 
 extern struct iftypedef iftypes[];
