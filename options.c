@@ -180,7 +180,7 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
     for (;(*ptr == ' ') || (*ptr == '\t');ptr++);
     if (*ptr == '\'' || *ptr == '"') {
         for (quote=*ptr++,*val=ptr;*ptr != quote; ptr++)
-            if (*ptr == '\0' || *ptr == '\n');
+            if (*ptr == '\0' || *ptr == '\n')
                 return(-1);
     } else {
         for (*val=ptr;*ptr != ' ' && *ptr != '\t'; ptr++)
