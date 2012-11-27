@@ -1,0 +1,6 @@
+v0.2.2: 27th November 2012
+* Changed user config file to ~/Library/Preferences/kplex.ini on OS X
+* Source tidy to silence compiler warnings on OS X
+
+v.0.2: 21st November 2012
+* Initial public test release
