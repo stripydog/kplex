@@ -19,6 +19,7 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <arpa/inet.h>
 
 #define DEFBCASTQSIZE 64
 
@@ -212,9 +213,13 @@ struct iface *init_bcast(struct iface *ifa)
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"device"))
             ifname=opt->val;
-        else if (!strcasecmp(opt->var,"address"))
+        else if (!strcasecmp(opt->var,"address")) {
             bname=opt->val;
-        else if (!strcasecmp(opt->var,"port")) {
+            if (inet_aton(opt->val,&baddr) == 0) {
+                logerr(0,"%s is not a valid address",opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"port")) {
             if (((port=atoi(opt->val)) > 0) && (port > (2^(sizeof(short) -1)))) {
                 logerr(0,"port %s out of range",opt->val);
                 return(NULL);
@@ -358,7 +363,7 @@ struct iface *init_bcast(struct iface *ifa)
         ifa->direction=OUT;
         ifa->pair->direction=IN;
         ifb = (struct if_bcast *) ifa->pair->info;
-        ifb->laddr.sin_addr.s_addr=bname?baddr.s_addr:INADDR_ANY;
+        ifb->laddr.sin_addr.s_addr=ifb->addr.sin_addr.s_addr;
         ifb->laddr.sin_port=ifb->addr.sin_port;
         if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
             logwarn("setsockopt failed: %s",strerror(errno));
