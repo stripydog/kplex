@@ -1,3 +1,8 @@
+v0.2.3: 28th November 2012
+* Fixed bug in handling of unclosed quotes arround arguments
+* Fixed race condition in startup for mlutiple outbound broadcast interfaces
+* Fixed error in broadcast interface binding as root
+
 v0.2.2: 27th November 2012
 * Changed user config file to ~/Library/Preferences/kplex.ini on OS X
 * Source tidy to silence compiler warnings on OS X

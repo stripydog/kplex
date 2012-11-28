@@ -36,7 +36,20 @@ struct if_bcast {
 };
 
 /* mutex for shared broadcast structures */
-pthread_rwlock_t sysaddr_lock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_rwlock_t sysaddr_lock;
+
+/*
+ *Static initialization of rwlocks is not supported on all platforms, so
+ * we do it via pthread_once
+ */
+pthread_once_t bcast_init = PTHREAD_ONCE_INIT;
+char bcast_rwlock_initialized=0;
+
+void init_bcast_lock(void)
+{
+    if (pthread_rwlock_init(&sysaddr_lock,NULL) == 0)
+        bcast_rwlock_initialized=1;
+}
 
 /*
  * Duplicate broadcast specific info
@@ -187,6 +200,12 @@ struct iface *init_bcast(struct iface *ifa)
         return(NULL);
     }
     memset(ifb,0,sizeof(struct if_bcast));
+
+    if (pthread_once(&bcast_init,init_bcast_lock) != 0 ||
+            bcast_rwlock_initialized != 1) {
+        logerr(errno,"rwlock initialization failed");
+        return(NULL);
+    }
 
     ifname=bname=NULL;
 

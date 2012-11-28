@@ -14,3 +14,7 @@ kplex.o: kplex_mods.h
 
 clean:
 	rm -f kplex $(objects)
+
+.PHONY: release
+release:
+	sudo ./release
