@@ -1,3 +1,8 @@
+v0.2.4: 30th November 2012
+* Support for FreeBSD
+* Explicit enabling of support for IPv6-mapped-IPv4 for platforms where this is
+  disabled by default
+
 v0.2.3: 28th November 2012
 * Fixed multiple problems with broadcast interfaces
 * Fixed bug in handling of unclosed quotes arround arguments

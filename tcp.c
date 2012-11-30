@@ -201,8 +201,11 @@ iface_t *init_tcp(iface_t *ifa)
     char *host,*port;
     struct addrinfo hints,*aptr;
     struct servent *svent;
-    int err,on=1;
+    int err;
+    int on=1,off=0;
     char *conntype = "c";
+    unsigned char *ptr;
+    int i;
     size_t qsize=DEFTCPQSIZE;
     struct kopts *opt;
 
@@ -266,6 +269,17 @@ iface_t *init_tcp(iface_t *ifa)
                 break;
         } else {
             setsockopt(ift->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
+            if (aptr->ai_family == AF_INET6) {
+                for (ptr=((struct sockaddr_in6 *)aptr->ai_addr)->sin6_addr.s6_addr,i=0;i<16;i++,ptr++)
+                    if (*ptr)
+                        break;
+                if (i == sizeof(struct in6_addr)) {
+                    if (setsockopt(ift->fd,IPPROTO_IPV6,IPV6_V6ONLY,
+                            (void *)&off,sizeof(off)) <0) {
+                        logerr(errno,"Failed to set ipv6 mapped ipv4 addresses on socket");
+                    }
+                }
+            }
             if (bind(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
                 break;
         }

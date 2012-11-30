@@ -1,7 +1,11 @@
 OS=$(shell uname -s)
 CFLAGS= -g -Wall
+ifneq ($(OS),Darwin)
 ifeq ($(OS),Linux)
 LFLAGS=-pthread -lutil
+else
+LFLAGS=-lpthread -lutil
+endif
 endif
 
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o
