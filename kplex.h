@@ -20,6 +20,10 @@
 #define KPLEXHOMECONF ".kplex.conf"
 #endif
 
+#ifdef linux
+#define PTHREAD_MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE_NP
+#endif
+
 #define KPLEXGLOBALCONF "/etc/kplex.conf"
 #define DEFQUEUESZ 128
 #define SERIALQUESIZE 128

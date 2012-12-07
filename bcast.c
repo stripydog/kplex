@@ -304,7 +304,7 @@ struct iface *init_bcast(struct iface *ifa)
     if (ifp) {
         /* This won't work without root priviledges and may be system dependent
          * so let's silently ignore if it doesn't work */
-        strncpy(ifr.ifr_ifrn.ifrn_name,ifp->ifa_name,IFNAMSIZ);
+        strncpy(ifr.ifr_ifrn.ifrn_name,ifp->ifa_name,IF_NAMESIZE);
         setsockopt(ifb->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
     }
 #endif
