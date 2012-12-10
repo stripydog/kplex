@@ -12,8 +12,10 @@ Installation
 ------------
 
 You've got this far so you've unpacked it.  So "make" should be the obvious
-next step.  There's only one executable ("kplex") so you can move it wherever
-you like without some install command doing it for you.
+next step.  If you're using FreeBSD or some other system where GNU make is not
+default, you make have to type "gmake" instead.  There's only one executable
+("kplex") so you can move it wherever you like without some install command
+doing it for you.
 
 If you want to have kplex start on boot, kplex.init is an example init script
 for debian-derived systems. It expects kplex to be installed in /usr/local/sbin
