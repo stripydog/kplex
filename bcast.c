@@ -220,7 +220,7 @@ struct iface *init_bcast(struct iface *ifa)
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"port")) {
-            if (((port=atoi(opt->val)) > 0) && (port > (2^(sizeof(short) -1)))) {
+            if (((port=atoi(opt->val)) <= 0) || (port > 65535)) {
                 logerr(0,"port %s out of range",opt->val);
                 return(NULL);
             }
