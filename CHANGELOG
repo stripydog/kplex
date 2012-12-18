@@ -1,3 +1,6 @@
+v0.2.6: 18th December 2012
+* Fixed "port out of range" problem with UDP broadcast interfaces
+
 v0.2.5: 10th December 2012
 * Fixed various POSIX compatibility isses
 
