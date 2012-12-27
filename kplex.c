@@ -500,7 +500,7 @@ void *run_engine(void *info)
             pthread_mutex_lock(&eptr->lists->io_mutex);
             /* Traverse list of outputs and push a copy of senblk to each */
             for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-                if ((optr->direction == OUT) && ((!sptr) || (sptr->src != optr->id))) {
+                if ((optr->q) && ((!sptr) || (sptr->src != optr->id))) {
                     push_senblk(sptr,optr->q);
                 }
             }
@@ -1148,7 +1148,7 @@ int main(int argc, char ** argv)
                 pthread_kill(ifptr->tid,SIGUSR1);
             }
             for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
-                if (ifptr->direction == BOTH)
+                if (ifptr->q == NULL)
                     pthread_kill(ifptr->tid,SIGUSR1);
             }
         }
