@@ -1,3 +1,6 @@
+v0.2.7: 27th December 2012
+* Fixed crash and hang on exit bug with unidirectional tcp servers
+
 v0.2.6: 18th December 2012
 * Fixed "port out of range" problem with UDP broadcast interfaces
 
