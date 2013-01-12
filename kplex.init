@@ -13,8 +13,8 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 . /lib/lsb/init-functions
 
-DAEMON=/usr/local/sbin/kplex
-KPLEXCONF=/usr/local/etc/kplex.conf
+DAEMON=/usr/bin/kplex
+KPLEXCONF=/etc/kplex.conf
 RUN_AS_USER=root
 
 test -x $DAEMON || exit 5

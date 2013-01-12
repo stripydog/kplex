@@ -10,4 +10,4 @@ echo "/^CFLAGS=/s/^/#/
 $
 -3,.d
 w" | ed -s $VDIR/Makefile >/dev/null
-(cd /tmp && tar cf - ${VDIR##*/} | gzip > kplex.${VERSION}.tgz)
+(cd /tmp && tar cf - ${VDIR##*/} | gzip > kplex-${VERSION}.tgz)

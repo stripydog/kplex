@@ -1,3 +1,8 @@
+v0.2.8: 28th January 2013
+* Minor cosmetic source tweaks
+* Minor non-code adjustments for Debian packaging
+* Added example configuration kplex.conf.ex
+
 v0.2.7: 27th December 2012
 * Fixed crash and hang on exit bug with unidirectional tcp servers
 

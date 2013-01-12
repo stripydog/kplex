@@ -964,13 +964,14 @@ int main(int argc, char ** argv)
                 config=optarg;
                 break;
             default:
-                fprintf(stderr, "Usage: %s [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
                 err++;
         }
     }
 
-    if (err)
+    if (err) {
+        fprintf(stderr, "Usage: %s [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
+    }
 
     /* If a config file is specified by a commad line argument, read it.  If
      * not, look for a default config file unless told not to using "-f-" on the
@@ -1027,7 +1028,7 @@ int main(int argc, char ** argv)
         fclose(stdout);
         fclose(stderr);
         setsid();
-        chdir("/");
+        (void) chdir("/");
         umask(0);
     }
 
