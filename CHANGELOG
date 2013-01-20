@@ -1,4 +1,5 @@
-v0.2.8: 28th January 2013
+v0.2.8: 16th January 2013
+* Fixed bug in shutdown of bi-directional tcp server
 * Minor cosmetic source tweaks
 * Minor non-code adjustments for Debian packaging
 * Added example configuration kplex.conf.ex

@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012
+ * Copyright Keith Young 2012-2013
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -663,10 +663,10 @@ int unlink_interface(iface_t *ifa)
                 if (tptr->direction == BOTH)
                     break;
             if (tptr == NULL) {
-                pthread_mutex_lock(&ifa->q->q_mutex);
-                ifa->q->active=0;
-                pthread_cond_broadcast(&ifa->q->freshmeat);
-                pthread_mutex_unlock(&ifa->q->q_mutex);
+                pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
+                ifa->lists->engine->q->active=0;
+                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
+                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
             }
         }
 
@@ -747,6 +747,7 @@ iface_t *ifdup (iface_t *ifa)
         newif->info = NULL;
 
     ifa->pair=newif;
+    newif->tid=ifa->tid;
     newif->id=ifa->id;
     newif->name=ifa->name;
     newif->pair=ifa;
@@ -1076,7 +1077,7 @@ int main(int argc, char ** argv)
          * interfaces where the initialisation routine has expanded them to an
          * IN/OUT pair.
          */
-            if (ifptr->direction != OUT)
+            if (ifptr->direction == IN)
                 ifptr->q=engine->q;
 
             if (ifptr->checksum <0)

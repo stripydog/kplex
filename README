@@ -310,7 +310,7 @@ port, make it available to opencpn but also create a tcp server to make the
 data available to inavX on an ipad you might invoke kplex like this:
 kplex serial:direction=in,filename=/dev/ttyUSB0,baud=38400 \
 pty:direction=out,mode=master,filename=/home/fred/.opencpn/ais,baud=38400 \
-tcp:direction=out,mode=servre
+tcp:direction=out,mode=server
 
 And add the following to /home/fred/.opencpn/opencpn.conf:
 [Settings/AISPort]

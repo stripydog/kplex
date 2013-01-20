@@ -1,6 +1,6 @@
 /* tcp.c
  * This file is part of kplex
- * Copyright Keith Young 2012
+ * Copyright Keith Young 2012-2013
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -167,7 +167,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         }
         newifa->direction=OUT;
         newifa->pair->direction=IN;
-        newifa->pair->q=ifa->q;
+        newifa->pair->q=ifa->lists->engine->q;
         link_to_initialized(newifa->pair);
         pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
     }
@@ -252,7 +252,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     memset((void *)&hints,0,sizeof(hints));
 
-    hints.ai_flags=AI_CANONNAME|(*conntype == 's')?AI_PASSIVE:0;
+    hints.ai_flags=(*conntype == 's')?AI_PASSIVE:0;
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_STREAM;
 
@@ -282,12 +282,13 @@ iface_t *init_tcp(iface_t *ifa)
             }
             if (bind(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
                 break;
+            err=errno;
         }
         close(ift->fd);
      } while ((aptr = aptr->ai_next));
 
     if (aptr == NULL) {
-        logerr(errno,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
+        logerr(err,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
         return(NULL);
     }
 

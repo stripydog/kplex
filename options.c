@@ -1,6 +1,6 @@
 /* options.c.
  * This flie is part of kplex.
- * Copyright Keith Young 2012
+ * Copyright Keith Young 2012-2013
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command
@@ -543,4 +543,4 @@ int cmdlineopt(struct kopts **options, char *arg)
     optr->next=*options;
     *options=optr;
     return(0);
-}    
+} 

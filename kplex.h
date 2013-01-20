@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012
+ * Copyright Keith Young 2012-2013
  * For copying information see the file COPYING distributed with this software
  */
 #include <sys/types.h>
@@ -42,13 +42,13 @@
 
 enum itype {
     GLOBAL,
-	FILEIO,
-	SERIAL,
-	BCAST,
-	TCP,
+    FILEIO,
+    SERIAL,
+    BCAST,
+    TCP,
     PTY,
-	MCAST,
-	ST,
+    MCAST,
+    ST,
     END
 };
 
@@ -59,39 +59,39 @@ enum filtertype {
 
 enum iotype {
     NONE,
-	IN,
-	OUT,
+    IN,
+    OUT,
     BOTH
 };
 
 struct senblk {
-	size_t len;
+    size_t len;
     unsigned int src;
-	struct senblk *next;
-	char data[SENMAX];
+    struct senblk *next;
+    char data[SENMAX];
 };
 typedef struct senblk senblk_t;
 
 struct ioqueue {
-	pthread_mutex_t	q_mutex;
-	pthread_cond_t	freshmeat;
-	int active;
-	senblk_t *free;
-	senblk_t *qhead;
-	senblk_t *qtail;
-	senblk_t *base;
+    pthread_mutex_t    q_mutex;
+    pthread_cond_t    freshmeat;
+    int active;
+    senblk_t *free;
+    senblk_t *qhead;
+    senblk_t *qtail;
+    senblk_t *base;
 };
 typedef struct ioqueue ioqueue_t;
 
 struct iolists {
-	pthread_mutex_t	io_mutex;
-	pthread_mutex_t dead_mutex;
-	pthread_cond_t	dead_cond;
-	pthread_cond_t	init_cond;
-	struct iface *initialized;
-	struct iface *outputs;
-	struct iface *inputs;
-	struct iface *dead;
+    pthread_mutex_t    io_mutex;
+    pthread_mutex_t dead_mutex;
+    pthread_cond_t    dead_cond;
+    pthread_cond_t    init_cond;
+    struct iface *initialized;
+    struct iface *outputs;
+    struct iface *inputs;
+    struct iface *dead;
     struct iface *engine;
 };
 
@@ -132,23 +132,23 @@ struct sfilter {
 typedef struct sfilter sfilter_t;
 
 struct iface {
-	pthread_t tid;
+    pthread_t tid;
     unsigned int id;
     char *name;
     struct iface *pair;
-	enum iotype direction;
-	enum itype type;
-	void *info;
+    enum iotype direction;
+    enum itype type;
+    void *info;
     struct kopts *options;
-	ioqueue_t *q;
-	struct iface *next;
-	struct iolists *lists;
+    ioqueue_t *q;
+    struct iface *next;
+    struct iolists *lists;
     int checksum;
     sfilter_t *ifilter;
     sfilter_t *ofilter;
-	void (*cleanup)(struct iface *);
-	void (*read)(struct iface *);
-	void (*write)(struct iface *);
+    void (*cleanup)(struct iface *);
+    void (*read)(struct iface *);
+    void (*write)(struct iface *);
 };
 
 typedef struct iface iface_t;

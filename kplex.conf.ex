@@ -19,11 +19,11 @@
 # See documentation for details on configuration
 # Example configuration starts below this line
 #
-#[ serial ]
+#[serial]
 #filename=/dev/ttyUSB0
 #direction=both
 #baud=38400
-#[ tcp ]
+#[tcp]
 #mode=server
 #port=10110
 #direction=both
