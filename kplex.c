@@ -12,6 +12,7 @@
 
 #include "kplex.h"
 #include "kplex_mods.h"
+#include "version.h"
 #include <signal.h>
 #include <pwd.h>
 #include <syslog.h>
@@ -426,7 +427,7 @@ senblk_t *next_senblk(ioqueue_t *q)
     while ((tptr = q->qhead) == NULL) {
         /* No data available for reading */
         if (!q->active) {
-            /* Return NULL if the queue has been sgut down */
+            /* Return NULL if the queue has been shut down */
             pthread_mutex_unlock(&q->q_mutex);
             return ((senblk_t *)NULL);
         }
@@ -560,8 +561,17 @@ void start_interface(void *ptr)
         ifa->next=NULL;
     (*lptr)=ifa;
 
-    if (ifa->lists->initialized == NULL)
-        pthread_cond_signal(&ifa->lists->init_cond);
+    /* First pass (outputs) we decrement unstarted_outputs count and signal
+        when it gets to zero. Second pass (inputs) we decrement when all
+        interfaces have started
+    */
+    if (ifa->direction == IN) {
+        if (ifa->lists->initialized == NULL)
+            pthread_cond_signal(&ifa->lists->init_cond);
+    } else 
+        if (--ifa->lists->unstarted_outputs == 0)
+            pthread_cond_signal(&ifa->lists->init_cond);
+
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     pthread_sigmask(SIG_UNBLOCK,&set,NULL);
     if (ifa->direction == IN)
@@ -677,7 +687,7 @@ int unlink_interface(iface_t *ifa)
         ifa->lists->dead=ifa;
     else {
         for(;tptr->next;tptr=tptr->next);
-    tptr->next=ifa;
+        tptr->next=ifa;
     }
     ifa->next=NULL;
     return(0);
@@ -939,9 +949,10 @@ int main(int argc, char ** argv)
     sigset_t set,saved;
     struct iolists lists = {
         /* initialize io_mutex separately below */
-        .dead_mutex = PTHREAD_MUTEX_INITIALIZER,
+        .init_mutex = PTHREAD_MUTEX_INITIALIZER,
         .init_cond = PTHREAD_COND_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
+    .unstarted_outputs=0,
     .initialized = NULL,
     .outputs = NULL,
     .inputs = NULL,
@@ -955,7 +966,7 @@ int main(int argc, char ** argv)
     pthread_mutex_init(&lists.io_mutex,&mattr);
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"f:o:")) != -1) {
+    while ((opt=getopt(argc,argv,"f:o:V")) != -1) {
         switch (opt) {
             case 'o':
                 if (cmdlineopt(&options,optarg) < 0)
@@ -964,13 +975,16 @@ int main(int argc, char ** argv)
             case 'f':
                 config=optarg;
                 break;
+            case 'V':
+                printf("%s\n",VERSION);
+                break;
             default:
                 err++;
         }
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-V] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
 
@@ -1126,13 +1140,25 @@ int main(int argc, char ** argv)
 
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        /* Create a thread to run each interface */
+        /* Create a thread to run each output interface */
+        if ((ifptr->direction == OUT) || (ifptr->direction == BOTH)) {
+            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+            lists.unstarted_outputs++;
+        }
+    }
+
+    while (lists.unstarted_outputs)
+        pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
+
+    for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
             pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
     }
 
-    pthread_sigmask(SIG_SETMASK, &saved,NULL);
     while (lists.initialized)
         pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
+
+    pthread_sigmask(SIG_SETMASK, &saved,NULL);
+    
 
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
@@ -1141,7 +1167,7 @@ int main(int argc, char ** argv)
      * engine's queue inactive causing it to set all the outputs' queues
      * inactive and shutting them down. Thus the last input exiting also shuts
      * everything down */
-    while (lists.outputs || lists.inputs || lists.dead) {
+    while (lists.outputs || lists.inputs || lists.dead || lists.initialized) {
         while (lists.dead  == NULL && !timetodie)
             pthread_cond_wait(&lists.dead_cond,&lists.io_mutex);
         if (timetodie || (lists.outputs == NULL)) {

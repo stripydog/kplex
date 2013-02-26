@@ -157,7 +157,9 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->ifilter=addfilter(ifa->ifilter);
     newifa->ofilter=addfilter(ifa->ifilter);
     newifa->checksum=ifa->checksum;
-    if (ifa->direction == BOTH) {
+    if (ifa->direction == IN)
+        newifa->q=ifa->lists->engine->q;
+    else if (ifa->direction == BOTH) {
         if ((newifa->next=ifdup(newifa)) == NULL) {
             logwarn("Interface duplication failed");
             free(newifa->q);
@@ -257,7 +259,7 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_socktype=SOCK_STREAM;
 
     if ((err=getaddrinfo(host,port,&hints,&aptr))) {
-        logerr(errno,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
+        logerr(0,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
         return(NULL);
     }
 

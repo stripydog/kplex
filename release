@@ -1,9 +1,10 @@
 #!/bin/bash
-VERSION=`git tag | tail -1 | sed 's/^v//'`
+VERSION=`git describe --abbrev=0 | sed 's/^v//'`
 VDIR=/tmp/kplex-$VERSION
 rm -rf $VDIR
 mkdir $VDIR
 make clean
+echo "#define VERSION \"$VERSION\"" > version.h
 cp * $VDIR
 rm $VDIR/release
 echo "/^CFLAGS=/s/^/#/

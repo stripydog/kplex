@@ -2,3 +2,4 @@
 *.swp
 kplex
 core
+version.h

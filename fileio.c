@@ -130,12 +130,12 @@ iface_t *init_file (iface_t *ifa)
         ifc->fp = (ifa->direction == IN)?stdin:stdout;
     } else {
         if (ifa->direction == BOTH) {
-            logerr(0,"Bi-directional file I/O only supported for stdin/stdout\n");
+            logerr(0,"Bi-directional file I/O only supported for stdin/stdout");
             return(NULL);
         }
         if ((ifc->fp = fopen(fname,(ifa->direction == IN)?"r":"w"))
                 == NULL) {
-            logerr(errno,"Could not open %s: %s\n",fname);
+            logerr(errno,"Could not open %s",fname);
             return(NULL);
         }
     }

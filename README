@@ -63,7 +63,7 @@ connection is commented out in this example file.
 Invocation:
 -----------
 
-kplex [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
+kplex [-V] [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
 
 Where
 <filename> is the path of a configuration file to use where default options and
@@ -112,6 +112,8 @@ where:
         numbers which is not used as the "name" for another interface.  Names
         are NOT case sensitive, so do not call one interface "Serial" and
         another "serial".
+
+The -V flag instructs kplex to print its version number.
 
 Interface Types:
 ----------------
@@ -222,11 +224,11 @@ Broadcast Interfaces
 This method involves nmea sentences encapsulated within UDP datagrams sent to a
 broadcast address.
     Interface-specific options:
-    interface=<interface>
+    device=<interface>
     address=<address>
     port=<port>
         Where:
-            <interface> specifies the system interface (e.g. "wlan1", "eth0")
+            <device> specifies the system interface (e.g. "wlan1", "eth0")
             to use. This must be specified for outbound or bi-directional
             interfaces. kplex will only broadcast out through one interface.
             If the kplex interface is inbound and an interface is specified,
@@ -553,13 +555,15 @@ A: Originally it was called "mplex", but that's the name of an mpeg stream
    multiplexer for linux. changing only one letter of the name simplified
    changing the file names.  And "kplex" scores loads in french scrabble.
 
-Q: Is this available for windows/mac/plan9/haiku/solaris/freebsd?
+Q: Is this available for windows/plan9/haiku/solaris
 A: It shouldn't be much work to port to another POSIX-compliant system. If
    anyone genuinely wants such a thing let me know.  For windows a better plan
    would be to port it all to java (on the to do list). 
 
 Q: I am a venture capitalist with $20m dollars to employ someone who can write
    multithreaded IPv6 network code and also look after my infrequently used
-   superyacht.  I hire you?
+   superyacht.  May I hire you?
 A: Yes.
 
+Thanks to / Tak til / Tack til..
+eveyone who has provided feedback and suggestions and helped with testing

@@ -16,7 +16,7 @@ kplex: $(objects)
 	cc -o kplex $(objects) $(LFLAGS)
 
 $(objects): kplex.h
-kplex.o: kplex_mods.h
+kplex.o: kplex_mods.h version.h
 
 install:
 	install -D -g root -o root -m 755 kplex $(DESTDIR)/$(BINDIR)/kplex

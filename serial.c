@@ -424,7 +424,7 @@ struct iface *init_pty (struct iface *ifa)
                 }
 		/* It's a symlink. remove it */
                 if (unlink(devname)) {
-                    logerr(errno,"Could not unlink %s: %s",devname);
+                    logerr(errno,"Could not unlink %s",devname);
                     return(NULL);
                 }
             }
