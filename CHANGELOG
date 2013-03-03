@@ -1,4 +1,4 @@
-v0.2.9:
+v0.2.9: 3rd March 2013
 * Fixed bug with input interfaces exiting before output startup
 * Updated documentation to correctly describe use of "device" option
 * Fixed segv in file error handling
