@@ -63,7 +63,7 @@ connection is commented out in this example file.
 Invocation:
 -----------
 
-kplex [-V] [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
+kplex [-V] | [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
 
 Where
 <filename> is the path of a configuration file to use where default options and
@@ -113,7 +113,8 @@ where:
         are NOT case sensitive, so do not call one interface "Serial" and
         another "serial".
 
-The -V flag instructs kplex to print its version number.
+The -V flag instructs kplex to print its version number and exit. It should not
+be used with any other options.
 
 Interface Types:
 ----------------

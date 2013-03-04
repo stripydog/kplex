@@ -977,6 +977,10 @@ int main(int argc, char ** argv)
                 break;
             case 'V':
                 printf("%s\n",VERSION);
+                if (argc == 2)
+                    exit(0);
+                else
+                    err++;
                 break;
             default:
                 err++;
@@ -984,7 +988,7 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-V] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
 

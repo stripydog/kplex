@@ -1,8 +1,9 @@
-v0.2.9: 3rd March 2013
+v0.2.9: 4th March 2013
 * Fixed bug with input interfaces exiting before output startup
 * Updated documentation to correctly describe use of "device" option
 * Fixed segv in file error handling
 * Fixed crash with input-only tcp servers
+* Added "-V" flag for version identification
 
 v0.2.8: 16th January 2013
 * Fixed bug in shutdown of bi-directional tcp server
