@@ -540,11 +540,6 @@ void start_interface(void *ptr)
         exit(1);
     }
 
-    if (ifa->direction == NONE) {
-        pthread_mutex_unlock(&ifa->lists->io_mutex);
-        iface_thread_exit(0);
-    }
-
     for (iptr=&ifa->lists->initialized;*iptr!=ifa;iptr=&(*iptr)->next)
         if (*iptr == NULL) {
             perror("interface does not exist on initialized list!");
@@ -552,6 +547,12 @@ void start_interface(void *ptr)
         }
 
     *iptr=(*iptr)->next;
+
+    /* We've unlinked from initialized. Exit if we've been told to already */
+    if (ifa->direction == NONE) {
+        pthread_mutex_unlock(&ifa->lists->io_mutex);
+        iface_thread_exit(0);
+    }
 
     /* Set lptr to point to the input or output list, as appropriate */
     lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
@@ -561,16 +562,11 @@ void start_interface(void *ptr)
         ifa->next=NULL;
     (*lptr)=ifa;
 
-    /* First pass (outputs) we decrement unstarted_outputs count and signal
-        when it gets to zero. Second pass (inputs) we decrement when all
-        interfaces have started
-    */
-    if (ifa->direction == IN) {
-        if (ifa->lists->initialized == NULL)
-            pthread_cond_signal(&ifa->lists->init_cond);
-    } else 
-        if (--ifa->lists->unstarted_outputs == 0)
-            pthread_cond_signal(&ifa->lists->init_cond);
+    if (ifa->lists->initialized == NULL)
+        pthread_cond_broadcast(&ifa->lists->init_cond);
+    else 
+        while (ifa->lists->initialized)
+            pthread_cond_wait(&ifa->lists->init_cond,&ifa->lists->io_mutex);
 
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     pthread_sigmask(SIG_UNBLOCK,&set,NULL);
@@ -654,31 +650,33 @@ int unlink_interface(iface_t *ifa)
     iface_t **lptr;
     iface_t *tptr;
 
-    /* Set lptr to point to the input or output list, as appropriate */
-    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-    if ((*lptr) == ifa) {
-        /* If target interface is the head of the list, set the list pointer
-           to point to the next interface in the list */
-        (*lptr)=(*lptr)->next;
-    } else {
-        /* Traverse the list until we find the interface before our target and
-           make its next pointer point to the element after our target */
-        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-        tptr->next = ifa->next;
-    }
-
-    if (ifa->direction != OUT)
-        if (!ifa->lists->inputs) {
-            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
-                if (tptr->direction == BOTH)
-                    break;
-            if (tptr == NULL) {
-                pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
-                ifa->lists->engine->q->active=0;
-                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
-                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
-            }
-        }
+    if (ifa->direction != NONE) {
+        /* Set lptr to point to the input or output list, as appropriate */
+	    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
+	    if ((*lptr) == ifa) {
+	        /* If target interface is the head of the list, set the list pointer
+	           to point to the next interface in the list */
+	        (*lptr)=(*lptr)->next;
+	    } else {
+	        /* Traverse the list until we find the interface before our target and
+	           make its next pointer point to the element after our target */
+	        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
+	        tptr->next = ifa->next;
+	    }
+	
+	    if (ifa->direction != OUT)
+	        if (!ifa->lists->inputs) {
+	            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
+	                if (tptr->direction == BOTH)
+	                    break;
+	            if (tptr == NULL) {
+	                pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
+	                ifa->lists->engine->q->active=0;
+	                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
+	                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
+	            }
+	        }
+	}
 
     free_if_data(ifa);
 
@@ -952,7 +950,6 @@ int main(int argc, char ** argv)
         .init_mutex = PTHREAD_MUTEX_INITIALIZER,
         .init_cond = PTHREAD_COND_INITIALIZER,
         .dead_cond = PTHREAD_COND_INITIALIZER,
-    .unstarted_outputs=0,
     .initialized = NULL,
     .outputs = NULL,
     .inputs = NULL,
@@ -1144,18 +1141,8 @@ int main(int argc, char ** argv)
 
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        /* Create a thread to run each output interface */
-        if ((ifptr->direction == OUT) || (ifptr->direction == BOTH)) {
-            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
-            lists.unstarted_outputs++;
-        }
-    }
-
-    while (lists.unstarted_outputs)
-        pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
-
-    for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-            pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
+        /* Create a thread to run each interface */
+        pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
     }
 
     while (lists.initialized)
@@ -1171,7 +1158,7 @@ int main(int argc, char ** argv)
      * engine's queue inactive causing it to set all the outputs' queues
      * inactive and shutting them down. Thus the last input exiting also shuts
      * everything down */
-    while (lists.outputs || lists.inputs || lists.dead || lists.initialized) {
+    while (lists.outputs || lists.inputs || lists.dead) {
         while (lists.dead  == NULL && !timetodie)
             pthread_cond_wait(&lists.dead_cond,&lists.io_mutex);
         if (timetodie || (lists.outputs == NULL)) {

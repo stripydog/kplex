@@ -88,7 +88,6 @@ struct iolists {
     pthread_mutex_t init_mutex;
     pthread_cond_t  dead_cond;
     pthread_cond_t  init_cond;
-    unsigned int    unstarted_outputs;
     struct iface *initialized;
     struct iface *outputs;
     struct iface *inputs;

@@ -1,3 +1,6 @@
+v0.2.10: 31st March 2013
+* Fixed crash when interface error condition encountered on startup
+
 v0.2.9: 4th March 2013
 * Fixed bug with input interfaces exiting before output startup
 * Updated documentation to correctly describe use of "device" option
