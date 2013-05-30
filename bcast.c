@@ -188,6 +188,7 @@ struct iface *init_bcast(struct iface *ifa)
     char *ifname,*bname;
     struct in_addr  baddr;
     int port=0;
+    int iffound=0;
     struct servent *svent;
     const int on = 1;
     static struct ifaddrs *ifap;
@@ -262,14 +263,19 @@ struct iface *init_bcast(struct iface *ifa)
         }
         pthread_rwlock_unlock(&sysaddr_lock);
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
-            if ((!strcmp(ifname,ifp->ifa_name)) &&
-                (ifp->ifa_addr->sa_family == AF_INET) &&
+            if (!strcmp(ifname,ifp->ifa_name)) {
+                iffound++;
+                if ((ifp->ifa_addr->sa_family == AF_INET) &&
                 ((bname == NULL) || (baddr.s_addr == 0xffffffff) ||
                 (baddr.s_addr == ((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr)))
-                break;
+                    break;
+            }
         }
         if (!ifp) {
-            logerr(0,"No IPv4 interface %s",ifname);
+            if (iffound)
+                logerr(0,"Invalid broadcast address specified for %s",ifname);
+            else
+                logerr(0,"No IPv4 interface %s",ifname);
             return(NULL);
         }
         ifb->addr.sin_addr.s_addr = bname?baddr.s_addr:((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr;

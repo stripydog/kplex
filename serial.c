@@ -130,7 +130,7 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
     /* PARMRK is set for seatalk interface as parity errors are how we
      * identify commands
      */
-    ntermios.c_iflag=IGNBRK|INPCK|st?PARMRK:0;
+    ntermios.c_iflag=IGNBRK|INPCK|(st?PARMRK:0);
     ntermios.c_cc[VMIN]=1;
     ntermios.c_cc[VTIME]=0;
 

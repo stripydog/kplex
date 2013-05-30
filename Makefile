@@ -1,11 +1,13 @@
 OS=$(shell uname -s)
 CFLAGS= -g -Wall
 BINDIR=/usr/local/bin
-ifneq ($(OS),Darwin)
 ifeq ($(OS),Linux)
 LFLAGS=-pthread -lutil
 BINDIR=/usr/bin
+INSTGROUP=root
 else
+INSTGROUP=wheel
+ifneq ($(OS),Darwin)
 LFLAGS=-lpthread -lutil
 endif
 endif
@@ -19,7 +21,8 @@ $(objects): kplex.h
 kplex.o: kplex_mods.h version.h
 
 install:
-	install -D -g root -o root -m 755 kplex $(DESTDIR)/$(BINDIR)/kplex
+	test -d "$(DESTDIR)/$(BINDIR)"  || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)/$(BINDIR)
+	install -g $(INSTGROUP) -o root -m 755 kplex $(DESTDIR)/$(BINDIR)/kplex
 
 uninstall:
 	-rm -f $(DESTDIR)/$(BINDIR)/kplex

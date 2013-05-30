@@ -1,3 +1,8 @@
+v0.3.0:
+* Fixed error with seatalk flag in serial.c
+* Fixed makefile for bsd/macos
+* Improved error reporting for broadcast interfaces
+
 v0.2.10: 31st March 2013
 * Fixed crash when interface error condition encountered on startup
 
