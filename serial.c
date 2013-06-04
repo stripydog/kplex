@@ -1,6 +1,6 @@
 /* serial.c
  * This file is part of kplex
- * Copyright Keith Young 2012
+ * Copyright Keith Young 2012 - 2013
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for serial-like interfaces. This currently

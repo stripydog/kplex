@@ -1,3 +1,11 @@
+/* lookup.c
+ * This file is part of kplex
+ * Copyright Keith Young 2012 - 2013
+ * For copying information see the file COPYING distributed with this software
+ *
+ * functions for associating names with interfaces
+ */
+
 #include "kplex.h"
 #include<stdio.h>
 #include <stdlib.h>

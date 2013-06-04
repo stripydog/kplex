@@ -1,3 +1,11 @@
+/* error.c
+ * This file is part of kplex
+ * Copyright Keith Young 2012 - 2013
+ * For copying information see the file COPYING distributed with this software
+ *
+ * This files contains error handling and logging functions
+ */
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <syslog.h>
