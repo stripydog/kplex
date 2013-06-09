@@ -147,11 +147,13 @@ rules.  Note that normal users are often not permitted to open serial devices.  
 "File" interfaces
 -----------------
 
-This specification covers both regular files and terminal i/o via standard
-input and standard output.
+This specification covers both regular files, FIFOs and terminal i/o via
+standard input and standard output.
 
     Interface-specific options:
         filename=<file>
+        persist=[yes|no]
+        append=[yes|no]
         Where
             <file> is either the file name to read from or write to or "-".
                 In the latter case, standard input is used for inputs, standard
@@ -167,7 +169,27 @@ output to other interface types (i.e. serial, tcp, broadcast etc.).
 "BOTH" is not supported as an I/O direction for the "file" type except for
 standard in / standard out.
 
-If no "filename" option is given, standard in/out are used.
+If no "filename" option is given, standard in/out are used.  Standard input and
+output may not be used in "background" mode (ie when kplex is run as a daemon)
+unless they are redirected to a file or a pipe.
+
+If "append=yes" is specified for an interface outputting to a regular file,
+output is appended to the file.  If "append=no" (the default) is specified, the
+file will be truncated before output is written.  This option may not be
+specified for input files, FIFOs or terminals.
+
+"persist=yes" may only be specified on an interface connected to a FIFO. If
+specified it will re-open a FIFO when the reader or writer at the other end
+closes the pipe.  If "persist=no" (the default) is specified, an input interface
+will exit on receipt of EOF. An output interface will exit when the reader at
+the other end of the pipe exits.
+
+FIFOs block on open for read until something opens the FIFO for writing, and
+block on open for write until something opens them for reading.  To avoid
+hanging kplex's initialization thread, opening of FIFOs is delayed until
+individual reader and writer threads have been created.
+
+FIFO output will be line buffered.  Rgular file output is fully buffered.
 
 TCP Interfaces
 --------------

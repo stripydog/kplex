@@ -472,7 +472,7 @@ iface_t *get_default_global()
         free(ifp);
         return(NULL);
     }
-    ifg->background=0;
+    ifg->flags=0;
     ifg->logto=LOG_DAEMON;
     ifp->info = (void *)ifg;
 
@@ -674,6 +674,7 @@ int unlink_interface(iface_t *ifa)
 	                ifa->lists->engine->q->active=0;
 	                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
 	                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
+                    timetodie++;
 	            }
 	        }
 	}
@@ -893,9 +894,9 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             }
         } else if (!strcasecmp(optr->var,"mode")) {
             if (!strcasecmp(optr->val,"background"))
-                ifg->background=1;
+                ifg->flags|=K_BACKGROUND;
             else if (!strcasecmp(optr->val,"foreground"))
-                ifg->background=0;
+                ifg->flags &= ~K_BACKGROUND;
             else
                 fprintf(stderr,"Warning: unrecognized mode \'%s\' specified\n",optr->val);
         } else if (!strcasecmp(optr->var,"logto")) {
@@ -1028,7 +1029,7 @@ int main(int argc, char ** argv)
      */
 
     ifg=(struct if_engine *)engine->info;
-    if (ifg->background) {
+    if (ifg->flags & K_BACKGROUND) {
          if ((pid = fork()) < 0) {
             perror("fork failed");
             exit(1);
@@ -1039,17 +1040,28 @@ int main(int argc, char ** argv)
 
         /* Really should close all file descriptors. Harder to do in OS
          * independent way.  Just close the ones we know about for this cut
+         * Check first if connected to a tty to allow redirection / piping in
+         * background mode
          */
-        fclose(stdin);
-        fclose(stdout);
-        fclose(stderr);
+        if (isatty(fileno(stdin))) {
+            fclose(stdin);
+            ifg->flags |= K_NOSTDIN;
+        }
+        if (isatty(fileno(stdout))) {
+            fclose(stdout);
+            ifg->flags |= K_NOSTDOUT;
+        }
+        if (isatty(fileno(stderr))) {
+            fclose(stderr);
+            ifg->flags |= K_NOSTDERR;
+        }
         setsid();
         (void) chdir("/");
         umask(0);
     }
 
     /* log to stderr or syslog, as appropriate */
-    initlog(ifg->background?ifg->logto:-1);
+    initlog((ifg->flags & K_NOSTDERR)?ifg->logto:-1);
 
     /* Lower max open files if necessary. We do this to ensure that ids for
      * all connections can be represented in IDMINORBITS. Actually we only
@@ -1082,6 +1094,8 @@ int main(int argc, char ** argv)
                 logterm(errno,"Failed to associate interface name and id");
         }
 
+        ifptr->lists = &lists;
+
         if ((ifptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
             logerr(0,"Failed to initialize Interface");
             timetodie++;
@@ -1097,7 +1111,6 @@ int main(int argc, char ** argv)
 
             if (ifptr->checksum <0)
                 ifptr->checksum = engine->checksum;
-            ifptr->lists = &lists;
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;
             if (ifptr->next==ifptr2)
@@ -1137,6 +1150,7 @@ int main(int argc, char ** argv)
     signal(SIGINT,killemall);
     signal(SIGTERM,killemall);
     signal(SIGUSR1,terminate);
+    signal(SIGPIPE,SIG_IGN);
     pthread_create(&tid,NULL,run_engine,(void *) engine);
 
     pthread_mutex_lock(&lists.io_mutex);

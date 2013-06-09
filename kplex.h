@@ -144,6 +144,7 @@ struct iface {
     struct iface *next;
     struct iolists *lists;
     int checksum;
+    int persist;
     sfilter_t *ifilter;
     sfilter_t *ofilter;
     void (*cleanup)(struct iface *);
@@ -160,8 +161,15 @@ struct iftypedef {
     void *(*ifdup_func)(void *);
 };
 
+/* Flags for engine status */
+
+#define K_BACKGROUND 0x1
+#define K_NOSTDIN 0x2
+#define K_NOSTDOUT 0x4
+#define K_NOSTDERR 0x8
+
 struct if_engine {
-    int background;
+    unsigned flags;
     int logto;
 };
 

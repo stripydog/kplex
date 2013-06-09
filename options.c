@@ -309,6 +309,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             ifp->checksum=0;
         } else
             return(-2);
+    } else if (!strcmp(var,"persist")) {
+        if (!strcasecmp(val,"yes")) {
+            ifp->persist=1;
+        } else if (!strcasecmp(val,"no")) {
+            ifp->persist=0;
+        } else
+            return(-2);
     } else if (!strcasecmp(var,"name")) {
         if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
             return(-1);
@@ -414,7 +421,7 @@ iface_t *parse_file(char *fname)
                 perror("Error creating interface");
                 exit(1);
             }
-            ifg->background=0;
+            ifg->flags=0;
             ifg->logto=LOG_DAEMON;
             ifp->info = (void *)ifg;
             if (ifp->checksum <0)

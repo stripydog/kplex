@@ -11,6 +11,8 @@
 
 struct if_tcp {
     int fd;
+    size_t sa_len;
+    struct sockaddr *sa;
 };
 
 /*
@@ -38,20 +40,6 @@ void *ifdup_tcp(void *ift)
 void cleanup_tcp(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *)ifa->info;
-/*
-    int how;
-
-    switch(ifa->direction) {
-    case IN:
-        how=SHUT_RD;
-        break;
-    case OUT:
-        how=SHUT_WR;
-        break;
-    case BOTH:
-        how=SHUT_RDWR;
-    }
-*/
     close(ift->fd);
 }
 
@@ -103,11 +91,17 @@ void write_tcp(struct iface *ifa)
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
 	senblk_t *sptr;
 
+/* Porters: MSG_NOSIGNAL / SO_NOSIGPIPE are redundant as of v0.3: We're
+ * ignorning SIGPIPE so you can forget this if porting to a platform on
+ * which none of this is supported. Will be removed in a later release.
+ */
+
 #ifndef MSG_NOSIGNAL
     #define MSG_NOSIGNAL 0
     int n=1;
     setsockopt(ift->fd,SOL_SOCKET, SO_NOSIGPIPE, (void *)&n, sizeof(int));
 #endif
+
 	for(;;) {
 		if ((sptr = next_senblk(ifa->q)) == NULL)
 			break;
@@ -201,7 +195,7 @@ iface_t *init_tcp(iface_t *ifa)
 {
     struct if_tcp *ift;
     char *host,*port;
-    struct addrinfo hints,*aptr;
+    struct addrinfo hints,*aptr,*abase;
     struct servent *svent;
     int err;
     int on=1,off=0;
@@ -258,10 +252,12 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_STREAM;
 
-    if ((err=getaddrinfo(host,port,&hints,&aptr))) {
+    if ((err=getaddrinfo(host,port,&hints,&abase))) {
         logerr(0,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
         return(NULL);
     }
+
+    aptr=abase;
 
     do {
         if ((ift->fd=socket(aptr->ai_family,aptr->ai_socktype,aptr->ai_protocol)) < 0)
@@ -293,6 +289,15 @@ iface_t *init_tcp(iface_t *ifa)
         logerr(err,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
         return(NULL);
     }
+
+    if ((ift->sa=(struct sockaddr *)malloc(sizeof(struct sockaddr))) == NULL) {
+        logerr(errno,"Failed to duplicate address");
+        return(NULL);
+    }
+    ift->sa_len=aptr->ai_addrlen;
+    (void) memcpy(ift->sa,aptr->ai_addr,sizeof(struct sockaddr));
+
+    freeaddrinfo(abase);
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
