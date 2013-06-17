@@ -17,6 +17,7 @@ struct if_file {
     FILE *fp;
     char *filename;
     size_t qsize;
+    int usereturn;
 };
 
 /*
@@ -26,13 +27,21 @@ struct if_file {
  */
 void *ifdup_file(void *iff)
 {
-    struct if_file  *newif;
+    struct if_file  *newif,*oldif;
 
     if ((newif = (struct if_file *) malloc(sizeof(struct if_file)))
         == (struct if_file *) NULL)
         return(NULL);
 
-    /* Read/Write only supported for stdin/stdout so don't allocate fp */
+    memset ((void *)newif,0,sizeof(struct if_file));
+    
+    oldif = (struct if_file *) iff;
+
+    newif->usereturn = oldif->usereturn;
+
+    /* Read/Write only supported for stdin/stdout so don't allocate fp
+     * And don't bother to duplicate filename
+     */
     return(newif);
 }
 
@@ -76,8 +85,10 @@ void write_file(iface_t *ifa)
             continue;
         }
             
-        sptr->data[sptr->len-2] = '\n';
-        sptr->data[sptr->len-1] = '\0';
+        if (ifc->usereturn == 0) {
+            sptr->data[sptr->len-2] = '\n';
+            sptr->data[sptr->len-1] = '\0';
+        }
         if (fputs(sptr->data,ifc->fp) == EOF) {
             if (!(ifa->persist && errno == EPIPE) )
 		        break;
@@ -95,7 +106,10 @@ void read_file(iface_t *ifa)
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t sblk;
     int len;
+    int maxread;
     char *eptr;
+
+    maxread = SENMAX + 2 + ifc->usereturn;
 
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
     if (ifc->fp == NULL)
@@ -106,7 +120,7 @@ void read_file(iface_t *ifa)
 
     sblk.src=ifa->id;
     for(;;) {
-        if (fgets(sblk.data,SENMAX,ifc->fp) != sblk.data) {
+        if (fgets(sblk.data,maxread,ifc->fp) != sblk.data) {
             if (feof(ifc->fp) && (ifa->persist)) {
                 if ((ifc->fp = freopen(ifc->filename,"r",ifc->fp)) == NULL) {
                     logerr(errno,"Failed to re-open FIFO %s for reading\n",
@@ -123,19 +137,27 @@ void read_file(iface_t *ifa)
         }
 
         if (sblk.data[len-1]  != '\n') {
-            logwarn("Line exceeds max sentence length (discarding)\n");
-            while ((eptr = fgets(sblk.data,SENMAX,ifc->fp)) == sblk.data) {
+            logwarn("Line exceeds max sentence length (discarding)");
+            while ((eptr = fgets(sblk.data,SENBUFSZ,ifc->fp)) == sblk.data) {
                 if (sblk.data[strlen(sblk.data)-1]  == '\n') {
                     break;
                 }
             }
-            if (eptr == NULL)
+            if (eptr == NULL && (ifa->persist == 0))
                 break;
             continue;
         }
-        sblk.data[len-1]='\r';
-        sblk.data[len]='\n';
-        sblk.len=len+1;
+        if (ifc->usereturn) {
+            if (sblk.data[len-2] != '\r') {
+                continue;
+            }
+        }
+        else {
+            sblk.data[len-1]='\r';
+            sblk.data[len]='\n';
+            len++;
+        }
+        sblk.len=len;
         if (ifa->checksum && checkcksum(&sblk))
             continue;
         if (senfilter(&sblk,ifa->ifilter))
@@ -183,6 +205,16 @@ iface_t *init_file (iface_t *ifa)
                 logerr(0,"Invalid option \"append=%s\"",opt->val);
                 return(NULL);
             }
+        } else if (!strcasecmp(opt->var,"eol")) {
+            if (!strcasecmp(opt->val,"rn"))
+                ifc->usereturn=1;
+            else if (!strcasecmp(opt->val,"n")) {
+                ifc->usereturn=0;
+            } else {
+                logerr(0,"Invalid option \"eol=%s\": Must be \"n\" or \"rn\"",
+                        opt->val);
+                return(NULL);
+            }
         } else {
             logerr(0,"Unknown interface option %s\n",opt->var);
             return(NULL);
@@ -197,7 +229,7 @@ iface_t *init_file (iface_t *ifa)
             logerr(0,"Can't use persist mode with stdin/stdout");
             return(NULL);
         }
-            
+
         if (((ifa->direction != IN) &&
                 (((struct if_engine *)ifa->lists->engine->info)->flags &
                 K_NOSTDOUT)) ||
@@ -215,8 +247,10 @@ iface_t *init_file (iface_t *ifa)
         }
 
         if (stat(ifc->filename,&statbuf) < 0) {
-            logerr(errno,"stat %s",ifc->filename);
-            return(NULL);
+            if (ifa->direction != OUT) {
+                logerr(errno,"stat %s",ifc->filename);
+                return(NULL);
+            }
         }
 
         if (S_ISFIFO(statbuf.st_mode)) {
@@ -240,6 +274,9 @@ iface_t *init_file (iface_t *ifa)
                 logerr(errno,"Failed to open %s",ifc->filename);
                 return(NULL);
             }
+            if (ifa->direction == OUT)
+                /* Make output line buffered */
+                setlinebuf(ifc->fp);
         }
     }
 

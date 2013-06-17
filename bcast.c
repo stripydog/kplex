@@ -154,7 +154,7 @@ void read_bcast(struct iface *ifa)
             continue;
 
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            if (count < SENMAX) {
+            if (count < SENMAX+2) {
                 ++count;
                 *senptr++=*bptr;
             } else

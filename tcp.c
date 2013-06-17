@@ -12,7 +12,7 @@
 struct if_tcp {
     int fd;
     size_t sa_len;
-    struct sockaddr *sa;
+    struct sockaddr sa;
 };
 
 /*
@@ -30,10 +30,8 @@ void *ifdup_tcp(void *ift)
         return(NULL);
     oldif = (struct if_tcp *) ift;
 
-    if ((newif->fd=dup(oldif->fd)) <0) {
-        free(newif);
-        return(NULL);
-    }
+    memcpy((void *)&newif,(void *)&oldif,sizeof(struct if_tcp));
+
     return ((void *) newif);
 }
 
@@ -58,7 +56,7 @@ void read_tcp(struct iface *ifa)
 
 	while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
 		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-			if (count < SENMAX) {
+			if (count < SENMAX+2) {
 				++count;
 				*senptr++=*bptr;
 			} else
@@ -149,7 +147,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->read=read_tcp;
     newifa->lists=ifa->lists;
     newifa->ifilter=addfilter(ifa->ifilter);
-    newifa->ofilter=addfilter(ifa->ifilter);
+    newifa->ofilter=addfilter(ifa->ofilter);
     newifa->checksum=ifa->checksum;
     if (ifa->direction == IN)
         newifa->q=ifa->lists->engine->q;
@@ -290,12 +288,8 @@ iface_t *init_tcp(iface_t *ifa)
         return(NULL);
     }
 
-    if ((ift->sa=(struct sockaddr *)malloc(sizeof(struct sockaddr))) == NULL) {
-        logerr(errno,"Failed to duplicate address");
-        return(NULL);
-    }
     ift->sa_len=aptr->ai_addrlen;
-    (void) memcpy(ift->sa,aptr->ai_addr,sizeof(struct sockaddr));
+    (void) memcpy(&ift->sa,aptr->ai_addr,sizeof(struct sockaddr));
 
     freeaddrinfo(abase);
 

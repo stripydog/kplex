@@ -31,7 +31,8 @@
 #define TCPQUEUESIZE 128
 
 
-#define SENMAX 96
+#define SENMAX 80
+#define SENBUFSZ 96
 #define DEFBCASTPORT 10110
 #define DEFTCPPORT "10110"
 #define IDMINORBITS 16
@@ -68,7 +69,7 @@ struct senblk {
     size_t len;
     unsigned int src;
     struct senblk *next;
-    char data[SENMAX];
+    char data[SENBUFSZ];
 };
 typedef struct senblk senblk_t;
 

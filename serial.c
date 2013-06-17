@@ -181,7 +181,7 @@ void read_serial(struct iface *ifa)
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
             /* Copy to our senblk if we haven't exceeded max
              * sentence length */
-            if (count < SENMAX) {
+            if (count < SENMAX+2) {
                 ++count;
                 *senptr++=*bptr;
             } else

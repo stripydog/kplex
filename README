@@ -154,6 +154,7 @@ standard input and standard output.
         filename=<file>
         persist=[yes|no]
         append=[yes|no]
+        eol=[rn|n]
         Where
             <file> is either the file name to read from or write to or "-".
                 In the latter case, standard input is used for inputs, standard
@@ -161,10 +162,17 @@ standard input and standard output.
                 If not specified deafults to "-".
 
 "File" interfaces are slightly different from other interfaces in that
-sentences are terminated by <LF> rather than <CR><LF>. Because this is *nix
-and we don't want to muck about with redundant '\r's.  Sentences input with
-just a terminating '\n' (ie <LF>) are converted to <CR><LF> translation for
+by default sentences are terminated by <LF> rather than <CR><LF>. Because this
+is *nix and we don't want to muck about with redundant '\r's.  Sentences input
+with just a terminating '\n' (ie <LF>) are converted to <CR><LF> translation for
 output to other interface types (i.e. serial, tcp, broadcast etc.).
+
+If the option "eol=rn" is specified, file interfaces will output sentences
+terminated by <CR><LF>. Input sentences will be discarded if they are terminated
+with <LF> not preceded by <CR> and will not have additional <CR>s added.
+
+"eol=n" specifies that the default behaviour for file interfaces (<LF> only as
+sentence delimiter) should be used.
 
 "BOTH" is not supported as an I/O direction for the "file" type except for
 standard in / standard out.
@@ -189,7 +197,7 @@ block on open for write until something opens them for reading.  To avoid
 hanging kplex's initialization thread, opening of FIFOs is delayed until
 individual reader and writer threads have been created.
 
-FIFO output will be line buffered.  Rgular file output is fully buffered.
+Output to file interfaces is line buffered.
 
 TCP Interfaces
 --------------
@@ -541,6 +549,7 @@ mind.  Planned enhancements include:
   subtract and modify the current interface list.  The structure of kplex means
   this would be a relatively straightforward addition
 * A nice GUI.  Obviously.
+* Rate limiting (especially useful for data logging)
 
 Q&A
 "FAQ" would be inappropriate as no-one has asked me about this yet.
@@ -588,5 +597,5 @@ Q: I am a venture capitalist with $20m dollars to employ someone who can write
    superyacht.  May I hire you?
 A: Yes.
 
-Thanks to / Tak til / Tack til..
+Thanks to / Tak til / Tack til / Dank Aan..
 eveyone who has provided feedback and suggestions and helped with testing
