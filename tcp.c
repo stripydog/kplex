@@ -30,7 +30,7 @@ void *ifdup_tcp(void *ift)
         return(NULL);
     oldif = (struct if_tcp *) ift;
 
-    memcpy((void *)&newif,(void *)&oldif,sizeof(struct if_tcp));
+    memcpy((void *)newif,(void *)oldif,sizeof(struct if_tcp));
 
     return ((void *) newif);
 }
