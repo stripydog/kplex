@@ -757,6 +757,7 @@ iface_t *ifdup (iface_t *ifa)
 
     ifa->pair=newif;
     newif->tid=ifa->tid;
+    newif->persist=ifa->persist;
     newif->id=ifa->id;
     newif->name=ifa->name;
     newif->pair=ifa;
