@@ -12,6 +12,7 @@ v0.3.0:
 * Make file output line buffered
 * Reduce max sentence size to the 80 chars it was always meant to be
 * Fixed tcp server filter inheritace bug
+* Fixed bug resulting in qsize option being ignored for tcp and serial
 
 v0.2.10: 31st March 2013
 * Fixed crash when interface error condition encountered on startup

@@ -327,7 +327,7 @@ struct iface *init_serial (struct iface *ifa)
 
     /* Allocate queue for outbound interfaces */
     if (ifa->direction != IN)
-        if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
+        if ((ifa->q =init_q(qsize)) == NULL) {
             logerr(errno,"Could not create queue");
             cleanup_serial(ifa);
             return(NULL);
@@ -464,7 +464,7 @@ struct iface *init_pty (struct iface *ifa)
     ifa->cleanup=cleanup_serial;
 
     if (ifa->direction != IN)
-        if ((ifa->q =init_q(DEFSERIALQSIZE)) == NULL) {
+        if ((ifa->q =init_q(qsize)) == NULL) {
             logerr(errno,"Could not create queue");
             cleanup_serial(ifa);
             return(NULL);

@@ -11,6 +11,7 @@
 
 struct if_tcp {
     int fd;
+    size_t qsize;
     size_t sa_len;
     struct sockaddr sa;
 };
@@ -120,6 +121,7 @@ void write_tcp(struct iface *ifa)
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
 {
     iface_t *newifa;
+    struct if_tcp *oift=(struct if_tcp *) ifa->info;
     struct if_tcp *newift=NULL;
     pthread_t tid;
 
@@ -128,7 +130,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
 
     memset(newifa,0,sizeof(iface_t));
     if (((newift = malloc(sizeof(struct if_tcp))) == NULL) ||
-        ((ifa->direction != IN) &&  ((newifa->q=init_q(DEFTCPQSIZE)) == NULL))){
+        ((ifa->direction != IN) && ((newifa->q=init_q(oift->qsize)) == NULL))){
             if (newifa && newifa->q)
                 free(newifa->q);
             if (newift)
@@ -137,6 +139,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
             return(NULL);
     }
     newift->fd=fd;
+    newift->qsize=oift->qsize;
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
@@ -200,15 +203,17 @@ iface_t *init_tcp(iface_t *ifa)
     char *conntype = "c";
     unsigned char *ptr;
     int i;
-    size_t qsize=DEFTCPQSIZE;
     struct kopts *opt;
 
     host=port=NULL;
+    
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
         logerr(errno,"Could not allocate memory");
         return(NULL);
     }
+
+    ift->qsize=DEFTCPQSIZE;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
@@ -222,7 +227,7 @@ iface_t *init_tcp(iface_t *ifa)
         } else if (!strcasecmp(opt->var,"port")) {
             port=opt->val;
         }  else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
+            if (!(ift->qsize=atoi(opt->val))) {
                 logerr(0,"Invalid queue size specified: %s",opt->val);
                 return(NULL);
             }
@@ -295,7 +300,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
-        if ((ifa->q =init_q(DEFTCPQSIZE)) == NULL) {
+        if ((ifa->q =init_q(ift->qsize)) == NULL) {
             logerr(errno,"Interface duplication failed");
             return(NULL);
         }
