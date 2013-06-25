@@ -497,7 +497,7 @@ mode=<mode>
     <mode> is either "foreground" (the default) or "background", the former
     is the default. The latter tells kplex to detach form its controlling
     terminal and run as a daemon process.
-checksum=<checsum mode>
+checksum=<checksum mode>
     Where <checksum mode> is either "no" (the default) or "yes", which tells
     kplex to checksum al lincoming nmea sentences (except for interfaces where
     per-interface configuration overrides this). Sentences which do not
@@ -552,11 +552,11 @@ mind.  Planned enhancements include:
 * Rate limiting (especially useful for data logging)
 
 Q&A
-"FAQ" would be inappropriate as no-one has asked me about this yet.
+"FAQ" would be inappropriate as some of the questions have never been asked.
 
 Q: Is this free software?
-A: It will be when it's finished and I've updated my knowledge of the latest
-incarnation of the GPL. For now it's free for non-commercial use
+A: Yes. As in "Beer" and as in "Speech".  It is released under the terms of
+   GPLv3 (see the COPYING file which should be included with this software)
 
 Q: Hasn't this already been done?
 A: Not in free software for linux that I'm aware of. Although it possibly has.
@@ -580,7 +580,7 @@ A: Not exactly.  kplex does not create a wireless access point, it just uses
    a linux computer's existing wireless interfaces. If you want to create a
    wireless access point using a linux system, check out hostapd.  An
    Alternative may be to use ad hoc networking to connect to your wireless
-   device (The comar box does this).o
+   device (The comar box does this).
 
 Q: Why "kplex"?
 A: Originally it was called "mplex", but that's the name of an mpeg stream

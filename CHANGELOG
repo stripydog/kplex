@@ -1,4 +1,4 @@
-v0.3.0:
+v0.2.11: 25th June 2013
 * Fixed error with seatalk flag in serial.c
 * Fixed makefile for bsd/macos
 * Improved error reporting for broadcast interfaces
