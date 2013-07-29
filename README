@@ -99,7 +99,7 @@ where:
             is all an interface needs to do.
         "qsize": Size of the interface's output queue. Not used for input only
             interfaces.  Defaults should be fine. This should only need to be
-            increased from defalut in the case of a bursty high-speed input
+            increased from default in the case of a bursty high-speed input
             feeding a slow ouput.
         "checksum": May be "yes" to enable checksumming of incoming sentences on
             an interface or "no" to disable it. This option overrides the global
@@ -229,7 +229,7 @@ The exact number will be system dependent but it will certainly be "enough".
             <address> is the server address to bind to for output interfaces
                 and the remote tcp server to connect to for inputs.  This can
                 be:
-                * A symbolic hostnamne (which must be resolvable on the host)
+                * A symbolic hostname (which must be resolvable on the host)
                 * An IPv4 address in dotted decimal format
                 * An IPv6 address
             For input interfaces, a remote host MUST be specified.  For outputs,
@@ -431,7 +431,7 @@ This will always pass sentences with a talker id of "GP" from the interface
 named "serial1". If no "GP" sentences are seen on serial1 for 30 seconds, 
 kplex will pass sentences matching "GP***" from USBpuck until a "GP***" sentence
 is next seen on serial1.  If no "GP***" sentences are seen on either serial1 or
-USBpuck for 60 seconds, kplex will statr passing such sentences from the "phone"
+USBpuck for 60 seconds, kplex will start passing such sentences from the "phone"
 connection until such point as those sentences are seen on either of the higher
 priority interfaces.
 
@@ -501,7 +501,7 @@ checksum=<checksum mode>
     Where <checksum mode> is either "no" (the default) or "yes", which tells
     kplex to checksum al lincoming nmea sentences (except for interfaces where
     per-interface configuration overrides this). Sentences which do not
-    match their calculated checksums are discarded.  The deafult is not to
+    match their calculated checksums are discarded.  The default is not to
     calculate checksums as it is assumed that this will be done by end consumer
     applications.
 logto=<facility>
@@ -597,5 +597,5 @@ Q: I am a venture capitalist with $20m dollars to employ someone who can write
    superyacht.  May I hire you?
 A: Yes.
 
-Thanks to / Tak til / Tack til / Dank Aan..
-eveyone who has provided feedback and suggestions and helped with testing
+Thanks to / Tak til / Tack til / Takk til/ Dank Aan / Merci à
+everyone who has provided feedback and suggestions and helped with testing
