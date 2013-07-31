@@ -10,7 +10,7 @@ struct iftypedef iftypes[] = {
     { BCAST, "broadcast", init_bcast, ifdup_bcast },
     { TCP, "tcp", init_tcp, ifdup_tcp },
     { PTY, "pty", init_pty, ifdup_serial },
-    { MCAST, "mcast", NULL, NULL },
+    { MCAST, "mcast", init_mcast, ifdup_mcast },
     { ST, "seatalk", NULL, NULL },
     { END, NULL, NULL, NULL },
 };

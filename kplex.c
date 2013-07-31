@@ -40,10 +40,10 @@ void killemall (int sig)
     struct iolists *listp;
 
     listp = (struct iolists *) pthread_getspecific(ifkey);
-    timetodie++;
 
     /* io_mutex is declared as recursive, so we can do this here */
     pthread_mutex_lock(&listp->io_mutex);
+    timetodie++;
     pthread_cond_signal(&listp->dead_cond);
     pthread_mutex_unlock(&listp->io_mutex);
 }
@@ -1192,5 +1192,9 @@ int main(int argc, char ** argv)
                 free(ifptr);
         }
     }
+
+    /* For neatness... */
+    pthread_mutex_unlock(&lists.io_mutex);
+
     exit(0);
 }

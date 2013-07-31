@@ -475,6 +475,8 @@ iface_t *parse_arg(char *arg)
         ifp->type = BCAST;
     else if (!strcasecmp(arg,"pty"))
         ifp->type = PTY;
+    else if (!strcasecmp(arg,"mcast"))
+        ifp->type = MCAST;
     else if (!strcasecmp(arg,"seatalk"))
         ifp->type = ST;
     else {
