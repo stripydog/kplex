@@ -959,6 +959,7 @@ int main(int argc, char ** argv)
     };
     pthread_mutexattr_t mattr;
     struct rlimit lim;
+    int gotinputs=0;
 
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
@@ -1156,12 +1157,27 @@ int main(int argc, char ** argv)
 
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
+        /* Check we've got at least one input */
+        if ((ifptr->direction == IN ) || (ifptr->direction == BOTH))
+            gotinputs=1;
         /* Create a thread to run each interface */
         pthread_create(&tid,NULL,(void *)start_interface,(void *) ifptr);
     }
 
     while (lists.initialized)
         pthread_cond_wait(&lists.init_cond,&lists.io_mutex);
+
+    /* Have to wait until here to do something about no inputs to
+     * avoid deadlock on io_mutex
+     */
+    if (!gotinputs) {
+        logerr(0,"No Inputs!");
+        pthread_mutex_lock(&engine->q->q_mutex);
+        engine->q->active=0;
+        pthread_cond_broadcast(&engine->q->freshmeat);
+        pthread_mutex_unlock(&engine->q->q_mutex);
+        timetodie++;
+    }
 
     pthread_sigmask(SIG_SETMASK, &saved,NULL);
     

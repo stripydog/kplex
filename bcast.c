@@ -240,7 +240,7 @@ struct iface *init_bcast(struct iface *ifa)
         if ((svent = getservbyname("nmea-0183","udp")) != NULL)
             port=svent->s_port;
         else
-            port=DEFBCASTPORT;
+            port=DEFPORT;
     }
 
     ifb->addr.sin_family = ifb->laddr.sin_family = AF_INET;

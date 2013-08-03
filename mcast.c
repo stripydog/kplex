@@ -9,6 +9,7 @@
 #include "kplex.h"
 #include <netdb.h>
 #include <net/if.h>
+#include <ifaddrs.h>
 #include <arpa/inet.h>
 
 #define DEFMCASTQSIZE 64
@@ -143,11 +144,11 @@ void read_mcast(struct iface *ifa)
  * 3 if an IPv6 interface local multicast address
  * 1 otherwise
  */
-int is_multicast(struct sockaddr_storage *s)
+int is_multicast(struct sockaddr *s)
 {
     unsigned long addr;
 
-    switch (s->ss_family) {
+    switch (s->sa_family) {
     case AF_INET:
         addr=ntohl(((struct sockaddr_in *) s)->sin_addr.s_addr);
         if ((addr & 0xff000000) == 0xe0000000)
@@ -172,13 +173,15 @@ struct iface *init_mcast(struct iface *ifa)
 {
     struct if_mcast *ifm;
     char *ifname;
-    struct addrinfo hints,*aptr;
-    char *host,*service;
+    struct addrinfo hints,*aptr,*abase;
+    struct ifaddrs *ifap,*ifp;
+    char *host,*service,*local;
     struct servent *svent;
     size_t qsize = DEFMCASTQSIZE;
     struct kopts *opt;
-    int ifindex;
+    int ifindex,iffound=0;
     int linklocal=0;
+    int on=1,off=0;
     int err;
     
     if ((ifm=malloc(sizeof(struct if_mcast))) == NULL) {
@@ -187,13 +190,15 @@ struct iface *init_mcast(struct iface *ifa)
     }
     memset(ifm,0,sizeof(struct if_mcast));
 
-    ifname=host=service=NULL;
+    ifname=host=service=local=NULL;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"device"))
             ifname=opt->val;
-        else if (!strcasecmp(opt->var,"address"))
+        else if (!strcasecmp(opt->var,"maddr"))
             host=opt->val;
+        else if (!strcasecmp(opt->var,"laddr"))
+            local=opt->val;
         else if (!strcasecmp(opt->var,"port"))
             service=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
@@ -208,7 +213,7 @@ struct iface *init_mcast(struct iface *ifa)
     }
 
     if (!host) {
-        logerr(0,"Must specify address for multicast interfaces");
+        logerr(0,"Must specify multicast address for multicast interfaces");
         return(NULL);
     }
 
@@ -216,7 +221,7 @@ struct iface *init_mcast(struct iface *ifa)
         if ((svent = getservbyname("nmea-0183","udp")) != NULL)
             service=svent->s_name;
         else
-            service=DEFMCASTPORT;
+            service=DEFPORTSTRING;
     }
 
     memset((void *)&hints,0,sizeof(hints));
@@ -226,32 +231,64 @@ struct iface *init_mcast(struct iface *ifa)
     hints.ai_socktype=SOCK_DGRAM;
     hints.ai_protocol=IPPROTO_UDP;
 
-    if ((err=getaddrinfo(host,service,&hints,&aptr))) {
-        logerr(0,"Lookup failed for host %s/service %s: %s",host,service,gai_strerror(err));
+    if ((err=getaddrinfo(host,service,&hints,&abase))) {
+        logerr(0,"Lookup failed for address %s/service %s: %s",host,service,gai_strerror(err));
+        return(NULL);
+    }
+
+    for (aptr=abase;aptr;aptr=aptr->ai_next)
+        if (aptr->ai_family == AF_INET || aptr->ai_family  == AF_INET6)
+            break;
+
+    if (!aptr) {
+        logerr(0,"No Suitable address found for %s/%s",host,service);
+        freeaddrinfo(abase);
         return(NULL);
     }
 
     memcpy(&ifm->maddr,aptr->ai_addr,aptr->ai_addrlen);
     ifm->asize=aptr->ai_addrlen;
 
+    freeaddrinfo(abase);
+
     if (ifm->maddr.ss_family == AF_INET) {
         memcpy(&ifm->mr.ipmr.imr_multiaddr,
                 &((struct sockaddr_in*) &ifm->maddr)->sin_addr,
                 sizeof(struct in_addr));
         ifm->mr.ipmr.imr_address.s_addr=INADDR_ANY;
-    } else if (aptr->ai_family == AF_INET6) {
+    } else if (ifm->maddr.ss_family == AF_INET6) {
         memcpy(&ifm->mr.ip6mr.ipv6mr_multiaddr,
                 &((struct sockaddr_in6 *)&ifm->maddr)->sin6_addr,
                 sizeof(struct in6_addr));
     } else {
         logerr(0,"Unsupported address family %d\n",ifm->maddr.ss_family);
-        freeaddrinfo(aptr);
         return(NULL);
     }
 
-    freeaddrinfo(aptr);
+    /* Now process local bind address */
+    memset((void *)&hints,0,sizeof(hints));
 
-    switch (is_multicast(&ifm->maddr)) {
+    hints.ai_flags=AI_PASSIVE;
+    hints.ai_family=AF_UNSPEC;
+    hints.ai_socktype=SOCK_DGRAM;
+    hints.ai_protocol=IPPROTO_UDP;
+
+    if ((err=getaddrinfo(local,service,&hints,&aptr))) {
+        logerr(0,"Lookup failed for local address %s: %s",local,gai_strerror(err));
+        return(NULL);
+    }
+
+    for (aptr=abase;aptr;aptr=aptr->ai_next)
+        if (aptr->ai_family == AF_INET || aptr->ai_family  == AF_INET6)
+            break;
+
+    if (!aptr) {
+        logerr(0,"No suitable address found for %s/%s",host,service);
+        freeaddrinfo(abase);
+        return(NULL);
+    }
+
+    switch (is_multicast((struct sockaddr *)&ifm->maddr)) {
     case 0:
         logerr(0,"%s is not a multicast address",host);
         return(NULL);
@@ -268,16 +305,60 @@ struct iface *init_mcast(struct iface *ifa)
         return(NULL);
      }
 
+    if (ifname || (local !=NULL && is_multicast(aptr->ai_addr) != 0)) {
+        if (getifaddrs(&ifap) < 0) {
+                logerr(errno,"Error getting interface info");
+                return(NULL);
+        }
+        for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
+            if (ifname && strcmp(ifname,ifp->ifa_name))
+                continue;
+            iffound++;
+            if (ifp->ifa_addr->sa_family != aptr->ai_family)
+                continue;
+            if (!local)
+                break;
+            if (aptr->ai_family ==  AF_INET) {
+                if (memcmp(&((struct sockaddr_in *)ifp->ifa_addr)->sin_addr,
+                        &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
+                        sizeof(struct in_addr)) == 0)
+                    break;
+                else
+                    continue;
+            }
+            /* Must be AF_INET6 */
+            if (memcmp(&((struct sockaddr_in6 *)ifp->ifa_addr)->sin6_addr,
+                    &((struct sockaddr_in6 *)aptr->ai_addr)->sin6_addr,
+                    sizeof(struct in6_addr)) == 0)
+                break;
+        }
 
-    if (ifname) {
-        if ((ifindex=if_nametoindex(ifname)) == 0) {
-            logerr(0,"No interface %s found",ifname);
+        if (!ifp) {
+            if (iffound)
+                logerr(0,"Interface %s has no suitable local address",ifname);
+            else if (ifname)
+                logerr(0,"No interface %s found",ifname);
+            else
+                logerr(0,"Cant determine interface for local address %s",local);
             return(NULL);
         }
 
-        if (ifm->maddr.ss_family == AF_INET)
+        if (!ifname)
+            ifname=ifp->ifa_name;
+
+        freeifaddrs(ifap);
+
+        if ((ifindex=if_nametoindex(ifname)) == 0) {
+            logerr(0,"Can't determine interface index for %s",ifname);
+            return(NULL);
+        }
+
+        if (ifm->maddr.ss_family == AF_INET) {
+            memcpy(&ifm->mr.ipmr.imr_address,
+                    &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
+                    sizeof(struct in_addr));
             ifm->mr.ipmr.imr_ifindex=ifindex;
-        else {
+        } else {
             ifm->mr.ip6mr.ipv6mr_interface=ifindex;
             if (linklocal)
                ((struct sockaddr_in6 *)&ifm->maddr)->sin6_scope_id=ifindex;
@@ -299,12 +380,24 @@ struct iface *init_mcast(struct iface *ifa)
                 }
         }
     } else {
-        if (ifm->maddr.ss_family == AF_INET)
+        if (ifm->maddr.ss_family == AF_INET) {
+            memcpy(&ifm->mr.ipmr.imr_address,
+                    &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
+                    sizeof(struct in_addr));
             ifm->mr.ipmr.imr_ifindex=0;
-        else
+        } else {
+            if (linklocal) {
+                logerr(0,"Must specify a device with link local multicast addresses");
+                return(NULL);
+            }
             ifm->mr.ip6mr.ipv6mr_interface=0;
+        }
     }
 
+    if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) < 0) {
+        logerr(errno,"Failed to set SO_REUSEADDR");
+        return(NULL);
+    }
 
     if (ifa->direction != OUT) {
         if (ifm->maddr.ss_family==AF_INET) {
@@ -342,6 +435,15 @@ struct iface *init_mcast(struct iface *ifa)
     ifa->cleanup=cleanup_mcast;
     ifa->info = (void *) ifm;
     if (ifa->direction == BOTH) {
+        if (setsockopt(ifm->fd,
+                (ifm->maddr.ss_family == AF_INET)?IPPROTO_IP:IPPROTO_IPV6,
+                (ifm->maddr.ss_family == AF_INET)?
+                IP_MULTICAST_LOOP:IPV6_MULTICAST_LOOP,&off,
+                sizeof(off)) < 0) {
+            logerr(errno,"Failed to disable multicast loopback\nDon't use bi-directional interfaces with loopback interface");
+            return(NULL);
+        }
+
         if ((ifa->next=ifdup(ifa)) == NULL) {
             logerr(0,"Interface duplication failed");
             return(NULL);
