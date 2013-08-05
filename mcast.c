@@ -195,9 +195,9 @@ struct iface *init_mcast(struct iface *ifa)
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"device"))
             ifname=opt->val;
-        else if (!strcasecmp(opt->var,"maddr"))
+        else if (!strcasecmp(opt->var,"group"))
             host=opt->val;
-        else if (!strcasecmp(opt->var,"laddr"))
+        else if (!strcasecmp(opt->var,"bind"))
             local=opt->val;
         else if (!strcasecmp(opt->var,"port"))
             service=opt->val;

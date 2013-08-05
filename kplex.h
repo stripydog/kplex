@@ -35,7 +35,6 @@
 #define SENBUFSZ 96
 #define DEFPORT 10110
 #define DEFPORTSTRING "10110"
-#define DEFTCPPORT "10110"
 #define IDMINORBITS 16
 #define IDMINORMASK ((1<<IDMINORBITS)-1)
 #define MAXINTERFACES 65535
@@ -193,6 +192,7 @@ void *ifdup_seatalk(void *);
 ioqueue_t *init_q(size_t);
 
 senblk_t *next_senblk(ioqueue_t *q);
+senblk_t *last_senblk(ioqueue_t *q);
 void push_senblk(senblk_t *, ioqueue_t *);
 void senblk_free(senblk_t *, ioqueue_t *);
 int link_interface(iface_t *);

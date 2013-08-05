@@ -444,6 +444,45 @@ senblk_t *next_senblk(ioqueue_t *q)
 }
 
 /*
+ *  Get the last senblk from a queue, discarding all before it
+ *  Args: Queue to retrieve from
+ *  Returns: Pointer to last senblk on the queue or NULL if the queue is
+ *  no longer active
+ *  This function blocks until data are available or the queue is shut down
+ */
+senblk_t *last_senblk(ioqueue_t *q)
+{
+    senblk_t *tptr,*nptr;
+
+    pthread_mutex_lock(&q->q_mutex);
+    /* Move all but last senblk on the queue to the free list */
+    if ((nptr=tptr=q->qhead) != NULL) {
+        for (nptr=tptr->next;nptr;tptr=nptr,nptr=nptr->next) {
+            tptr->next=q->free;
+            q->free=tptr;
+        }
+        q->qhead=tptr;
+    }
+
+    while ((tptr = q->qhead) == NULL) {
+        /* No data available for reading */
+        if (!q->active) {
+            /* Return NULL if the queue has been shut down */
+            pthread_mutex_unlock(&q->q_mutex);
+            return ((senblk_t *)NULL);
+        }
+        /* Wait until something is available */
+        pthread_cond_wait(&q->freshmeat,&q->q_mutex);
+    }
+
+    /* set qhead to next element (which may be NULL)
+       If the last element in the queue, set the tail pointer to NULL too */
+    if ((q->qhead=tptr->next) == NULL)
+        q->qtail=NULL;
+    pthread_mutex_unlock(&q->q_mutex);
+    return(tptr);
+}
+/*
  * Return a senblk to a queue's free list
  * Args: pointer to senblk, and pointer to the queue whose free list it is to
  * be added to

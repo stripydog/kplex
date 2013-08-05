@@ -6,21 +6,29 @@
 
 #include "kplex.h"
 #include <netdb.h>
+#include <fcntl.h>
+#include <netinet/tcp.h>
 
 #define DEFTCPQSIZE 128
 
 struct if_tcp {
     int fd;
     size_t qsize;
-    size_t sa_len;
-    struct sockaddr sa;
+    struct if_tcp_shared *shared;
+};
+
+struct if_tcp_shared {
+    time_t retry;
+    socklen_t sa_len;
+    struct sockaddr_storage sa;
+    int donewith;
+    pthread_mutex_t t_mutex;
 };
 
 /*
  * Duplicate struct if_tcp
  * Args: if_tcp to be duplicated
- * Returns: pointer to new if_serial
- * Should we dup, copy or re-open the fd here?
+ * Returns: pointer to new if_tcp
  */
 void *ifdup_tcp(void *ift)
 {
@@ -33,13 +41,126 @@ void *ifdup_tcp(void *ift)
 
     memcpy((void *)newif,(void *)oldif,sizeof(struct if_tcp));
 
+    if (newif->shared)
+        newif->shared->donewith=0;
+
     return ((void *) newif);
 }
 
 void cleanup_tcp(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *)ifa->info;
+    if (ift->shared) {
+        /* io_mutex is held in cleanup routines to serialize this */
+        /* unlock shared mutex in case we were interupted whilst holding it */
+        (void)  pthread_mutex_unlock(&ift->shared->t_mutex);
+        if (!(ift->shared->donewith)) {
+            ift->shared->donewith++;
+            return;
+        }
+        pthread_mutex_destroy(&ift->shared->t_mutex);
+        free(ift->shared);
+    }
     close(ift->fd);
+}
+
+int reconnect(iface_t *ifa)
+{
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    senblk_t *sptr;
+    int retval=0;
+
+    pthread_mutex_lock(&ift->shared->t_mutex);
+    for (;;) {
+	    if ((sptr = last_senblk(ifa->q)) == NULL) {
+            retval = 1;
+	    	break;
+        }
+
+        if (senfilter(sptr,ifa->ofilter)) {
+            senblk_free(sptr,ifa->q);
+            continue;
+        }
+
+	    if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0) {
+            senblk_free(sptr,ifa->q);
+	        switch(errno) {
+	        case ECONNREFUSED:
+	        case ENETUNREACH:
+	        case ETIMEDOUT:
+	        case EAGAIN:
+	            close(ift->fd);
+	            if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,0))
+                        < 0) {
+	                logerr(errno,"Failed to create socket");
+	                retval=-1;
+	                break;
+	            }
+	            while (connect(ift->fd,
+                        (const struct sockaddr *)&ift->shared->sa,
+                        ift->shared->sa_len)<0)
+	                sleep(ift->shared->retry);
+	            break;
+	        default:
+	            logerr(errno,"Failed to reconnect socket");
+	            retval=-1;
+	        }
+	        if (retval)
+	            break;
+	    }
+    }
+    pthread_mutex_unlock(&ift->shared->t_mutex);
+    return(retval);
+}
+    
+int reread(iface_t *ifa, char *buf, int bsize)
+{
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    int nread;
+    int fflags;
+
+    /* Make socket non-blocking so we don'hold the mutex longer
+     * than necessary */
+    if ((fflags=fcntl(ift->fd,F_GETFL)) < 0) {
+        logerr(errno,"Failed to get socket flags");
+        return(-1);
+    }
+
+    if (fcntl(ift->fd,F_SETFL,fflags | O_NONBLOCK) < 0) {
+        logerr(errno,"Failed to make tcp socket non-blocking");
+        return(-1);
+    }
+
+    pthread_mutex_lock(&ift->shared->t_mutex);
+    while ((nread=read(ift->fd,buf,bsize)) <= 0) {
+        if (nread < 0 && ((errno == EWOULDBLOCK) || errno == EAGAIN)) {
+            /* Success, but blocked in read */
+            nread=0;
+            break;
+        }
+        close(ift->fd);
+        if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,0)) < 0) {
+            logerr(errno,"Failed to create socket");
+            nread=-1;
+            break;
+        }
+
+        if (fcntl(ift->fd,F_SETFL,(fflags | O_NONBLOCK)) < 0) {
+            logerr(errno,"Failed to make tcp socket non-blocking");
+            return(-1);
+        }
+
+        nread=0;
+        while (connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
+                ift->shared->sa_len) < 0)
+            sleep(ift->shared->retry);
+    }
+    pthread_mutex_unlock(&ift->shared->t_mutex);
+    if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
+        logerr(errno,"Failed to make tcp socket blocking");
+        nread=-1;
+    }
+    return(nread);
 }
 
 void read_tcp(struct iface *ifa)
@@ -49,13 +170,19 @@ void read_tcp(struct iface *ifa)
 	senblk_t sblk;
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
 	int nread,cr=0,count=0,overrun=0;
-	int fd;
 
 	senptr=sblk.data;
     sblk.src=ifa->id;
-	fd=ift->fd;
 
-	while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
+    while (ifa->direction != NONE) {
+	    if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
+            if (!ifa->persist)
+                break;
+            if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
+                logerr(errno,"failed to reconnect tcp connection");
+                break;
+            }
+        }
 		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
 			if (count < SENMAX+2) {
 				++count;
@@ -89,6 +216,7 @@ void write_tcp(struct iface *ifa)
 {
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
 	senblk_t *sptr;
+    int status;
 
 /* Porters: MSG_NOSIGNAL / SO_NOSIGPIPE are redundant as of v0.3: We're
  * ignorning SIGPIPE so you can forget this if porting to a platform on
@@ -110,8 +238,16 @@ void write_tcp(struct iface *ifa)
             continue;
         }
 
-        if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0)
-		    break;
+        if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0) {
+            if (!ifa->persist)
+		        break;
+		    senblk_free(sptr,ifa->q);
+            if ((status=reconnect(ifa)) != 0) {
+                if (status < 0)
+                    logerr(errno,"failed to reconnect tcp connection");
+                break;
+            }
+        }
 		senblk_free(sptr,ifa->q);
 	}
 
@@ -121,25 +257,28 @@ void write_tcp(struct iface *ifa)
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
 {
     iface_t *newifa;
-    struct if_tcp *oift=(struct if_tcp *) ifa->info;
+    struct if_tcp *oldift=(struct if_tcp *) ifa->info;
     struct if_tcp *newift=NULL;
     pthread_t tid;
+    int on=1;
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL)
         return(NULL);
 
     memset(newifa,0,sizeof(iface_t));
-    if (((newift = malloc(sizeof(struct if_tcp))) == NULL) ||
-        ((ifa->direction != IN) && ((newifa->q=init_q(oift->qsize)) == NULL))){
-            if (newifa && newifa->q)
-                free(newifa->q);
-            if (newift)
-                free(newift);
-            free(newifa);
-            return(NULL);
+    if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
+            ((ifa->direction != IN) &&
+            ((newifa->q=init_q(oldift->qsize)) == NULL))){
+        if (newifa && newifa->q)
+            free(newifa->q);
+        if (newift->shared)
+            free(newift->shared);
+        if (newift)
+            free(newift);
+        free(newifa);
+        return(NULL);
     }
     newift->fd=fd;
-    newift->qsize=oift->qsize;
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
@@ -154,21 +293,25 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->checksum=ifa->checksum;
     if (ifa->direction == IN)
         newifa->q=ifa->lists->engine->q;
-    else if (ifa->direction == BOTH) {
-        if ((newifa->next=ifdup(newifa)) == NULL) {
-            logwarn("Interface duplication failed");
-            free(newifa->q);
-            free(newift);
-            free(newifa);
-            return(NULL);
-        }
-        newifa->direction=OUT;
-        newifa->pair->direction=IN;
-        newifa->pair->q=ifa->lists->engine->q;
-        link_to_initialized(newifa->pair);
-        pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
-    }
+    else {
+        if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+            logerr(errno,"Could not disable Nagle on new tcp connection");
 
+        if (ifa->direction == BOTH) {
+            if ((newifa->next=ifdup(newifa)) == NULL) {
+                logwarn("Interface duplication failed");
+                free(newifa->q);
+                free(newift);
+                free(newifa);
+                return(NULL);
+            }
+            newifa->direction=OUT;
+            newifa->pair->direction=IN;
+            newifa->pair->q=ifa->lists->engine->q;
+            link_to_initialized(newifa->pair);
+            pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
+        }
+    }
     link_to_initialized(newifa);
     pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
     return(newifa);
@@ -195,7 +338,7 @@ void tcp_server(iface_t *ifa)
 iface_t *init_tcp(iface_t *ifa)
 {
     struct if_tcp *ift;
-    char *host,*port;
+    char *host,*port,*eptr=NULL;
     struct addrinfo hints,*aptr,*abase;
     struct servent *svent;
     int err;
@@ -204,9 +347,9 @@ iface_t *init_tcp(iface_t *ifa)
     unsigned char *ptr;
     int i;
     struct kopts *opt;
+    long retry=5;
 
     host=port=NULL;
-    
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -226,6 +369,20 @@ iface_t *init_tcp(iface_t *ifa)
             conntype=opt->val;
         } else if (!strcasecmp(opt->var,"port")) {
             port=opt->val;
+        } else if (!strcasecmp(opt->var,"retry")) {
+            if (!ifa->persist) {
+                logerr(0,"retry valid only valid with persist option");
+                return(NULL);
+            }
+            retry=strtol(opt->val,&eptr,0);
+            if (errno) {
+                logerr(0,"retry value %s out of range",opt->val);
+                return(NULL);
+            }
+            if (eptr) {
+                logerr(0,"Invalid retry value %s",opt->val);
+                return(NULL);
+            }
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(ift->qsize=atoi(opt->val))) {
                 logerr(0,"Invalid queue size specified: %s",opt->val);
@@ -237,8 +394,13 @@ iface_t *init_tcp(iface_t *ifa)
         }
     }
 
-    if (*conntype == 'c' && !host) {
-        logerr(0,"Must specify address for tcp client mode\n");
+    if (*conntype == 'c') {
+        if (!host) {
+            logerr(0,"Must specify address for tcp client mode\n");
+            return(NULL);
+        }
+    } else if (ifa->persist) {
+        logerr(0,"persist option not valid for tcp servers");
         return(NULL);
     }
 
@@ -246,7 +408,7 @@ iface_t *init_tcp(iface_t *ifa)
         if ((svent=getservbyname("nmea-0183","tcp")) != NULL)
             port=svent->s_name;
         else
-            port = DEFTCPPORT;
+            port = DEFPORTSTRING;
     }
 
     memset((void *)&hints,0,sizeof(hints));
@@ -293,8 +455,27 @@ iface_t *init_tcp(iface_t *ifa)
         return(NULL);
     }
 
-    ift->sa_len=aptr->ai_addrlen;
-    (void) memcpy(&ift->sa,aptr->ai_addr,sizeof(struct sockaddr));
+    if (ifa->persist) {
+        if ((ift->shared = malloc(sizeof(struct if_tcp_shared))) == NULL) {
+            logerr(errno,"Could not allocate memory");
+            free(ift);
+            return(NULL);
+        }
+
+        if (pthread_mutex_init(&ift->shared->t_mutex,NULL) != 0) {
+            logerr(errno,"tcp mutex initialisation failed");
+            return(NULL);
+        }
+
+        ift->shared->retry=retry;
+        if (ift->shared->retry != retry) {
+            logerr(0,"retry value out of range");
+            return(NULL);
+        }
+        ift->shared->sa_len=aptr->ai_addrlen;
+        (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
+        ift->shared->donewith=1;
+    }
 
     freeaddrinfo(abase);
 
@@ -304,6 +485,9 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(errno,"Interface duplication failed");
             return(NULL);
         }
+        /* Disable Nagle. Not fatal if we fail for any reason */
+        if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+            logerr(errno,"Could not disable Nagle algorithm for tcp socket");
     }
 
     ifa->cleanup=cleanup_tcp;
