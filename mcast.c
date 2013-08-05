@@ -175,7 +175,7 @@ struct iface *init_mcast(struct iface *ifa)
     char *ifname;
     struct addrinfo hints,*aptr,*abase;
     struct ifaddrs *ifap,*ifp;
-    char *host,*service,*local;
+    char *host,*service;
     struct servent *svent;
     size_t qsize = DEFMCASTQSIZE;
     struct kopts *opt;
@@ -190,15 +190,13 @@ struct iface *init_mcast(struct iface *ifa)
     }
     memset(ifm,0,sizeof(struct if_mcast));
 
-    ifname=host=service=local=NULL;
+    ifname=host=service=NULL;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"device"))
             ifname=opt->val;
         else if (!strcasecmp(opt->var,"group"))
             host=opt->val;
-        else if (!strcasecmp(opt->var,"bind"))
-            local=opt->val;
         else if (!strcasecmp(opt->var,"port"))
             service=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
@@ -269,17 +267,17 @@ struct iface *init_mcast(struct iface *ifa)
     memset((void *)&hints,0,sizeof(hints));
 
     hints.ai_flags=AI_PASSIVE;
-    hints.ai_family=AF_UNSPEC;
+    hints.ai_family=ifm->maddr.ss_family;
     hints.ai_socktype=SOCK_DGRAM;
     hints.ai_protocol=IPPROTO_UDP;
 
-    if ((err=getaddrinfo(local,service,&hints,&aptr))) {
-        logerr(0,"Lookup failed for local address %s: %s",local,gai_strerror(err));
+    if ((err=getaddrinfo(NULL,service,&hints,&aptr))) {
+        logerr(0,"Lookup failed for bind addresss: %s",gai_strerror(err));
         return(NULL);
     }
 
     for (aptr=abase;aptr;aptr=aptr->ai_next)
-        if (aptr->ai_family == AF_INET || aptr->ai_family  == AF_INET6)
+        if (aptr->ai_family == ifm->maddr.ss_family)
             break;
 
     if (!aptr) {
@@ -305,7 +303,7 @@ struct iface *init_mcast(struct iface *ifa)
         return(NULL);
      }
 
-    if (ifname || (local !=NULL && is_multicast(aptr->ai_addr) != 0)) {
+    if (ifname) {
         if (getifaddrs(&ifap) < 0) {
                 logerr(errno,"Error getting interface info");
                 return(NULL);
@@ -314,22 +312,7 @@ struct iface *init_mcast(struct iface *ifa)
             if (ifname && strcmp(ifname,ifp->ifa_name))
                 continue;
             iffound++;
-            if (ifp->ifa_addr->sa_family != aptr->ai_family)
-                continue;
-            if (!local)
-                break;
-            if (aptr->ai_family ==  AF_INET) {
-                if (memcmp(&((struct sockaddr_in *)ifp->ifa_addr)->sin_addr,
-                        &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
-                        sizeof(struct in_addr)) == 0)
-                    break;
-                else
-                    continue;
-            }
-            /* Must be AF_INET6 */
-            if (memcmp(&((struct sockaddr_in6 *)ifp->ifa_addr)->sin6_addr,
-                    &((struct sockaddr_in6 *)aptr->ai_addr)->sin6_addr,
-                    sizeof(struct in6_addr)) == 0)
+            if (ifp->ifa_addr->sa_family == ifm->maddr.ss_family)
                 break;
         }
 
@@ -338,13 +321,8 @@ struct iface *init_mcast(struct iface *ifa)
                 logerr(0,"Interface %s has no suitable local address",ifname);
             else if (ifname)
                 logerr(0,"No interface %s found",ifname);
-            else
-                logerr(0,"Cant determine interface for local address %s",local);
             return(NULL);
         }
-
-        if (!ifname)
-            ifname=ifp->ifa_name;
 
         freeifaddrs(ifap);
 
@@ -387,10 +365,15 @@ struct iface *init_mcast(struct iface *ifa)
             ifm->mr.ipmr.imr_ifindex=0;
         } else {
             if (linklocal) {
-                logerr(0,"Must specify a device with link local multicast addresses");
-                return(NULL);
+                if (((struct sockaddr_in6 *)&ifm->maddr)->sin6_scope_id == 0) {
+                    logerr(0,"Must specify a device with link local multicast addresses");
+                    return(NULL);
+                }
+                ifm->mr.ip6mr.ipv6mr_interface = ((struct sockaddr_in6 *)
+                        &ifm->maddr)->sin6_scope_id;
+            } else {
+                ifm->mr.ip6mr.ipv6mr_interface=0;
             }
-            ifm->mr.ip6mr.ipv6mr_interface=0;
         }
     }
 
@@ -416,7 +399,7 @@ struct iface *init_mcast(struct iface *ifa)
     }
 
     if (ifa->direction == IN) {
-        if (bind(ifm->fd,(const struct sockaddr *)&ifm->maddr,ifm->asize) < 0) {
+        if (bind(ifm->fd,aptr->ai_addr,aptr->ai_addrlen) < 0) {
             logerr(errno,"Bind failed");
             return(NULL);
         }
@@ -452,12 +435,13 @@ struct iface *init_mcast(struct iface *ifa)
         ifa->direction=OUT;
         ifa->pair->direction=IN;
         ifm = (struct if_mcast *) ifa->pair->info;
-        if (bind(ifm->fd,(const struct sockaddr *) &ifm->maddr,ifm->asize) < 0){
+        if (bind(ifm->fd,aptr->ai_addr,aptr->ai_addrlen) < 0){
             logerr(errno,"Duplicate Bind failed");
             return(NULL);
         }
 
     }
+    freeaddrinfo(abase);
     free_options(ifa->options);
     return(ifa);
 }

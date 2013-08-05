@@ -339,7 +339,6 @@ node's network stack needs to process.
     Interface-specific options:
         group=<multicast address>
         device=<interface>
-        bind=<address>
         port=<port>
         Where:
             <multicast address> is the multicast group address. This must be
@@ -349,9 +348,6 @@ node's network stack needs to process.
             interface assigned that address will be used, otherwise the choice
             of interface will be left to the system and normally based on the
             routing table.
-            <address> is the local system address to bind to.  If unspecified,
-            but "device" is specified, an address assigned to the specified
-            interface will be used.
             <port> if specified is the udp port or service name. If not
             specified defaults to the udp port returned by a lookup of the
 
@@ -363,10 +359,8 @@ This may be done in one of three ways:
         group=ff02::a0:200%wlan0
     2) by specifying the interface with the "device" option, e.g.:
         device=wlan0
-    3) by specifying the link local address for the interface.  This is neither
-       the easiest nor the prefered method.
 
-If a device is not specified in one of the above 3 ways for multicast addresses
+If a device is not specified in one of the above ways for multicast addresses
 other than IPv6 link and interface local groups, the routing table will be used
 to select the outgoing interface for multicast packets.
 
