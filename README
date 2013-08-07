@@ -444,11 +444,11 @@ When a filter rule "matches" a sentence, it "fires". If the rule was an "allow"
 rule (ie prepended by a "+", the sentence is allowed.  If the rule was a "deny"
 rule (ie prepended by a "-"), the sentence is dropped.  If no rules are matched
 the sentence is allowed.  Thus a filter such as:
-ifilter=+GP**:+AI**:+SDDBT
+ifilter=+GP***:+AI***:+SDDBT
 is pointless. It allows all sentences as it denies none. To *only* allow AIS,
 GPS and Depth below transducer sentences, you need to deny what is not
 explicitly allowed by adding "-all" to the end of the filter specification:
-ifilter=+GP**:+AI**:+SDDBT:-all
+ifilter=+GP***:+AI***:+SDDBT:-all
 Obviously order is important.  Putting "-all" at the beginning would simply deny
 all sentences.
 IMPORTANT NOTE:
