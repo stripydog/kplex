@@ -22,6 +22,7 @@ struct if_tcp_shared {
     socklen_t sa_len;
     struct sockaddr_storage sa;
     int donewith;
+    int protocol;
     pthread_mutex_t t_mutex;
 };
 
@@ -69,6 +70,7 @@ int reconnect(iface_t *ifa)
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     senblk_t *sptr;
     int retval=0;
+    int conres;
 
     pthread_mutex_lock(&ift->shared->t_mutex);
     for (;;) {
@@ -82,24 +84,25 @@ int reconnect(iface_t *ifa)
             continue;
         }
 
-	    if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0) {
+	    if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
             senblk_free(sptr,ifa->q);
 	        switch(errno) {
 	        case ECONNREFUSED:
 	        case ENETUNREACH:
 	        case ETIMEDOUT:
 	        case EAGAIN:
-	            close(ift->fd);
-	            if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,0))
-                        < 0) {
-	                logerr(errno,"Failed to create socket");
-	                retval=-1;
-	                break;
-	            }
-	            while (connect(ift->fd,
-                        (const struct sockaddr *)&ift->shared->sa,
-                        ift->shared->sa_len)<0)
+                for(conres=-1;conres < 0;) {
+	                close(ift->fd);
 	                sleep(ift->shared->retry);
+	                if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
+                            ift->shared->protocol)) < 0) {
+	                    logerr(errno,"Failed to create socket");
+	                    retval=-1;
+	                    break;
+	                }
+	                conres=connect(ift->fd,(const struct sockaddr *)
+                            &ift->shared->sa,ift->shared->sa_len);
+                }
 	            break;
 	        default:
 	            logerr(errno,"Failed to reconnect socket");
@@ -116,7 +119,7 @@ int reconnect(iface_t *ifa)
 int reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    int nread;
+    int nread,ret;
     int fflags;
 
     /* Make socket non-blocking so we don'hold the mutex longer
@@ -132,34 +135,32 @@ int reread(iface_t *ifa, char *buf, int bsize)
     }
 
     pthread_mutex_lock(&ift->shared->t_mutex);
-    while ((nread=read(ift->fd,buf,bsize)) <= 0) {
-        if (nread < 0 && ((errno == EWOULDBLOCK) || errno == EAGAIN)) {
-            /* Success, but blocked in read */
-            nread=0;
-            break;
-        }
-        close(ift->fd);
-        if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,0)) < 0) {
-            logerr(errno,"Failed to create socket");
-            nread=-1;
-            break;
-        }
+    if ((nread=read(ift->fd,buf,bsize)) <= 0) {
+        if (nread == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
+            /* An actual error as opposed to success but would block */
+            for (ret=-1;ret!=0;) {
+                close(ift->fd);
+                if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
+                        ift->shared->protocol)) < 0) {
+                    logerr(errno,"Failed to create socket");
+                    nread=-1;
+                    break;
+                }
 
-        if (fcntl(ift->fd,F_SETFL,(fflags | O_NONBLOCK)) < 0) {
-            logerr(errno,"Failed to make tcp socket non-blocking");
-            return(-1);
+                sleep(ift->shared->retry);
+                ret=connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
+                        ift->shared->sa_len);
+            }
         }
-
         nread=0;
-        while (connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
-                ift->shared->sa_len) < 0)
-            sleep(ift->shared->retry);
     }
-    pthread_mutex_unlock(&ift->shared->t_mutex);
+
     if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
         logerr(errno,"Failed to make tcp socket blocking");
         nread=-1;
     }
+
+    pthread_mutex_unlock(&ift->shared->t_mutex);
     return(nread);
 }
 
@@ -218,17 +219,6 @@ void write_tcp(struct iface *ifa)
 	senblk_t *sptr;
     int status;
 
-/* Porters: MSG_NOSIGNAL / SO_NOSIGPIPE are redundant as of v0.3: We're
- * ignorning SIGPIPE so you can forget this if porting to a platform on
- * which none of this is supported. Will be removed in a later release.
- */
-
-#ifndef MSG_NOSIGNAL
-    #define MSG_NOSIGNAL 0
-    int n=1;
-    setsockopt(ift->fd,SOL_SOCKET, SO_NOSIGPIPE, (void *)&n, sizeof(int));
-#endif
-
 	for(;;) {
 		if ((sptr = next_senblk(ifa->q)) == NULL)
 			break;
@@ -238,7 +228,10 @@ void write_tcp(struct iface *ifa)
             continue;
         }
 
-        if ((send(ift->fd,sptr->data,sptr->len,MSG_NOSIGNAL)) <0) {
+        /* SIGPIPE is blocked here so we can avoid using the (non-portable)
+         * MSG_NOSIGNAL
+         */
+        if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
             if (!ifa->persist)
 		        break;
 		    senblk_free(sptr,ifa->q);
@@ -374,12 +367,11 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"retry valid only valid with persist option");
                 return(NULL);
             }
-            retry=strtol(opt->val,&eptr,0);
-            if (errno) {
+            if ((retry=strtol(opt->val,&eptr,0)) == 0 && errno) {
                 logerr(0,"retry value %s out of range",opt->val);
                 return(NULL);
             }
-            if (eptr) {
+            if (*eptr != '\0') {
                 logerr(0,"Invalid retry value %s",opt->val);
                 return(NULL);
             }
@@ -475,6 +467,7 @@ iface_t *init_tcp(iface_t *ifa)
         ift->shared->sa_len=aptr->ai_addrlen;
         (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
         ift->shared->donewith=1;
+        ift->shared->protocol=aptr->ai_protocol;
     }
 
     freeaddrinfo(abase);
