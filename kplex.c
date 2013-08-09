@@ -18,6 +18,7 @@
 #include <syslog.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
@@ -95,6 +96,8 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
     sf_rule_t *fptr;
     char *cptr;
     int i;
+    time_t tsecs;
+    struct timeval tv;
 
     /* We shouldn't actually be filtering any NULL packets, but check anyway */
     if (sptr == NULL || filter == NULL || filter->rules == NULL)
@@ -110,11 +113,25 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
             if(fptr->match[i] && fptr->match[i] != *cptr)
                 break;
         if (i==5) {
-            if (fptr->info.type) {
+            if (fptr->type == ACCEPT) {
                 return(0);
-            } else {
-                return(1);
             }
+            if (fptr->type == DENY) {
+                return(-1);
+            }
+            /* type is limit. Hopefully. */
+            (void) gettimeofday(&tv,NULL);
+            if (tv.tv_sec < fptr->info.limit->timeout)
+                return(-1);
+            if ((tsecs=(tv.tv_sec - fptr->info.limit->timeout)) <
+                    fptr->info.limit->last.tv_sec)
+                return(-1);
+            if (tsecs == fptr->info.limit->last.tv_sec &&
+                    (tv.tv_usec < fptr->info.limit->last.tv_usec ))
+                return(-1);
+            /* at least timeout since last seen: Update info and pass */
+            memcpy(&fptr->info.limit->last,&tv,sizeof(struct timeval));
+            return(0);
         }
     }
     return(0);

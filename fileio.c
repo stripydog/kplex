@@ -10,14 +10,21 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #define DEFFILEQSIZE 128
+
+#define TS_UTC 1
+#define TS_LOCAL 2
+
+#define MAXTS   32
 
 struct if_file {
     FILE *fp;
     char *filename;
     size_t qsize;
     int usereturn;
+    int timestamp;
 };
 
 /*
@@ -59,6 +66,9 @@ void write_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t *sptr;
+    time_t t;
+    struct tm tmbuf;
+    char tsbuf[MAXTS];
 
     /* ifc->fp will only be NULL if we're opening a FIFO.
      */
@@ -89,7 +99,14 @@ void write_file(iface_t *ifa)
             sptr->data[sptr->len-2] = '\n';
             sptr->data[sptr->len-1] = '\0';
         }
-        if (fputs(sptr->data,ifc->fp) == EOF) {
+
+        if (ifc->timestamp) {
+            t = time(NULL);
+            strftime(tsbuf,MAXTS,"%F %T: ",(ifc->timestamp == TS_LOCAL)?
+                localtime_r(&t,&tmbuf):gmtime_r(&t,&tmbuf));
+        }
+
+        if ((ifc->timestamp != 0 && (fputs(tsbuf,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
             if (!(ifa->persist && errno == EPIPE) )
 		        break;
             if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
@@ -213,6 +230,17 @@ iface_t *init_file (iface_t *ifa)
             } else {
                 logerr(0,"Invalid option \"eol=%s\": Must be \"n\" or \"rn\"",
                         opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"timestamp")) {
+            if (!strcasecmp(opt->val,"n"))
+                ifc->timestamp=0;
+            else if (!strcasecmp(opt->val,"l"))
+                ifc->timestamp=TS_LOCAL;
+            else if (!strcasecmp(opt->val,"u"))
+                ifc->timestamp=TS_UTC;
+            else {
+                logerr(0,"Invalid option \"timestamp=%s\"",opt->val);
                 return(NULL);
             }
         } else {

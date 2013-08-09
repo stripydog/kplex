@@ -156,6 +156,7 @@ standard input and standard output.
         persist=[yes|no]
         append=[yes|no]
         eol=[rn|n]
+        timestamp=[n|l|u]
         Where
             <file> is either the file name to read from or write to or "-".
                 In the latter case, standard input is used for inputs, standard
@@ -181,6 +182,15 @@ standard in / standard out.
 If no "filename" option is given, standard in/out are used.  Standard input and
 output may not be used in "background" mode (ie when kplex is run as a daemon)
 unless they are redirected to a file or a pipe.
+
+If "timestamp=u" is specified, a UTC timestamp in the format
+"yyyy-mm-dd hh:mm:ss: " will be prepended to each line output. If "timestamp=l"
+is specified, the timestamp will be local time. If "timestamp=n" (the default)
+is specified, no timestamp will be prepended to output lines.
+
+The "timestamp" option may be useful for data log files, although date
+informaiton may be carried in some NMEA sentences rendering this option
+redundant.
 
 If "append=yes" is specified for an interface outputting to a regular file,
 output is appended to the file.  If "append=no" (the default) is specified, the
@@ -427,11 +437,16 @@ bi-directional interfaces and ignored by input interfaces.
 Connections spawned by servers inherit their parent's filters, so connections to
 a tcp server will be filtered according to the server's filters.
 A filter consists of a series of filter rules. Each filter rule
-consists of either a "+" or "-" (to specify an "ALLOW" rule or a "DENY" rule)
-followed by a "match string" which is either the word "all" or 5
-characters.  Filter rules are separated by a colon (":" character).  Filter
-rules are applied in the order they are specified to a sentence being filtered.
-A filter rule wihch specifies the word "all" matches all sentences.  If a filter
+consists of a "+", "-" or "~"  (to specify an "ALLOW", "DENY" or "LIMIT" rule,
+respectively) followed by a "match string" which is either the word "all" or 5
+characters.  A "LIMIT" rule must additionally have a "/" character followed by
+a whole number (ie without a decimal point) representing the minimum number of
+seconds which must pass between successive sentences matching that rule being
+permitted to pass.  Filter rules are separated by a colon (":" character).
+Filter rules are applied in the order they are specified to a sentence being
+filtered.
+
+A filter rule which specifies the word "all" matches all sentences.  If a filter
 rule specifies a 5 character match stroing, these are compared with the 5
 character NMEA 0183 talker/message type of the sentence being filtered. The
 filter rule matches if each character is the same as the corresponding character
@@ -442,8 +457,14 @@ would match any sentences produced by a GPS talker (excluding any proprietary
 sentences not specifying talker as "GP".
 When a filter rule "matches" a sentence, it "fires". If the rule was an "allow"
 rule (ie prepended by a "+", the sentence is allowed.  If the rule was a "deny"
-rule (ie prepended by a "-"), the sentence is dropped.  If no rules are matched
-the sentence is allowed.  Thus a filter such as:
+rule (ie prepended by a "-"), the sentence is dropped.  If the rule was a
+"limit" rule, the sentence is passed if and only if time in seconds since the
+last time a sentence matching this that rule was allowed to pass was equal to
+or greater than the number of seconds following the "/" in the rule
+specification.
+
+If no rules are matched the sentence is allowed.  Thus a filter
+such as:
 ifilter=+GP***:+AI***:+SDDBT
 is pointless. It allows all sentences as it denies none. To *only* allow AIS,
 GPS and Depth below transducer sentences, you need to deny what is not
@@ -537,6 +558,14 @@ to pseudo terminal, creating link for opencpn to read and write at /tmp/nmea,
 38400 baud
 kplex tcp:direction=both,mode=client,address=192.168.1.50,port=2200 \
     pty:direction=both,mode=master,filename=/tmp/nmea,baud=38400
+
+Input from GPS on usb to serial interface, outputting to tcp server, IPv6
+multicast group ff05::10:110 on the default port and a data log file which
+appends an RMC sentence once per hour:
+kplex serial:direction=in,filename=/dev/ttyUSB0 \
+    tcp:mode=server,direction=out \
+    mcast:group=ff05::10:110,direction=out \
+    file:filename=/var/tmp/datalog,append=yes,ofilter=~GPRMC/3600:-all
 
 Configuration File syntax
 -------------------------

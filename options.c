@@ -13,6 +13,7 @@
 
 #define ARGDELIM ','
 #define FILTERDELIM ':'
+#define FILTEROPTDELIM '/'
 
 /* This is used before we start multiple threads */
 static char configbuf[BUFSIZE];
@@ -235,10 +236,18 @@ sfilter_t *getfilter(char *fstring)
             break;
         tfilter->next=NULL;
         if (*fstring == '+')
-            tfilter->info.type=1;
+            tfilter->type=ACCEPT;
         else if (*fstring == '-')
-            tfilter->info.type=0;
-        else
+            tfilter->type=DENY;
+        else if (*fstring == '~') {
+            if ((tfilter->info.limit = (struct ratelimit *)
+                    malloc(sizeof(struct ratelimit))) == NULL) {
+                free(tfilter);
+                break;
+            }
+            tfilter->type=LIMIT;
+            memset(tfilter->info.limit,0,sizeof(struct ratelimit));
+        } else
             break;
 
         if (!strncmp(++fstring,"all",3)) {
@@ -246,9 +255,24 @@ sfilter_t *getfilter(char *fstring)
             fstring+=3;
         } else {
             for (sptr=tfilter->match,i=0;i<5;i++,fstring++) {
-                if (*fstring == '\0' || *fstring == FILTERDELIM)
+                if (*fstring == '\0' || *fstring == FILTERDELIM ||
+                        *fstring == FILTEROPTDELIM)
                     break;
                 *sptr++=(*fstring == '*')?0:*fstring;
+            }
+        }
+
+        if(*fstring == FILTEROPTDELIM) {
+            if (tfilter->type == LIMIT) {
+                while(*++fstring) {
+                    if (*fstring >= '0' && *fstring <= '9') 
+                        tfilter->info.limit->timeout =
+                                tfilter->info.limit->timeout*10 + *fstring - '0';
+                    else
+                        break;
+                }
+            } else {
+                break;
             }
         }
 

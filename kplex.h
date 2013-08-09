@@ -58,6 +58,12 @@ enum filtertype {
     FAILOVER
 };
 
+enum ruletype {
+    DENY,
+    ACCEPT,
+    LIMIT
+};
+
 enum iotype {
     NONE,
     IN,
@@ -112,9 +118,15 @@ struct srclist {
     struct srclist *next;
 };
 
+struct ratelimit {
+    time_t timeout;
+    struct timeval last;
+};
+
 struct sfilter_rule {
+    enum ruletype type;
     union { 
-        char type;
+        struct ratelimit *limit;
         struct srclist *source;
     } info;
     char match[5];
