@@ -565,7 +565,7 @@ appends an RMC sentence once per hour:
 kplex serial:direction=in,filename=/dev/ttyUSB0 \
     tcp:mode=server,direction=out \
     mcast:group=ff05::10:110,direction=out \
-    file:filename=/var/tmp/datalog,append=yes,ofilter=~GPRMC/3600:-all
+    file:filename=/var/tmp/datalog,direction=out,append=yes,ofilter=~GPRMC/3600:-all
 
 Configuration File syntax
 -------------------------
@@ -627,11 +627,10 @@ baud=38400
 
 To Do
 -----
-
-This is early days but kplex has been constructed with expandability in
-mind.  Planned enhancements include:
-* Support for seatalk 1 to nmea translation using information from Thomas
-  Knauf's excellent web site.
+Possible future enhancements include:
+* Support for Simrad "GoFree"
+* Support for Raymarine Seatalk 1.  Unfortunately this requires some additional
+  hardware support.
 * Port to java.  kplex is written in C for POSIX-compliant systems because
   that's what I know best.  Despite my railing against Object Oriented
   Fascism, kplex is inherently OO. A java implementation would also be more
@@ -640,7 +639,6 @@ mind.  Planned enhancements include:
   subtract and modify the current interface list.  The structure of kplex means
   this would be a relatively straightforward addition
 * A nice GUI.  Obviously.
-* Rate limiting (especially useful for data logging)
 
 Q&A
 "FAQ" would be inappropriate as some of the questions have never been asked.
@@ -657,10 +655,10 @@ A: Not in free software for linux that I'm aware of. Although it possibly has.
    or somesuch.
 
 Q: If it *has* been done before, why is this even interesting?
-A: It supports IPv6 and it's multithreaded.
+A: It supports IPv6, it supports multicast, and it's multithreaded.
 
 Q: Who runs IPv6 on their boat?
-A: Me.  Actually that's about it. I don't have high hopes for nmea-onenet.
+A: Me.  Actually that's about it.
 
 Q: Does this run on a raspberry pi?
 A: Yes.  Note the 3.3v weirdness of the serial interface though if not using
@@ -681,7 +679,8 @@ A: Originally it was called "mplex", but that's the name of an mpeg stream
 Q: Is this available for windows/plan9/haiku/solaris
 A: It shouldn't be much work to port to another POSIX-compliant system. If
    anyone genuinely wants such a thing let me know.  For windows a better plan
-   would be to port it all to java (on the to do list). 
+   would be to port it all to java (on the to do list). Solaris would already
+   be supported if Larry hadn't turned it all to the dark side.
 
 Q: I am a venture capitalist with $20m dollars to employ someone who can write
    multithreaded IPv6 network code and also look after my infrequently used

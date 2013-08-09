@@ -189,6 +189,7 @@ iface_t *init_file (iface_t *ifa)
     struct if_file *ifc;
     struct kopts *opt;
     struct stat statbuf;
+    int ret;
     int append=0;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
@@ -274,14 +275,13 @@ iface_t *init_file (iface_t *ifa)
             return(NULL);
         }
 
-        if (stat(ifc->filename,&statbuf) < 0) {
+        if ((ret=stat(ifc->filename,&statbuf)) < 0) {
             if (ifa->direction != OUT) {
                 logerr(errno,"stat %s",ifc->filename);
                 return(NULL);
             }
         }
-
-        if (S_ISFIFO(statbuf.st_mode)) {
+        if ((ret == 0) && S_ISFIFO(statbuf.st_mode)) {
             /* Special rules for FIFOs. Opening here would hang for a reading
              * interface with no writer. Given that we're single threaded here,
              * that would be bad
