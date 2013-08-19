@@ -189,7 +189,7 @@ is specified, the timestamp will be local time. If "timestamp=n" (the default)
 is specified, no timestamp will be prepended to output lines.
 
 The "timestamp" option may be useful for data log files, although date
-informaiton may be carried in some NMEA sentences rendering this option
+information may be carried in some NMEA sentences rendering this option
 redundant.
 
 If "append=yes" is specified for an interface outputting to a regular file,
@@ -360,10 +360,12 @@ node's network stack needs to process.
             routing table.
             <port> if specified is the udp port or service name. If not
             specified defaults to the udp port returned by a lookup of the
+            service "nmea-0183" and if that fails the IANA assigned port for
+            nmea-0183 (10110) is used.
 
 A multicast group address to used must be specified for an "mcast:" interface.
 For link local IPv6 multicast addresses, an interface device must be specified.
-This may be done in one of three ways:
+This may be done in one of two ways:
     1) by appending the multicast group address with "%" followed by the
     interface name, for example:
         group=ff02::a0:200%wlan0
