@@ -96,7 +96,7 @@ void read_mcast(struct iface *ifa)
     senblk_t sblk;
     char buf[BUFSIZ];
     char *bptr,*eptr,*senptr;
-    int nread,cr=0,count=0,overrun=0;
+    int nread,cr=0,count=0,overrun=0,tagblock=0;
     struct sockaddr_storage src;
     socklen_t sz = (socklen_t) sizeof(src);
     ifb=(struct if_mcast *) ifa->info;
@@ -106,8 +106,29 @@ void read_mcast(struct iface *ifa)
 
     while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
                     > 0) {
-
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
+            if (tagblock) {
+                if (*bptr == '\\') {
+                    /* End of TAG block */
+                    tagblock=0;
+                }
+                continue;
+            }
+            if (senptr == sblk.data) {
+                /* first character */
+                switch (*bptr) {
+                case '\\':
+                    tagblock=1;
+                    continue;
+                case '!':
+                case '$':
+                    break;
+                default:
+                    /* "overrun" now overloaded as an error flag */
+                    overrun++;
+                }
+            }
+
             if (count < SENMAX) {
                 ++count;
                 *senptr++=*bptr;

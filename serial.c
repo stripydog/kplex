@@ -168,7 +168,7 @@ void read_serial(struct iface *ifa)
     char *bptr,*eptr=buf+BUFSIZ,*senptr;
     senblk_t sblk;
     struct if_serial *ifs = (struct if_serial *) ifa->info;
-    int nread,cr=0,count=0,overrun=0;
+    int nread,cr=0,count=0,overrun=0,tagblock=0;
     int fd;
 
     senptr=sblk.data;
@@ -179,6 +179,28 @@ void read_serial(struct iface *ifa)
     while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
         /* Process the data we just read */
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
+            if (tagblock) {
+                if (*bptr == '\\') {
+                    /* End of TAG block */
+                    tagblock=0;
+                }
+                continue;
+            }
+            if (senptr == sblk.data) {
+                /* first character */
+                switch (*bptr) {
+                case '\\':
+                    tagblock=1;
+                    continue;
+                case '!':
+                case '$':
+                    break;
+                default:
+                    /* "overrun" now overloaded as an error flag */
+                    overrun++;
+                }
+            }
+
             /* Copy to our senblk if we haven't exceeded max
              * sentence length */
             if (count < SENMAX+2) {

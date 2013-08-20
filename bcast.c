@@ -122,7 +122,7 @@ void read_bcast(struct iface *ifa)
     senblk_t sblk;
     char buf[BUFSIZ];
     char *bptr,*eptr,*senptr;
-    int nread,cr=0,count=0,overrun=0;
+    int nread,cr=0,count=0,overrun=0,tagblock=0;
     struct sockaddr_in src;
     struct ignore_addr *igp;
     socklen_t sz = (socklen_t) sizeof(src);
@@ -154,6 +154,28 @@ void read_bcast(struct iface *ifa)
             continue;
 
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
+            if (tagblock) {
+                if (*bptr == '\\') {
+                    /* End of TAG block */
+                    tagblock=0;
+                }
+                continue;
+            }
+            if (senptr == sblk.data) {
+                /* first character */
+                switch (*bptr) {
+                case '\\':
+                    tagblock=1;
+                    continue;
+                case '!':
+                case '$':
+                    break;
+                default:
+                    /* "overrun" now overloaded as an error flag */
+                    overrun++;
+                }
+            }
+
             if (count < SENMAX+2) {
                 ++count;
                 *senptr++=*bptr;

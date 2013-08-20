@@ -122,11 +122,10 @@ void read_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t sblk;
-    int len;
-    int maxread;
-    char *eptr;
+    int ch;
+    int maxsen,count=0,overrun=0,tagblock=0;
+    char *senptr;
 
-    maxread = SENMAX + 2 + ifc->usereturn;
 
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
     if (ifc->fp == NULL)
@@ -135,9 +134,12 @@ void read_file(iface_t *ifa)
             iface_thread_exit(errno);
         }
 
+    maxsen = SENMAX + 1 + ifc->usereturn;
     sblk.src=ifa->id;
+    senptr=sblk.data;
+
     for(;;) {
-        if (fgets(sblk.data,maxread,ifc->fp) != sblk.data) {
+        if ((ch = fgetc(ifc->fp)) == EOF) {
             if (feof(ifc->fp) && (ifa->persist)) {
                 if ((ifc->fp = freopen(ifc->filename,"r",ifc->fp)) == NULL) {
                     logerr(errno,"Failed to re-open FIFO %s for reading\n",
@@ -148,38 +150,68 @@ void read_file(iface_t *ifa)
             }
             break;
         }
-
-        if ((len = strlen(sblk.data)) == 0) {
+        if (tagblock) {
+            switch (ch) {
+            case '$':
+            case '!':
+            case '\r':
+                overrun=1;
                 break;
-        }
-
-        if (sblk.data[len-1]  != '\n') {
-            logwarn("Line exceeds max sentence length (discarding)");
-            while ((eptr = fgets(sblk.data,SENBUFSZ,ifc->fp)) == sblk.data) {
-                if (sblk.data[strlen(sblk.data)-1]  == '\n') {
-                    break;
-                }
+            case '\\':
+                if (!overrun)
+                    tagblock=0;
+                break;
+            case '\n':
+                overrun=0;
+                tagblock=0;
+                break;
+            default:
+                break;
             }
-            if (eptr == NULL && (ifa->persist == 0))
-                break;
             continue;
         }
-        if (ifc->usereturn) {
-            if (sblk.data[len-2] != '\r') {
+
+        if (senptr == sblk.data) {
+            switch (ch) {
+            case '\\':
+                tagblock=1;
                 continue;
+            case '!':
+            case '$':
+                break;
+            default:
+                overrun++;
             }
         }
-        else {
-            sblk.data[len-1]='\r';
-            sblk.data[len]='\n';
-            len++;
+
+        if (count < maxsen) {
+            ++count;
+            *senptr++=(char)ch;
+        } else
+            overrun++;
+
+        if ((char) ch == '\n') {
+            if (ifc->usereturn) {
+                if (*(senptr-1) != '\r') {
+                    overrun++;
+                }
+            } else {
+                *(senptr-1) = '\r';
+                *senptr='\n';
+            }
+                    
+            if (overrun)
+                overrun=0;
+            else {
+                sblk.len=count;
+                if (!(ifa->checksum && checkcksum(&sblk)) &&
+                        senfilter(&sblk,ifa->ifilter) == 0) {
+                    push_senblk(&sblk,ifa->q);
+                }
+                senptr=sblk.data;
+                count=0;
+            }
         }
-        sblk.len=len;
-        if (ifa->checksum && checkcksum(&sblk))
-            continue;
-        if (senfilter(&sblk,ifa->ifilter))
-            continue;
-        push_senblk(&sblk,ifa->q);
     }
     iface_thread_exit(errno);
 }

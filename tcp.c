@@ -170,7 +170,7 @@ void read_tcp(struct iface *ifa)
 	char *bptr,*eptr=buf+BUFSIZ,*senptr;
 	senblk_t sblk;
 	struct if_tcp *ift = (struct if_tcp *) ifa->info;
-	int nread,cr=0,count=0,overrun=0;
+	int nread,cr=0,count=0,overrun=0,tagblock=0;
 
 	senptr=sblk.data;
     sblk.src=ifa->id;
@@ -185,11 +185,33 @@ void read_tcp(struct iface *ifa)
             }
         }
 		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-			if (count < SENMAX+2) {
-				++count;
-				*senptr++=*bptr;
-			} else
-				++overrun;
+            if (tagblock) {
+                if (*bptr == '\\') {
+                    /* End of TAG block */
+                    tagblock=0;
+                }
+                continue;
+            }
+            if (senptr == sblk.data) {
+                /* first character */
+                switch (*bptr) {
+                case '\\':
+                    tagblock=1;
+                    continue;
+                case '!':
+                case '$':
+                    break;
+                default:
+                    /* "overrun" now overloaded as an error flag */
+                    overrun++;
+                }
+            }
+
+            if (count < SENMAX+2) {
+    	    	++count;
+    			*senptr++=*bptr;
+    		} else
+    			++overrun;
 
 			if ((*bptr) == '\r') {
 				++cr;
