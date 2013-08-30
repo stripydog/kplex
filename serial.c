@@ -414,30 +414,30 @@ struct iface *init_pty (struct iface *ifa)
         }
 
         if (devname) {
-		/* Device name has been specified: Create symlink to slave */
+        /* Device name has been specified: Create symlink to slave */
             if (lstat(devname,&statbuf) == 0) {
                 /* file exists */
                 if (!S_ISLNK(statbuf.st_mode)) {
-		/* If it's not a symlink already, don't replace it */
+        /* If it's not a symlink already, don't replace it */
                     logerr(0,"%s: File exists and is not a symbolic link",devname);
                     return(NULL);
                 }
-		/* It's a symlink. remove it */
+        /* It's a symlink. remove it */
                 if (unlink(devname)) {
                     logerr(errno,"Could not unlink %s",devname);
                     return(NULL);
                 }
             }
-	    /* link the given name to our new pty */
+        /* link the given name to our new pty */
             if (symlink(slave,devname)) {
                 logerr(errno,"Could not create symbolic link %s for %s",devname,slave);
                 return(NULL);
             }
         } else
-	/* No device name was given: Just print the pty name */
+    /* No device name was given: Just print the pty name */
             loginfo("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
     } else {
-	/* Slave mode: This is no different from a serial line */
+    /* Slave mode: This is no different from a serial line */
         if (!devname) {
             logerr(0,"Must Specify a filename for slave mode pty");
             return(NULL);

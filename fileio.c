@@ -87,7 +87,7 @@ void write_file(iface_t *ifa)
 
     for(;;)  {
         if ((sptr = next_senblk(ifa->q)) == NULL) {
-		    break;
+            break;
         }
 
         if (senfilter(sptr,ifa->ofilter)) {
@@ -108,7 +108,7 @@ void write_file(iface_t *ifa)
 
         if ((ifc->timestamp != 0 && (fputs(tsbuf,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
             if (!(ifa->persist && errno == EPIPE) )
-		        break;
+                break;
             if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
                     (setvbuf(ifc->fp,NULL,_IOLBF,0) !=0))
                 break;

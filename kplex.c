@@ -708,32 +708,32 @@ int unlink_interface(iface_t *ifa)
 
     if (ifa->direction != NONE) {
         /* Set lptr to point to the input or output list, as appropriate */
-	    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-	    if ((*lptr) == ifa) {
-	        /* If target interface is the head of the list, set the list pointer
-	           to point to the next interface in the list */
-	        (*lptr)=(*lptr)->next;
-	    } else {
-	        /* Traverse the list until we find the interface before our target and
-	           make its next pointer point to the element after our target */
-	        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-	        tptr->next = ifa->next;
-	    }
-	
-	    if (ifa->direction != OUT)
-	        if (!ifa->lists->inputs) {
-	            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
-	                if (tptr->direction == BOTH)
-	                    break;
-	            if (tptr == NULL) {
-	                pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
-	                ifa->lists->engine->q->active=0;
-	                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
-	                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
+        lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
+        if ((*lptr) == ifa) {
+            /* If target interface is the head of the list, set the list pointer
+               to point to the next interface in the list */
+            (*lptr)=(*lptr)->next;
+        } else {
+            /* Traverse the list until we find the interface before our target and
+               make its next pointer point to the element after our target */
+            for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
+            tptr->next = ifa->next;
+        }
+    
+        if (ifa->direction != OUT)
+            if (!ifa->lists->inputs) {
+                for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
+                    if (tptr->direction == BOTH)
+                        break;
+                if (tptr == NULL) {
+                    pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
+                    ifa->lists->engine->q->active=0;
+                    pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
+                    pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
                     timetodie++;
-	            }
-	        }
-	}
+                }
+            }
+    }
 
     free_if_data(ifa);
 

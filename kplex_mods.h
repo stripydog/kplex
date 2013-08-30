@@ -11,6 +11,8 @@ struct iftypedef iftypes[] = {
     { TCP, "tcp", init_tcp, ifdup_tcp },
     { PTY, "pty", init_pty, ifdup_serial },
     { MCAST, "mcast", init_mcast, ifdup_mcast },
+/*
     { ST, "seatalk", NULL, NULL },
+*/
     { END, NULL, NULL, NULL },
 };
