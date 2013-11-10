@@ -14,17 +14,11 @@
 
 #define DEFFILEQSIZE 128
 
-#define TS_UTC 1
-#define TS_LOCAL 2
-
-#define MAXTS   32
-
 struct if_file {
     FILE *fp;
     char *filename;
     size_t qsize;
     int usereturn;
-    int timestamp;
 };
 
 /*
@@ -64,11 +58,10 @@ void cleanup_file(iface_t *ifa)
 
 void write_file(iface_t *ifa)
 {
+    int n;
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t *sptr;
-    time_t t;
-    struct tm tmbuf;
-    char tsbuf[MAXTS];
+    char *tbuf;
 
     /* ifc->fp will only be NULL if we're opening a FIFO.
      */
@@ -85,9 +78,15 @@ void write_file(iface_t *ifa)
             iface_thread_exit(errno);
     }
 
+    if ((tbuf=(char *)malloc(TAGMAX)) == NULL) {
+        logerr(errno,"Disabing tag output on interface id %u (%s)",
+                ifa->id,(ifa->name)?ifa->name:"unlabelled");
+        ifa->tagflags=0;
+    }
+
     for(;;)  {
         if ((sptr = next_senblk(ifa->q)) == NULL) {
-		    break;
+            break;
         }
 
         if (senfilter(sptr,ifa->ofilter)) {
@@ -100,21 +99,28 @@ void write_file(iface_t *ifa)
             sptr->data[sptr->len-1] = '\0';
         }
 
-        if (ifc->timestamp) {
-            t = time(NULL);
-            strftime(tsbuf,MAXTS,"%F %T: ",(ifc->timestamp == TS_LOCAL)?
-                localtime_r(&t,&tmbuf):gmtime_r(&t,&tmbuf));
-        }
 
-        if ((ifc->timestamp != 0 && (fputs(tsbuf,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
+        if (ifa->tagflags)
+            if ((n = gettag(ifa,tbuf)) == 0) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                    ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+                free(tbuf);
+            }
+
+        if ((ifa->tagflags && (fwrite(tbuf,1,n,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
             if (!(ifa->persist && errno == EPIPE) )
-		        break;
+                break;
             if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
                     (setvbuf(ifc->fp,NULL,_IOLBF,0) !=0))
                 break;
         }
         senblk_free(sptr,ifa->q);
     }
+
+    if (ifa->tagflags)
+        free(tbuf);
+
     iface_thread_exit(errno);
 }
 
@@ -122,10 +128,10 @@ void read_file(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t sblk;
-    int ch;
-    int maxsen,count=0,overrun=0,tagblock=0;
-    char *senptr;
-
+    char tbuf[TAGMAX];
+    int ch,countmax,count;
+    char *ptr;
+    enum sstate senstate=SEN_NODATA;
 
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
     if (ifc->fp == NULL)
@@ -134,9 +140,7 @@ void read_file(iface_t *ifa)
             iface_thread_exit(errno);
         }
 
-    maxsen = SENMAX + 1 + ifc->usereturn;
     sblk.src=ifa->id;
-    senptr=sblk.data;
 
     for(;;) {
         if ((ch = fgetc(ifc->fp)) == EOF) {
@@ -150,67 +154,67 @@ void read_file(iface_t *ifa)
             }
             break;
         }
-        if (tagblock) {
-            switch (ch) {
-            case '$':
-            case '!':
-            case '\r':
-                overrun=1;
-                break;
-            case '\\':
-                if (!overrun)
-                    tagblock=0;
-                break;
-            case '\n':
-                overrun=0;
-                tagblock=0;
-                break;
-            default:
-                break;
+        switch (ch) {
+        case '$':
+        case '!':
+            if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
+                ptr=sblk.data;
+                countmax=SENMAX+1+ifc->usereturn;
+                count=1;
+                *ptr++=ch;
+                senstate=SEN_SENPROC;
+            } else {
+                senstate = SEN_ERR;
             }
+            continue;
+        case '\\':
+            if (senstate==SEN_TAGPROC) {
+                *ptr++=ch;
+                /* Here we would do some actual work, but for this first
+                 * cut we're just going to discard the tagblock */
+                senstate=SEN_TAGSEEN;
+            } else if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
+                    senstate=SEN_TAGPROC;
+                ptr=tbuf;
+                countmax=TAGMAX-1;
+                *ptr++=ch;
+                count=1;
+            } else
+                senstate=SEN_ERR;
+            continue;
+        default:
+            break;
+        }
+
+        if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
+                if (senstate != SEN_NODATA && senstate != SEN_ERR)
+                    senstate=SEN_ERR;
+                continue;
+        }
+
+        if (count++ > countmax) {
+            senstate=SEN_ERR;
             continue;
         }
 
-        if (senptr == sblk.data) {
-            switch (ch) {
-            case '\\':
-                tagblock=1;
-                continue;
-            case '!':
-            case '$':
-                break;
-            default:
-                overrun++;
-            }
-        }
-
-        if (count < maxsen) {
-            ++count;
-            *senptr++=(char)ch;
-        } else
-            overrun++;
-
-        if ((char) ch == '\n') {
+        if ((*ptr++=ch) == '\n') {
             if (ifc->usereturn) {
-                if (*(senptr-1) != '\r') {
-                    overrun++;
+                if (*(ptr-1) != '\r') {
+                    senstate=SEN_NODATA;
+                    continue;
                 }
             } else {
-                *(senptr-1) = '\r';
-                *senptr='\n';
+                *(ptr-1)='\r';
+                *ptr='\n';
+                ++count;
             }
-                    
-            if (overrun)
-                overrun=0;
-            else {
-                sblk.len=count;
-                if (!(ifa->checksum && checkcksum(&sblk)) &&
-                        senfilter(&sblk,ifa->ifilter) == 0) {
-                    push_senblk(&sblk,ifa->q);
-                }
-                senptr=sblk.data;
-                count=0;
+            sblk.len=count;
+            if (!(ifa->checksum && checkcksum(&sblk) &&
+                    (sblk.len > 0)) &&
+                    senfilter(&sblk,ifa->ifilter) == 0) {
+                push_senblk(&sblk,ifa->q);
             }
+            senstate=SEN_NODATA;
         }
     }
     iface_thread_exit(errno);
@@ -263,17 +267,6 @@ iface_t *init_file (iface_t *ifa)
             } else {
                 logerr(0,"Invalid option \"eol=%s\": Must be \"n\" or \"rn\"",
                         opt->val);
-                return(NULL);
-            }
-        } else if (!strcasecmp(opt->var,"timestamp")) {
-            if (!strcasecmp(opt->val,"n"))
-                ifc->timestamp=0;
-            else if (!strcasecmp(opt->val,"l"))
-                ifc->timestamp=TS_LOCAL;
-            else if (!strcasecmp(opt->val,"u"))
-                ifc->timestamp=TS_UTC;
-            else {
-                logerr(0,"Invalid option \"timestamp=%s\"",opt->val);
                 return(NULL);
             }
         } else {

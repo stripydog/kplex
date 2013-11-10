@@ -626,9 +626,9 @@ void start_interface(void *ptr)
 
     pthread_mutex_unlock(&ifa->lists->io_mutex);
     pthread_sigmask(SIG_UNBLOCK,&set,NULL);
-    if (ifa->direction == IN)
+    if (ifa->direction == IN) {
         ifa->read(ifa);
-    else
+    } else
         ifa->write(ifa);
 }
 
@@ -708,32 +708,32 @@ int unlink_interface(iface_t *ifa)
 
     if (ifa->direction != NONE) {
         /* Set lptr to point to the input or output list, as appropriate */
-	    lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
-	    if ((*lptr) == ifa) {
-	        /* If target interface is the head of the list, set the list pointer
-	           to point to the next interface in the list */
-	        (*lptr)=(*lptr)->next;
-	    } else {
-	        /* Traverse the list until we find the interface before our target and
-	           make its next pointer point to the element after our target */
-	        for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
-	        tptr->next = ifa->next;
-	    }
-	
-	    if (ifa->direction != OUT)
-	        if (!ifa->lists->inputs) {
-	            for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
-	                if (tptr->direction == BOTH)
-	                    break;
-	            if (tptr == NULL) {
-	                pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
-	                ifa->lists->engine->q->active=0;
-	                pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
-	                pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
+        lptr=(ifa->direction==IN)?&ifa->lists->inputs:&ifa->lists->outputs;
+        if ((*lptr) == ifa) {
+            /* If target interface is the head of the list, set the list pointer
+               to point to the next interface in the list */
+            (*lptr)=(*lptr)->next;
+        } else {
+            /* Traverse the list until we find the interface before our target and
+               make its next pointer point to the element after our target */
+            for (tptr=(*lptr);tptr->next != ifa;tptr=tptr->next);
+            tptr->next = ifa->next;
+        }
+    
+        if (ifa->direction != OUT)
+            if (!ifa->lists->inputs) {
+                for(tptr=ifa->lists->outputs;tptr;tptr=tptr->next)
+                    if (tptr->direction == BOTH)
+                        break;
+                if (tptr == NULL) {
+                    pthread_mutex_lock(&ifa->lists->engine->q->q_mutex);
+                    ifa->lists->engine->q->active=0;
+                    pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
+                    pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
                     timetodie++;
-	            }
-	        }
-	}
+                }
+            }
+    }
 
     free_if_data(ifa);
 
@@ -821,6 +821,7 @@ iface_t *ifdup (iface_t *ifa)
     newif->type=ifa->type;
     newif->lists=ifa->lists;
     newif->read=ifa->read;
+    newif->readbuf=ifa->readbuf;
     newif->write=ifa->write;
     newif->cleanup=ifa->cleanup;
     newif->options=NULL;
@@ -988,6 +989,137 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
     return(0);
 }
 
+int calcsum(char *buf, size_t len)
+{
+    int c = 0;
+
+    for (;len;len--)
+        c ^=*buf++;
+
+    return c;
+}
+        
+
+/* Add tag data
+ * Args: Interface pointer, buffer for tags
+ * Returns: Address of tag buffer on success, NULL on failure
+ */
+size_t gettag(iface_t *ifa, char *buf)
+{
+    char *ptr=buf;
+    char *nameptr;
+    int first=1;
+    struct timeval tv;
+    unsigned char cksum;
+    size_t len;
+
+    *ptr++='\\';
+    if (ifa->tagflags & TAG_SRC){
+        first=0;
+        memcpy(ptr,"s:",2);
+        ptr+=2;
+        nameptr=(ifa->name)?ifa->name:DEFSRCNAME;
+        while (*nameptr)
+            *ptr++=*nameptr++;
+            
+    }
+    if (ifa->tagflags & TAG_TS) {
+        if (!first)
+            *ptr++=',';
+        memcpy(ptr,"c:",2);
+        ptr+=2;
+        (void) gettimeofday(&tv,NULL);
+        ptr+=sprintf(ptr,"%u",(unsigned) tv.tv_sec);
+        if (ifa->tagflags & TAG_MS)
+            ptr += sprintf(ptr,"%u",((unsigned) tv.tv_usec+500)/1000);
+    }
+    cksum=calcsum(buf,len=ptr-buf);
+    len+=sprintf(ptr,"*%02X\\",cksum);
+    return(len);
+}
+
+/* generic read routine
+ * Args: Interface Pointer
+ * Returns: nothing
+ */ 
+void do_read(iface_t *ifa)
+{
+    senblk_t sblk;
+    char buf[BUFSIZ];
+    char tbuf[TAGMAX];
+    char *bptr,*eptr,*ptr;
+    int nread,countmax,count=0;
+    enum sstate senstate;
+
+    sblk.src=ifa->id;
+    senstate=SEN_NODATA;
+
+    while ((nread=(*ifa->readbuf)(ifa,buf)) > 0) {
+        for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
+            switch (*bptr) {
+            case '$':
+            case '!':
+                if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
+                    ptr=sblk.data;
+                    countmax=SENMAX;
+                    count=1;
+                    *ptr++=*bptr;
+                    senstate=SEN_SENPROC;
+                } else
+                    senstate = SEN_ERR;
+                continue;
+            case '\\':
+                if (senstate==SEN_TAGPROC) {
+                    *ptr++=*bptr;
+                    senstate=SEN_TAGSEEN;
+                } else if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
+                    senstate=SEN_TAGPROC;
+                    ptr=tbuf;
+                    countmax=TAGMAX-1;
+                    *ptr++=*bptr;
+                    count=1;
+                } else
+                    senstate=SEN_ERR;
+                continue;
+            case '\r':
+                if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
+                    senstate = SEN_CR;
+                    *ptr++=*bptr;
+                    ++count;
+                } else if (senstate != SEN_NODATA && senstate != SEN_ERR)
+                    senstate = SEN_ERR;
+                continue;
+            case '\n':
+                if (senstate == SEN_CR) {
+                    *ptr=*bptr;
+                    sblk.len = ++count;
+                    if (!(ifa->checksum && checkcksum(&sblk) &&
+                            (sblk.len > 0 )) &&
+                            senfilter(&sblk,ifa->ifilter) == 0)
+                        push_senblk(&sblk,ifa->q);
+                }
+                senstate=SEN_NODATA;
+                continue;
+            default:
+                break;
+            }
+
+            if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
+                if (senstate != SEN_NODATA && senstate != SEN_ERR)
+                    senstate=SEN_ERR;
+                continue;
+            }
+
+            if (count++ > countmax) {
+                senstate=SEN_ERR;
+                continue;
+            }
+
+            *ptr++=*bptr;
+        }
+    }
+    iface_thread_exit(errno);
+}
 
 int main(int argc, char ** argv)
 {

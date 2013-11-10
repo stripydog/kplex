@@ -96,9 +96,29 @@ void write_bcast(struct iface *ifa)
 {
     struct if_bcast *ifb;
     senblk_t *sptr;
-    int n;
+    int data=0;
+    struct msghdr msgh;
+    struct iovec iov[2];
 
     ifb = (struct if_bcast *) ifa->info;
+
+    msgh.msg_name=(void *)&ifb->addr;
+    msgh.msg_namelen=sizeof(struct sockaddr_in);
+    msgh.msg_control=NULL;
+    msgh.msg_controllen=msgh.msg_flags=0;
+    msgh.msg_iov=iov;
+    msgh.msg_iovlen=1;
+
+    if (ifa->tagflags) {
+        if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+        } else {
+            msgh.msg_iovlen=2;
+            data=1;
+        }
+    }
 
     for (;;) {
         if ((sptr = next_senblk(ifa->q)) == NULL)
@@ -109,99 +129,39 @@ void write_bcast(struct iface *ifa)
             continue;
         }
 
-        if ((n=sendto(ifb->fd,sptr->data,sptr->len,0,(struct sockaddr *)&ifb->addr,sizeof(struct sockaddr))) < 0)
+        if (ifa->tagflags)
+            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base)) == 0) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+                msgh.msg_iovlen=1;
+                data=0;
+                free(iov[0].iov_base);
+            }
+
+        iov[data].iov_base=sptr->data;
+        iov[data].iov_len=sptr->len;
+
+        if ((sendmsg(ifb->fd,&msgh,0)) < 0)
             break;
+
         senblk_free(sptr,ifa->q);
     }
+
+    if (ifa->tagflags)
+        free(iov[0].iov_base);
+
     iface_thread_exit(errno);
 }
 
-void read_bcast(struct iface *ifa)
+size_t read_bcast(struct iface *ifa, char *buf)
 {
-    struct if_bcast *ifb;
-    senblk_t sblk;
-    char buf[BUFSIZ];
-    char *bptr,*eptr,*senptr;
-    int nread,cr=0,count=0,overrun=0,tagblock=0;
-    struct sockaddr_in src;
-    struct ignore_addr *igp;
+    struct if_bcast *ifb=(struct if_bcast *) ifa->info;
+    struct sockaddr_storage src;
     socklen_t sz = (socklen_t) sizeof(src);
-    ifb=(struct if_bcast *) ifa->info;
 
-    senptr=sblk.data;
-    sblk.src=ifa->id;
 
-    while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
-                    > 0) {
-        /* Probably superfluous check that we got the right size
-         * structure back */
-        if (sz != (socklen_t) sizeof(src)) {
-            sz = (socklen_t) sizeof(src);
-            continue;
-        }
-
-        /* Compare the source address to the list of interfaces we're
-         * ignoringing */
-        pthread_rwlock_rdlock(&sysaddr_lock);
-        for (igp=ignore;igp;igp=igp->next) {
-            if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
-                break;
-        }
-        pthread_rwlock_unlock(&sysaddr_lock);
-        /* If igp points to anything, we broke out of the above loop
-         * on a match. Drop the packet and carry on */
-        if (igp)
-            continue;
-
-        for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            if (tagblock) {
-                if (*bptr == '\\') {
-                    /* End of TAG block */
-                    tagblock=0;
-                }
-                continue;
-            }
-            if (senptr == sblk.data) {
-                /* first character */
-                switch (*bptr) {
-                case '\\':
-                    tagblock=1;
-                    continue;
-                case '!':
-                case '$':
-                    break;
-                default:
-                    /* "overrun" now overloaded as an error flag */
-                    overrun++;
-                }
-            }
-
-            if (count < SENMAX+2) {
-                ++count;
-                *senptr++=*bptr;
-            } else
-                ++overrun;
-
-            if ((*bptr) == '\r') {
-                ++cr;
-            } else {
-                if (*bptr == '\n' && cr) {
-                    if (overrun) {
-                        overrun=0;
-                    } else {
-                        sblk.len=count;
-                        if (!(ifa->checksum && checkcksum(&sblk)) &&
-                                senfilter(&sblk,ifa->ifilter) == 0)
-                            push_senblk(&sblk,ifa->q);
-                    }
-                    senptr=sblk.data;
-                    count=0;
-                }
-                cr=0;
-            }
-        }
-    }
-    iface_thread_exit(errno);
+    return recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
 }
 
 struct iface *init_bcast(struct iface *ifa)
@@ -379,7 +339,8 @@ struct iface *init_bcast(struct iface *ifa)
     }
 
     ifa->write=write_bcast;
-    ifa->read=read_bcast;
+    ifa->read=do_read;
+    ifa->readbuf=read_bcast;
     ifa->cleanup=cleanup_bcast;
     ifa->info = (void *) ifb;
     if (ifa->direction == BOTH) {

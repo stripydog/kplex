@@ -193,7 +193,7 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
                     return(0);
                 else
                     return(-1);
-		}
+        }
     }
     *ptr++='\0';
     for (;*ptr == ' ' || *ptr == '\t';ptr++);
@@ -320,17 +320,25 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
         if (ifp->ifilter)
             free_filter(ifp->ifilter);
         if ((ifp->ifilter=getfilter(val)) == NULL)
-		return(-2);
+        return(-2);
     } else if (!strcmp(var,"ofilter")) {
         if (ifp->ofilter)
             free_filter(ifp->ofilter);
         if ((ifp->ofilter=getfilter(val)) == NULL)
-		return(-2);
+        return(-2);
     } else if (!strcmp(var,"checksum")) {
         if (!strcasecmp(val,"yes")) {
             ifp->checksum=1;
         } else if (!strcasecmp(val,"no")) {
             ifp->checksum=0;
+        } else
+            return(-2);
+    } else if (!strcmp(var,"timestamp")) {
+        if (!strcasecmp(val,"s")) {
+            ifp->tagflags |= TAG_TS;
+            ifp->tagflags &= ~TAG_MS;
+        } else if (!strcasecmp(val,"ms")) {
+            ifp->tagflags |= (TAG_TS|TAG_MS);
         } else
             return(-2);
     } else if (!strcmp(var,"persist")) {
@@ -378,11 +386,7 @@ iface_t *get_config(FILE *fp, unsigned int *line)
     memset((void *) ifp,0,sizeof(iface_t));
 
     ifp->direction = BOTH;
-    ifp->name=NULL;
-    ifp->ifilter=NULL;
-    ifp->ofilter=NULL;
     ifp->checksum=-1;
-    ifp->options=NULL;
 
     for(opt = &ifp->options;next_config(fp,line,&var,&val) == 0;) {
         if (!var)
@@ -501,8 +505,10 @@ iface_t *parse_arg(char *arg)
         ifp->type = PTY;
     else if (!strcasecmp(arg,"mcast"))
         ifp->type = MCAST;
+/*
     else if (!strcasecmp(arg,"seatalk"))
         ifp->type = ST;
+*/
     else {
         fprintf(stderr,"Unrecognised interface type %s\n",arg);
         free(ifp);

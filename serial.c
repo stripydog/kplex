@@ -159,83 +159,14 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
 
 /*
  * Read from a serial interface
- * Args: pointer to interface structure
- * Returns: Nothing. errno supplied to iface_thread_exit()
+ * Args: pointer to interface structure pointer to buffer
+ * Returns: Number of bytes read, zero on error or end of file
  */
-void read_serial(struct iface *ifa)
+size_t read_serial(struct iface *ifa, char *buf)
 {
-    char buf[BUFSIZ];        /* Buffer for serial reads */
-    char *bptr,*eptr=buf+BUFSIZ,*senptr;
-    senblk_t sblk;
     struct if_serial *ifs = (struct if_serial *) ifa->info;
-    int nread,cr=0,count=0,overrun=0,tagblock=0;
-    int fd;
 
-    senptr=sblk.data;
-    sblk.src=ifa->id;
-    fd=ifs->fd;
-
-    /* Read up to BUFSIZ data */
-    while ((ifa->direction != NONE) && (nread=read(fd,buf,BUFSIZ)) > 0) {
-        /* Process the data we just read */
-        for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            if (tagblock) {
-                if (*bptr == '\\') {
-                    /* End of TAG block */
-                    tagblock=0;
-                }
-                continue;
-            }
-            if (senptr == sblk.data) {
-                /* first character */
-                switch (*bptr) {
-                case '\\':
-                    tagblock=1;
-                    continue;
-                case '!':
-                case '$':
-                    break;
-                default:
-                    /* "overrun" now overloaded as an error flag */
-                    overrun++;
-                }
-            }
-
-            /* Copy to our senblk if we haven't exceeded max
-             * sentence length */
-            if (count < SENMAX+2) {
-                ++count;
-                *senptr++=*bptr;
-            } else
-            /* if max length exceeded, note that we've overrrun */
-                ++overrun;
-
-            if ((*bptr) == '\r') {
-            /* <CR>: If next char is <LF> that's our sentence */
-                ++cr;
-            } else {
-                if (*bptr == '\n' && cr) {
-                /* <CR><LF>: End of sentence */
-                    if (overrun) {
-                    /* This sentence invalid: discard */
-                        overrun=0;
-                    } else {
-                    /* send the sentence on its way */
-                        sblk.len=count;
-                        if ((!(ifa->checksum && checkcksum(&sblk)) &&
-                                senfilter(&sblk,ifa->ifilter) == 0))
-                            push_senblk(&sblk,ifa->q);
-                    }
-                    /* Reset the sentence */
-                    senptr=sblk.data;
-                    count=0;
-                }
-                /* The last char was NOT <CR> */
-                cr=0;
-            }
-        }
-    }
-    iface_thread_exit(errno);
+    return(read(ifs->fd,buf,BUFSIZ));
 }
 
 /*
@@ -248,8 +179,17 @@ void write_serial(struct iface *ifa)
     struct if_serial *ifs = (struct if_serial *) ifa->info;
     senblk_t *senblk_p;
     int fd=ifs->fd;
-    int n=0;
+    int n=0,tlen=0;
     char *ptr;
+    char *tbuf;
+
+    if (ifa->tagflags) {
+        if ((tbuf=malloc(TAGMAX)) == NULL) {
+            logerr(errno,"Disabing tag output on interface id %u (%s)",
+                ifa->id,(ifa->name)?ifa->name:"unlabelled");
+            ifa->tagflags=0;
+        }
+    }
 
     while(n >= 0) {
         /* NULL return from next_senblk means the queue has been shut
@@ -262,15 +202,42 @@ void write_serial(struct iface *ifa)
             continue;
         }
 
-        ptr=senblk_p->data;
-        while(senblk_p->len) {
-            if ((n=write(fd,ptr,senblk_p->len)) < 0)
+        if (ifa->tagflags) {
+            if ((tlen = gettag(ifa,tbuf)) == 0) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                    ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+                free(tbuf);
+            }
+            ptr=tbuf;
+            while(tlen) {
+                if ((n=write(fd,ptr,senblk_p->len)) < 0)
+                    break;
+                tlen-=n;
+                ptr+=n;
+            }
+            if (tlen) {
+                senblk_free(senblk_p,ifa->q);
                 break;
-            senblk_p->len -=n;
+            }
+        }
+
+        ptr=senblk_p->data;
+        tlen=senblk_p->len;
+        while(tlen) {
+            if ((n=write(fd,ptr,tlen)) < 0)
+                break;
+            tlen-=n;
             ptr+=n;
         }
         senblk_free(senblk_p,ifa->q);
+        if (tlen)
+            break;
     }
+
+    if (ifa->tagflags)
+        free(tbuf);
+
     iface_thread_exit(errno);
 }
 
@@ -343,7 +310,8 @@ struct iface *init_serial (struct iface *ifa)
     ifs->saved=1;
 
     /* Assign pointers to read, write and cleanup routines */
-    ifa->read=read_serial;
+    ifa->read=do_read;
+    ifa->readbuf=read_serial;
     ifa->write=write_serial;
     ifa->cleanup=cleanup_serial;
 
@@ -436,30 +404,30 @@ struct iface *init_pty (struct iface *ifa)
         }
 
         if (devname) {
-		/* Device name has been specified: Create symlink to slave */
+        /* Device name has been specified: Create symlink to slave */
             if (lstat(devname,&statbuf) == 0) {
                 /* file exists */
                 if (!S_ISLNK(statbuf.st_mode)) {
-		/* If it's not a symlink already, don't replace it */
+        /* If it's not a symlink already, don't replace it */
                     logerr(0,"%s: File exists and is not a symbolic link",devname);
                     return(NULL);
                 }
-		/* It's a symlink. remove it */
+        /* It's a symlink. remove it */
                 if (unlink(devname)) {
                     logerr(errno,"Could not unlink %s",devname);
                     return(NULL);
                 }
             }
-	    /* link the given name to our new pty */
+        /* link the given name to our new pty */
             if (symlink(slave,devname)) {
                 logerr(errno,"Could not create symbolic link %s for %s",devname,slave);
                 return(NULL);
             }
         } else
-	/* No device name was given: Just print the pty name */
+    /* No device name was given: Just print the pty name */
             loginfo("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
     } else {
-	/* Slave mode: This is no different from a serial line */
+    /* Slave mode: This is no different from a serial line */
         if (!devname) {
             logerr(0,"Must Specify a filename for slave mode pty");
             return(NULL);
@@ -481,7 +449,8 @@ struct iface *init_pty (struct iface *ifa)
     }
     ifs->saved=1;
 
-    ifa->read=read_serial;
+    ifa->read=do_read;
+    ifa->readbuf=read_serial;
     ifa->write=write_serial;
     ifa->cleanup=cleanup_serial;
 

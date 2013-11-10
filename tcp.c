@@ -74,9 +74,9 @@ int reconnect(iface_t *ifa)
 
     pthread_mutex_lock(&ift->shared->t_mutex);
     for (;;) {
-	    if ((sptr = last_senblk(ifa->q)) == NULL) {
+        if ((sptr = last_senblk(ifa->q)) == NULL) {
             retval = 1;
-	    	break;
+            break;
         }
 
         if (senfilter(sptr,ifa->ofilter)) {
@@ -84,33 +84,33 @@ int reconnect(iface_t *ifa)
             continue;
         }
 
-	    if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
+        if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
             senblk_free(sptr,ifa->q);
-	        switch(errno) {
-	        case ECONNREFUSED:
-	        case ENETUNREACH:
-	        case ETIMEDOUT:
-	        case EAGAIN:
+            switch(errno) {
+            case ECONNREFUSED:
+            case ENETUNREACH:
+            case ETIMEDOUT:
+            case EAGAIN:
                 for(conres=-1;conres < 0;) {
-	                close(ift->fd);
-	                sleep(ift->shared->retry);
-	                if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
+                    close(ift->fd);
+                    sleep(ift->shared->retry);
+                    if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
                             ift->shared->protocol)) < 0) {
-	                    logerr(errno,"Failed to create socket");
-	                    retval=-1;
-	                    break;
-	                }
-	                conres=connect(ift->fd,(const struct sockaddr *)
+                        logerr(errno,"Failed to create socket");
+                        retval=-1;
+                        break;
+                    }
+                    conres=connect(ift->fd,(const struct sockaddr *)
                             &ift->shared->sa,ift->shared->sa_len);
                 }
-	            break;
-	        default:
-	            logerr(errno,"Failed to reconnect socket");
-	            retval=-1;
-	        }
-	        if (retval)
-	            break;
-	    }
+                break;
+            default:
+                logerr(errno,"Failed to reconnect socket");
+                retval=-1;
+            }
+            if (retval)
+                break;
+        }
     }
     pthread_mutex_unlock(&ift->shared->t_mutex);
     return(retval);
@@ -164,109 +164,80 @@ int reread(iface_t *ifa, char *buf, int bsize)
     return(nread);
 }
 
-void read_tcp(struct iface *ifa)
+size_t read_tcp(struct iface *ifa, char *buf)
 {
-	char buf[BUFSIZ];
-	char *bptr,*eptr=buf+BUFSIZ,*senptr;
-	senblk_t sblk;
-	struct if_tcp *ift = (struct if_tcp *) ifa->info;
-	int nread,cr=0,count=0,overrun=0,tagblock=0;
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    size_t nread;
 
-	senptr=sblk.data;
-    sblk.src=ifa->id;
-
-    while (ifa->direction != NONE) {
-	    if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
+    if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
             if (!ifa->persist)
-                break;
+                return nread;
             if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
                 logerr(errno,"failed to reconnect tcp connection");
-                break;
             }
-        }
-		for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            if (tagblock) {
-                if (*bptr == '\\') {
-                    /* End of TAG block */
-                    tagblock=0;
-                }
-                continue;
-            }
-            if (senptr == sblk.data) {
-                /* first character */
-                switch (*bptr) {
-                case '\\':
-                    tagblock=1;
-                    continue;
-                case '!':
-                case '$':
-                    break;
-                default:
-                    /* "overrun" now overloaded as an error flag */
-                    overrun++;
-                }
-            }
-
-            if (count < SENMAX+2) {
-    	    	++count;
-    			*senptr++=*bptr;
-    		} else
-    			++overrun;
-
-			if ((*bptr) == '\r') {
-				++cr;
-			} else {
-				if (*bptr == '\n' && cr) {
-					if (overrun) {
-						overrun=0;
-					} else {
-						sblk.len=count;
-                        if (!(ifa->checksum && checkcksum(&sblk)) &&
-                                senfilter(&sblk,ifa->ifilter) == 0)
-                            push_senblk(&sblk,ifa->q);
-					}
-					senptr=sblk.data;
-					count=0;
-				}
-				cr=0;
-			}
-		}
-	}
-	iface_thread_exit(errno);
+    }
+    return nread;
 }
 
 void write_tcp(struct iface *ifa)
 {
-	struct if_tcp *ift = (struct if_tcp *) ifa->info;
-	senblk_t *sptr;
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    senblk_t *sptr;
     int status;
+    int data=0;
+    int cnt=1;
+    struct iovec iov[2];
 
-	for(;;) {
-		if ((sptr = next_senblk(ifa->q)) == NULL)
-			break;
+    if (ifa->tagflags) {
+        if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+        } else {
+            cnt=2;
+            data=1;
+        }
+    }
+
+    for(;;) {
+        if ((sptr = next_senblk(ifa->q)) == NULL)
+            break;
 
         if (senfilter(sptr,ifa->ofilter)) {
             senblk_free(sptr,ifa->q);
             continue;
         }
 
+        if (ifa->tagflags)
+            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base)) == 0) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+                cnt=1;
+                data=0;
+                free(iov[0].iov_base);
+            }
+
         /* SIGPIPE is blocked here so we can avoid using the (non-portable)
          * MSG_NOSIGNAL
          */
-        if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
+        iov[data].iov_base=sptr->data;
+        iov[data].iov_len=sptr->len;
+
+        if (writev(ift->fd,iov,cnt) <0) {
             if (!ifa->persist)
-		        break;
-		    senblk_free(sptr,ifa->q);
+                break;
+            senblk_free(sptr,ifa->q);
             if ((status=reconnect(ifa)) != 0) {
                 if (status < 0)
                     logerr(errno,"failed to reconnect tcp connection");
                 break;
             }
         }
-		senblk_free(sptr,ifa->q);
-	}
+        senblk_free(sptr,ifa->q);
+    }
 
-	iface_thread_exit(errno);
+    iface_thread_exit(errno);
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
@@ -283,17 +254,16 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     memset(newifa,0,sizeof(iface_t));
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
-            ((newifa->q=init_q(oldift->qsize)) == NULL))){
+            ((newifa->q=init_q(oldift->qsize)) == NULL))) {
         if (newifa && newifa->q)
             free(newifa->q);
-        if (newift->shared)
-            free(newift->shared);
         if (newift)
             free(newift);
         free(newifa);
         return(NULL);
     }
     newift->fd=fd;
+    newift->shared=NULL;
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
@@ -301,7 +271,9 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->info=newift;
     newifa->cleanup=cleanup_tcp;
     newifa->write=write_tcp;
-    newifa->read=read_tcp;
+    newifa->read=do_read;
+    newifa->tagflags=ifa->tagflags;
+    newifa->readbuf=read_tcp;
     newifa->lists=ifa->lists;
     newifa->ifilter=addfilter(ifa->ifilter);
     newifa->ofilter=addfilter(ifa->ofilter);
@@ -372,6 +344,7 @@ iface_t *init_tcp(iface_t *ifa)
     }
 
     ift->qsize=DEFTCPQSIZE;
+    ift->shared=NULL;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
@@ -508,7 +481,8 @@ iface_t *init_tcp(iface_t *ifa)
     ifa->cleanup=cleanup_tcp;
     ifa->info = (void *) ift;
     if (*conntype == 'c') {
-        ifa->read=read_tcp;
+        ifa->read=do_read;
+        ifa->readbuf=read_tcp;
         ifa->write=write_tcp;
         if (ifa->direction == BOTH) {
             if ((ifa->next=ifdup(ifa)) == NULL) {

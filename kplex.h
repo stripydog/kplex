@@ -25,6 +25,9 @@
 #endif
 
 #define KPLEXGLOBALCONF "/etc/kplex.conf"
+
+#define DEFSRCNAME "kplex"
+
 #define DEFQUEUESZ 128
 #define SERIALQUESIZE 128
 #define BCASTQUEUESIZE 64
@@ -33,6 +36,7 @@
 
 #define SENMAX 80
 #define SENBUFSZ 96
+#define TAGMAX 80
 #define DEFPORT 10110
 #define DEFPORTSTRING "10110"
 #define IDMINORBITS 16
@@ -40,6 +44,20 @@
 #define MAXINTERFACES 65535
 
 #define BUFSIZE 1024
+
+#define TAG_TS 1
+#define TAG_MS 2
+#define TAG_SRC 4
+
+/* parsing states */
+enum sstate {
+    SEN_NODATA,
+    SEN_SENPROC,
+    SEN_TAGPROC,
+    SEN_TAGSEEN,
+    SEN_CR,
+    SEN_ERR
+};
 
 enum itype {
     GLOBAL,
@@ -157,12 +175,14 @@ struct iface {
     struct iface *next;
     struct iolists *lists;
     int checksum;
+    unsigned int tagflags;
     int persist;
     sfilter_t *ifilter;
     sfilter_t *ofilter;
     void (*cleanup)(struct iface *);
     void (*read)(struct iface *);
     void (*write)(struct iface *);
+    size_t (*readbuf)(struct iface *,char *buf);
 };
 
 typedef struct iface iface_t;
@@ -233,5 +253,7 @@ unsigned int namelookup(char *);
 int insertname(char *, unsigned int);
 void freenames(void);
 int cmdlineopt(struct kopts **, char *);
+void do_read(iface_t *);
+size_t gettag(iface_t *, char *);
 
 extern struct iftypedef iftypes[];

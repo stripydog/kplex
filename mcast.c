@@ -68,9 +68,29 @@ void write_mcast(struct iface *ifa)
 {
     struct if_mcast *ifb;
     senblk_t *sptr;
-    int n;
+    int data=0;
+    struct msghdr msgh;
+    struct iovec iov[2];
 
     ifb = (struct if_mcast *) ifa->info;
+
+    msgh.msg_name=(void *)&ifb->maddr;
+    msgh.msg_namelen=ifb->asize;
+    msgh.msg_control=NULL;
+    msgh.msg_controllen=msgh.msg_flags=0;
+    msgh.msg_iov=iov;
+    msgh.msg_iovlen=1;
+
+    if (ifa->tagflags) {
+        if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+        } else {
+            msgh.msg_iovlen=2;
+            data=1;
+        }
+    }
 
     for (;;) {
         if ((sptr = next_senblk(ifa->q)) == NULL)
@@ -81,80 +101,37 @@ void write_mcast(struct iface *ifa)
             continue;
         }
 
-        if ((n=sendto(ifb->fd,sptr->data,sptr->len,0,
-                (struct sockaddr *)&ifb->maddr,
-                ifb->asize)) < 0)
+        if (ifa->tagflags)
+            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base)) == 0) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+                msgh.msg_iovlen=1;
+                data=0;
+                free(iov[0].iov_base);
+            }
+
+        iov[data].iov_base=sptr->data;
+        iov[data].iov_len=sptr->len;
+
+        if (sendmsg(ifb->fd,&msgh,0) < 0)
             break;
         senblk_free(sptr,ifa->q);
     }
+
+    if (ifa->tagflags)
+        free(iov[0].iov_base);
+
     iface_thread_exit(errno);
 }
 
-void read_mcast(struct iface *ifa)
+size_t read_mcast(iface_t *ifa, char *buf)
 {
-    struct if_mcast *ifb;
-    senblk_t sblk;
-    char buf[BUFSIZ];
-    char *bptr,*eptr,*senptr;
-    int nread,cr=0,count=0,overrun=0,tagblock=0;
+    struct if_mcast *ifm = (struct if_mcast *) ifa->info;
     struct sockaddr_storage src;
     socklen_t sz = (socklen_t) sizeof(src);
-    ifb=(struct if_mcast *) ifa->info;
 
-    senptr=sblk.data;
-    sblk.src=ifa->id;
-
-    while ((nread=recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz))
-                    > 0) {
-        for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            if (tagblock) {
-                if (*bptr == '\\') {
-                    /* End of TAG block */
-                    tagblock=0;
-                }
-                continue;
-            }
-            if (senptr == sblk.data) {
-                /* first character */
-                switch (*bptr) {
-                case '\\':
-                    tagblock=1;
-                    continue;
-                case '!':
-                case '$':
-                    break;
-                default:
-                    /* "overrun" now overloaded as an error flag */
-                    overrun++;
-                }
-            }
-
-            if (count < SENMAX) {
-                ++count;
-                *senptr++=*bptr;
-            } else
-                ++overrun;
-
-            if ((*bptr) == '\r') {
-                ++cr;
-            } else {
-                if (*bptr == '\n' && cr) {
-                    if (overrun) {
-                        overrun=0;
-                    } else {
-                        sblk.len=count;
-                        if (!(ifa->checksum && checkcksum(&sblk)) &&
-                                senfilter(&sblk,ifa->ifilter) == 0)
-                            push_senblk(&sblk,ifa->q);
-                    }
-                    senptr=sblk.data;
-                    count=0;
-                }
-                cr=0;
-            }
-        }
-    }
-    iface_thread_exit(errno);
+    return recvfrom(ifm->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
 }
 
 /* Check whether an address is multicast
@@ -435,7 +412,8 @@ struct iface *init_mcast(struct iface *ifa)
     }
 
     ifa->write=write_mcast;
-    ifa->read=read_mcast;
+    ifa->read=do_read;
+    ifa->readbuf=read_mcast;
     ifa->cleanup=cleanup_mcast;
     ifa->info = (void *) ifm;
     if (ifa->direction == BOTH) {
