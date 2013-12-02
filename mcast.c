@@ -322,8 +322,6 @@ struct iface *init_mcast(struct iface *ifa)
             return(NULL);
         }
 
-        freeifaddrs(ifap);
-
         if ((ifindex=if_nametoindex(ifname)) == 0) {
             logerr(0,"Can't determine interface index for %s",ifname);
             return(NULL);
@@ -331,7 +329,7 @@ struct iface *init_mcast(struct iface *ifa)
 
         if (ifm->maddr.ss_family == AF_INET) {
             memcpy(&ifm->mr.ipmr.imr_address,
-                    &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
+                    &((struct sockaddr_in *)ifp->ifa_addr)->sin_addr,
                     sizeof(struct in_addr));
             ifm->mr.ipmr.imr_ifindex=ifindex;
         } else {
@@ -339,6 +337,8 @@ struct iface *init_mcast(struct iface *ifa)
             if (linklocal)
                ((struct sockaddr_in6 *)&ifm->maddr)->sin6_scope_id=ifindex;
         }
+
+        freeifaddrs(ifap);
 
         if (ifa->direction != IN) {
                 if (ifm->maddr.ss_family==AF_INET) {
@@ -355,11 +355,10 @@ struct iface *init_mcast(struct iface *ifa)
                     }
                 }
         }
+
     } else {
         if (ifm->maddr.ss_family == AF_INET) {
-            memcpy(&ifm->mr.ipmr.imr_address,
-                    &((struct sockaddr_in *)aptr->ai_addr)->sin_addr,
-                    sizeof(struct in_addr));
+            ifm->mr.ipmr.imr_address.s_addr=INADDR_ANY;
             ifm->mr.ipmr.imr_ifindex=0;
         } else {
             if (linklocal) {

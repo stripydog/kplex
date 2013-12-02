@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <time.h>
 
 #define DEFFILEQSIZE 128
 

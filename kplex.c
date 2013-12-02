@@ -1019,10 +1019,10 @@ size_t gettag(iface_t *ifa, char *buf)
         memcpy(ptr,"s:",2);
         ptr+=2;
         nameptr=(ifa->name)?ifa->name:DEFSRCNAME;
-        while (*nameptr)
+        for (len=0;*nameptr && len < 15; len++)
             *ptr++=*nameptr++;
-            
     }
+
     if (ifa->tagflags & TAG_TS) {
         if (!first)
             *ptr++=',';

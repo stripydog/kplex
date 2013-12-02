@@ -341,6 +341,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             ifp->tagflags |= (TAG_TS|TAG_MS);
         } else
             return(-2);
+    } else if (!strcmp(var,"srctag")) {
+        if (!strcasecmp(val,"yes")) {
+            ifp->tagflags |= TAG_SRC;
+        } else if (!strcasecmp(val,"no")) {
+            ifp->tagflags &= ~TAG_SRC;
+        } else
+            return(-2);
     } else if (!strcmp(var,"persist")) {
         if (!strcasecmp(val,"yes")) {
             ifp->persist=1;
@@ -509,6 +516,8 @@ iface_t *parse_arg(char *arg)
     else if (!strcasecmp(arg,"seatalk"))
         ifp->type = ST;
 */
+    else if (!strcasecmp(arg,"gofree"))
+        ifp->type = GOFREE;
     else {
         fprintf(stderr,"Unrecognised interface type %s\n",arg);
         free(ifp);

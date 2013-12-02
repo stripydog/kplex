@@ -5,26 +5,11 @@
  */
 
 #include "kplex.h"
+#include "tcp.h"
 #include <netdb.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-
-#define DEFTCPQSIZE 128
-
-struct if_tcp {
-    int fd;
-    size_t qsize;
-    struct if_tcp_shared *shared;
-};
-
-struct if_tcp_shared {
-    time_t retry;
-    socklen_t sa_len;
-    struct sockaddr_storage sa;
-    int donewith;
-    int protocol;
-    pthread_mutex_t t_mutex;
-};
+#include <signal.h>
 
 /*
  * Duplicate struct if_tcp
@@ -247,6 +232,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     struct if_tcp *newift=NULL;
     pthread_t tid;
     int on=1;
+    sigset_t set,saved;
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL)
         return(NULL);
@@ -295,12 +281,20 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
             newifa->direction=OUT;
             newifa->pair->direction=IN;
             newifa->pair->q=ifa->lists->engine->q;
+            sigemptyset(&set);
+            sigaddset(&set, SIGUSR1);
+            pthread_sigmask(SIG_BLOCK, &set, &saved);
             link_to_initialized(newifa->pair);
             pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
+            pthread_sigmask(SIG_SETMASK,&saved,NULL);
         }
     }
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    pthread_sigmask(SIG_BLOCK, &set, &saved);
     link_to_initialized(newifa);
     pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
+    pthread_sigmask(SIG_SETMASK,&saved,NULL);
     return(newifa);
 }
 
