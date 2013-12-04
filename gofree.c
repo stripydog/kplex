@@ -15,7 +15,6 @@
 
 struct if_gofree {
     int fd;
-    size_t qsize;
     struct ip_mreqn ipmr;
 };
 
@@ -29,6 +28,10 @@ struct gofree_mfd {
 void cleanup_gofree(iface_t *ifa)
 {
     struct if_gofree *ifg=(struct if_gofree *)ifa->info;
+    if (setsockopt(ifg->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,&ifg->ipmr,
+            sizeof(struct ip_mreqn)) < 0)
+        logerr(errno,"IP_DROP_MEMBERSHIP failed");
+
     close(ifg->fd);
 }
 
@@ -36,7 +39,6 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
 {
     iface_t *newifa;
     struct if_tcp *newift;
-    struct if_gofree *ifg = (struct if_gofree *) ifa->info;
     int err;
     sigset_t set,saved;
 
@@ -44,13 +46,7 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
         return(NULL);
     memset(newifa,0,sizeof(iface_t));
 
-    if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
-            ((ifa->direction != IN) &&
-            ((newifa->q=init_q(ifg->qsize)) == NULL))) {
-        if (newifa && newifa->q)
-            free(newifa->q);
-        if (newift)
-            free(newift);
+    if ((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) {
         free(newifa);
         return(NULL);
     }
@@ -58,7 +54,6 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     if (((newift->fd=socket(PF_INET,SOCK_STREAM,0)) < 0) || \
             (connect(newift->fd,(struct sockaddr *)&mfd->addr,sizeof(struct sockaddr)) != 0)) {
         err=errno;
-        free(newifa->q);
         free(newift);
         free(newifa);
         errno=err;
@@ -77,7 +72,6 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     newifa->readbuf=read_tcp;
     newifa->lists=ifa->lists;
     newifa->ifilter=addfilter(ifa->ifilter);
-    newifa->ofilter=addfilter(ifa->ofilter);
     newifa->checksum=ifa->checksum;
     newifa->q=ifa->lists->engine->q;
     sigemptyset(&set);
@@ -346,22 +340,22 @@ iface_t *init_gofree(iface_t *ifa)
     int on=1;
     struct kopts *opt;
 
+    if (ifa->direction == OUT) {
+        logerr(0,"gofree interfaces must be \"in\" (the default) only");
+        return(NULL);
+    }
+
+    if (ifa->direction == BOTH)
+        ifa->direction=IN;
 
     if ((ifg = malloc(sizeof(struct if_gofree))) == NULL) {
         logerr(errno,"Could not allocate memory");
         return(NULL);
     }
 
-    ifg->qsize=DEFTCPQSIZE;
-
     for(opt=ifa->options;opt;opt=opt->next) {
-        if (!strcasecmp(opt->var,"device"))
+        if (!strcasecmp(opt->var,"device")) {
             ifname=opt->val;
-        else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(ifg->qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
-                return(NULL);
-            }
         } else  {
             logerr(0,"unknown interface option %s\n",opt->var);
             return(NULL);
