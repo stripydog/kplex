@@ -1,3 +1,9 @@
+/* gofree.c
+ * This file is part of kplex
+ * Copyright Keith Young 2013
+ *  For copying information see the file COPYING distributed with this softwar`
+ */
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -7,27 +13,38 @@
 #include <net/if.h>
 
 #include "kplex.h"
-#include "tcp.h"
+#include "tcp.h"    /* Included for spawned tcp interfaces */
 
 #define GOFREE_PORT 2052
 #define GOFREE_GROUP "239.2.1.1"
-#define RECVBUFSZ 1480
+/* Asked Navico about the max size of a discovery packet.  Initially they
+ * told me 64kB.  However, not only would this involve fragmentation without
+ * jumbo frames support it would break their own C# example. Below is a waste
+ * of space but would capture max size of a UDP packet over IPv4 with MTU 1500
+ */
+#define RECVBUFSZ 1472
 
+/* the ip_mreqn is needed to drop group membership when the interface exits */
 struct if_gofree {
     int fd;
     struct ip_mreqn ipmr;
 };
 
+/* We don't really have a use for name except for debugging. In this release
+ * it is not referenced at all
+ */
 struct gofree_mfd {
     char *name;
     struct sockaddr_in addr;
     time_t lastseen;
 };
 
-    
 void cleanup_gofree(iface_t *ifa)
 {
     struct if_gofree *ifg=(struct if_gofree *)ifa->info;
+
+    /* Drop group membership from the interface, closed fd and exit */
+
     if (setsockopt(ifg->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,&ifg->ipmr,
             sizeof(struct ip_mreqn)) < 0)
         logerr(errno,"IP_DROP_MEMBERSHIP failed");
@@ -35,6 +52,13 @@ void cleanup_gofree(iface_t *ifa)
     close(ifg->fd);
 }
 
+/* Create a new TCP connection to a gofree MFD and a thread to handle it
+ * Args: pointer to thread id (to be filled in), pointer to mfd structure and
+ *     pointer to the gofree interface spawning this connection
+ * Returns: pointer to the new tcp interface structure on success, NULL on
+ *     failure
+ * Side Effects: pthread_t pointed to by tid is filled in with new thread's id
+ */
 iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
 {
     iface_t *newifa;
@@ -53,6 +77,7 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
 
     if (((newift->fd=socket(PF_INET,SOCK_STREAM,0)) < 0) || \
             (connect(newift->fd,(struct sockaddr *)&mfd->addr,sizeof(struct sockaddr)) != 0)) {
+        /* Save errno so it isn't set to 0 by free */
         err=errno;
         free(newift);
         free(newifa);
@@ -72,23 +97,36 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     newifa->readbuf=read_tcp;
     newifa->lists=ifa->lists;
     newifa->ifilter=addfilter(ifa->ifilter);
+    /* Copying ofilter is unnecessary as gofree is input only */
     newifa->checksum=ifa->checksum;
     newifa->q=ifa->lists->engine->q;
+    /* disable SIGUSR1 before launching new thread to avoid it being killed
+     * while holding a mutex */
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
     link_to_initialized(newifa);
     pthread_create(tid,NULL,(void *)start_interface,(void *) newifa);
+
+    /* reset sig mask and re-enable SIGUSR1 */
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
 
     return(newifa);
 }
 
+/* Actually we don't do any dup-ing: gofree is one-way */
 void *ifdup_gofree(void *ifa)
 {
     return NULL;
 }
 
+/* Return pointer to next value in a JSON key : val pair
+ * Args: pointer to pointer to buffer pointing to JSON string just after a
+ *     divider for key : val
+ * Returns: Pointer to value. NULL on error
+ * Side Effects: \0 inserted after value, pointer pointed at is advanced to
+ *     before the next key
+ */
 char *next_json_val(char **pptr)
 {
     char *ptr;
@@ -162,6 +200,12 @@ char *next_json_val(char **pptr)
     return(val);
 }
 
+/* Retrieve next key from json key : value pair
+ * Args:  pointer to pointer pointing at just before the next json key
+ * Returns: pointer to beginning of next JSON key
+ * Side effects: Inserts \0 after next json key and advances pointer pointer
+ * to point to the subsequent character
+ */
 char *next_json_key(char **pptr)
 {
     char *ptr;
@@ -201,10 +245,18 @@ char *next_json_key(char **pptr)
     return(NULL);
 }
 
+/* Get the next JSON element bounded by "{" and "}"
+ * Args: Pointer to pointer to before element
+ * Returns: Pointer to just after next '{', NULL on error (no "{" found or
+ *    no closing '}' found)
+ * Side Effects: closing '}' is replaced by \0, pointer pointed to by arg
+        advanced to point at character beyond
+ */
 char *get_next_json_elem(char **pptr)
 {
     char *ptr=*pptr;
     char *elem;
+
     while (*ptr)
         if (*ptr++ == '{')
             break;
@@ -220,13 +272,22 @@ char *get_next_json_elem(char **pptr)
     return(NULL);
 }
 
+/* Take MFD location information from a GoFree tier 1 announcement
+ * Args: pointer to MFD structure, pointer to character buffer containing JSON
+ *    string, size of string
+ * Returns: 0 on success, -1 if no information extracted from JSON string
+ * Side effects: mfd structure is filled in with IP and lastseen time.  JSON
+ * string is chopped up with NULLs so no longer usable
+ */
 int parse_json(struct gofree_mfd *mfd, char *buf, size_t len)
 {
     char *ptr,*key,*val,*elem;
     int gotaddr=0,gotport=0,thisservice;
 
+    /* This *should* be the terminating '}' or subsequent whitespace */
     buf[len-1]='\0';
 
+    /* Seek to opening '{' */
     for (ptr=buf;*ptr;) {
         if (*ptr++ == '{') {
             break;
@@ -238,6 +299,7 @@ int parse_json(struct gofree_mfd *mfd, char *buf, size_t len)
 
     mfd->lastseen=time(NULL);
 
+    /* Loop through keys and values until we find IP and port info */
     while (!(gotaddr && gotport)) {
         if ((key = next_json_key(&ptr)) == NULL)
             return(-1);
@@ -279,6 +341,9 @@ int parse_json(struct gofree_mfd *mfd, char *buf, size_t len)
     return(0);
 }
 
+/* Main gofree server routine: listens for multicast service announcements
+ * launches and kills TCP connections accordingly
+ */
 void gofree_server (iface_t *ifa)
 {
     struct if_gofree *ifg=(struct if_gofree *)ifa->info;
@@ -294,6 +359,9 @@ void gofree_server (iface_t *ifa)
     currmfd.lastseen = 0;
     currmfd.addr.sin_addr.s_addr=INADDR_ANY;
 
+    /* Here's how this works.  Each time we receive a JSON string we try and
+     * parse it for nmea-0183 service information. If we find it we compare
+     * the address with that of any already connected MFD */
     while (ifa->direction != NONE) {
         sl=sizeof(struct sockaddr);
         if ((len=recvfrom(ifg->fd,msgbuf,RECVBUFSZ,0,&sa,&sl)) < 0) {
@@ -303,30 +371,29 @@ void gofree_server (iface_t *ifa)
         if (parse_json(&newmfd,msgbuf,len) != 0)
             continue;
 
-        newconn=0;
+        if (isConnected != 0) {
+            newconn=0;
 
-        if (newmfd.addr.sin_addr.s_addr == currmfd.addr.sin_addr.s_addr) {
-            if (newmfd.addr.sin_port != currmfd.addr.sin_port) {
-                newconn=1;
-                currmfd.addr.sin_port=newmfd.addr.sin_port;
+            if ((newmfd.addr.sin_addr.s_addr != currmfd.addr.sin_addr.s_addr) ||
+                    (newmfd.addr.sin_port != currmfd.addr.sin_port)) {
+                if (newmfd.lastseen - currmfd.lastseen >2) {
+                    newconn=1;
+                }
             }
-            currmfd.lastseen=newmfd.lastseen;
-        } else if ((newmfd.lastseen - currmfd.lastseen)  > 2) {
-            newconn = 1;
-            memcpy(&currmfd,&newmfd,sizeof(struct gofree_mfd));
-        }
-        if (!newconn) {
-            if ((isConnected) && (pthread_kill(tid,0) == 0))
-                continue;
-        } else if (isConnected) {
-            pthread_kill(tid,SIGUSR1);
-            pthread_join(tid,NULL);
+            if (!newconn) {
+                if (pthread_kill(tid,0) == 0)
+                    /* Connection thread is still running */
+                    continue;
+            } else {
+                /* Connected but new connection required */
+                pthread_kill(tid,SIGUSR1);
+                pthread_join(tid,NULL);
+            }
         }
         /* create new tcp connection */
-        isConnected = 0;
         newmfd.addr.sin_family=AF_INET;
-        if (new_gofree_conn(&tid,&newmfd,ifa) != NULL)
-            isConnected++;
+        isConnected = (new_gofree_conn(&tid,&newmfd,ifa) == NULL)?0:1;
+        memcpy(&currmfd,&newmfd,sizeof(struct gofree_mfd));
     }
 }
 
