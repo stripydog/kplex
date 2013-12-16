@@ -90,6 +90,7 @@ where:
         "broadcast": nmea over UDP broadcast
         "mcast": nmea over UDP multicast
         "pty": serial nmea data over a pseudo terminal
+        "gofree": nmea over TCP announced by Navico's "GoFree" protocol
     <option> is one or more options of the form <var>=<val>. Some options are
         not optional. Options applicable to all interface types are:
         "direction":  May normally be one of "in" specifying an input, "out"
@@ -113,6 +114,24 @@ where:
         numbers which is not used as the "name" for another interface.  Names
         are NOT case sensitive, so do not call one interface "Serial" and
         another "serial".
+        "srctag": Specifies that an NMEA-0183v4 TAG block containing a source
+        identifier be prepended to sentences output on the interface if the
+        value is "yes".  The src identification string is the interface name
+        (see the "name" option above) truncated to 15 characters or the string
+        "kplex" if no "name" is specified for the interface. A TAG block
+        prepended by the "srctag=yes" option looks like:
+        \s:kplex*7F\
+        If "srctag=no" is specified, no source identifier is prepended.  This is
+        the default.
+        "timestamp": Specifies that an NMEA-0183v4 TAG block containing UNIX
+        time (for example "\c:1387191186*0E\" should be prepended to sentences
+        output on the interface.  The timestamp is in seconds if the value is
+        "s" or milliseconds if the value is "ms".  Note that NMEA-0183v4
+        timestamps do not take account of leap seconds.
+
+If source identifier and timestamps are both requested for an interface, they
+are combined into a single TAG block, source identifier first, e.g.:
+\s:kplex,c:1387191537*0F\
 
 The -V flag instructs kplex to print its version number and exit. It should not
 be used with any other options.
@@ -376,6 +395,38 @@ If a device is not specified in one of the above ways for multicast addresses
 other than IPv6 link and interface local groups, the routing table will be used
 to select the outgoing interface for multicast packets.
 
+GoFree Interfaces
+-----------------
+
+GoFree is Navico's service discovery protocol which allows applications to
+connect to a network services without knowing details of its address.  A
+kplex gofree interfaces listens on the IPv4 multicast address (239.2.1.1) and
+port (2052) which Navico have specified for announcements of the "nmea-0183"
+service.  If not currently connected to an announced "nmea-0183" service, a
+kplex gofree interface will attempt to initiate a connection to the unicast TCP
+IPv4 address/port found in the first appropriate service announcement it sees.
+If a gofree interface is currently connected to an nmea-0183 service, On receipt
+of an announcement for an alternate service location (i.e. the IPv4 address/port
+of an nmea-0183 service on another multifunction display ("MFD"), if the last
+announcement for the currently connected service was more than 2 seconds prior,
+the gofree interface will terminate the current service connection and reconnect
+to the newly announced service.  If the last announcement for the current
+service was less than 2 seconds prior, kplex will only initiate a connection to
+the alternate service if the current connection has terminated.
+
+    Interface-specific options:
+        device=<interface>
+        Where
+            <interface> specifies the system interface (e.g. "wlan1", "eth0") to
+            use.  If unspecified the system will select the interface to listen
+            for service announcements on, normally defaulting to the first
+            multicast-capable non-loopback device.
+
+GoFree does not support bi-directional nmea-0183 connections so all gofree
+interfaces have an implicit "direction=in" option. It is an error to specify
+"direction=out" for a gofree interface.  Any output filters specified for a
+gofree interface are ignored.
+
 Pseudo Terminal (pty) interfaces
 --------------------------------
 
@@ -544,6 +595,18 @@ signal, e.g. "pkill kplex".
 kplex should always clean up all of its interfaces, including restoring serial
 line settings to what they were when kplex started.  If this doesn't happen
 it's a bug: Please report it.
+
+NMEA-0183v4 TAG block handling
+------------------------------
+kplex will strip all NMEA-0183v4 TAG blocks from the input stream and discard 
+them.  Correctly formatted following sentences will be multiplexed.  kplex
+does not conform to NMEA-0183v4 and will ignore all query and control messages.
+
+Timestamps and source identifiers conform, as far as can be determined from
+publicly available sources, to the NMEA-0183v4 TAG specification.  Note
+however that at this time implementation of TAG block handling in various
+programs and devices is variable and other programs may discard sentences with
+correctly formatted TAG blocks prepended
 
 Example usage
 -------------
