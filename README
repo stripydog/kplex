@@ -693,9 +693,6 @@ baud=38400
 To Do
 -----
 Possible future enhancements include:
-* Support for Simrad "GoFree"
-* Support for Raymarine Seatalk 1.  Unfortunately this requires some additional
-  hardware support.
 * Port to java.  kplex is written in C for POSIX-compliant systems because
   that's what I know best.  Despite my railing against Object Oriented
   Fascism, kplex is inherently OO. A java implementation would also be more
@@ -716,8 +713,8 @@ Q: Hasn't this already been done?
 A: Not in free software for linux that I'm aware of. Although it possibly has.
    I've seen something for windows.  socat can translate lots of things to lots
    of things, but this multiplexes lots of things to lots of things. For linux.
-   Including ptys, which is important if you want to tap off a feed for opencpn
-   or somesuch.
+   Including ptys, which is important if you want to tap off a feed for a
+   program which doesn't support network data.
 
 Q: If it *has* been done before, why is this even interesting?
 A: It supports IPv6, it supports multicast, and it's multithreaded.
@@ -750,7 +747,7 @@ A: It shouldn't be much work to port to another POSIX-compliant system. If
 Q: I am a venture capitalist with $20m dollars to employ someone who can write
    multithreaded IPv6 network code and also look after my infrequently used
    superyacht.  May I hire you?
-A: Yes.
+A: I'll check my diary...
 
 Thanks to / Tak til / Tack til / Takk til/ Dank Aan / Merci à
 everyone who has provided feedback and suggestions and helped with testing
