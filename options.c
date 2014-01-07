@@ -350,9 +350,16 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             return(-2);
     } else if (!strcmp(var,"persist")) {
         if (!strcasecmp(val,"yes")) {
-            ifp->persist=1;
+            flag_set(ifp,F_PERSIST);
         } else if (!strcasecmp(val,"no")) {
-            ifp->persist=0;
+            flag_clear(ifp,F_PERSIST);
+        } else
+            return(-2);
+    } else if (!strcmp(var,"loopback")) {
+        if (!strcasecmp(val,"yes")) {
+            flag_set(ifp,F_LOOPBACK);
+        } else if (!strcasecmp(val,"no")) {
+            flag_clear(ifp,F_LOOPBACK);
         } else
             return(-2);
     } else if (!strcasecmp(var,"name")) {

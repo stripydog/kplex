@@ -108,7 +108,7 @@ void write_file(iface_t *ifa)
             }
 
         if ((ifa->tagflags && (fwrite(tbuf,1,n,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
-            if (!(ifa->persist && errno == EPIPE) )
+            if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) )
                 break;
             if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
                     (setvbuf(ifc->fp,NULL,_IOLBF,0) !=0))
@@ -143,7 +143,7 @@ void read_file(iface_t *ifa)
 
     for(;;) {
         if ((ch = fgetc(ifc->fp)) == EOF) {
-            if (feof(ifc->fp) && (ifa->persist)) {
+            if (feof(ifc->fp) && (flag_test(ifa,F_PERSIST))) {
                 if ((ifc->fp = freopen(ifc->filename,"r",ifc->fp)) == NULL) {
                     logerr(errno,"Failed to re-open FIFO %s for reading\n",
                             ifc->filename);
@@ -278,7 +278,7 @@ iface_t *init_file (iface_t *ifa)
      * a terminal. This allows re-direction in background mode
      */
     if (ifc->filename == NULL) {
-        if (ifa->persist) {
+        if (flag_test(ifa,F_PERSIST)) {
             logerr(0,"Can't use persist mode with stdin/stdout");
             return(NULL);
         }
@@ -316,7 +316,7 @@ iface_t *init_file (iface_t *ifa)
             }
         }
         else {
-            if (ifa->persist) {
+            if (flag_test(ifa,F_PERSIST)) {
                 logerr(0,"Can't use persist mode on %s: Not a FIFO",
                         ifc->filename);
                 return(NULL);

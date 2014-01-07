@@ -45,6 +45,15 @@
 
 #define BUFSIZE 1024
 
+/* Iinterface flags */
+#define F_PERSIST 1
+#define F_LOOPBACK 2
+
+#define flag_test(a,b) (a->flags & b)
+#define flag_set(a,b) (a->flags |= b)
+#define flag_clear(a,b) (a->flags &= ~b)
+
+/* TAG flags */
 #define TAG_TS 1
 #define TAG_MS 2
 #define TAG_SRC 4
@@ -176,8 +185,8 @@ struct iface {
     struct iface *next;
     struct iolists *lists;
     int checksum;
+    unsigned int flags;
     unsigned int tagflags;
-    int persist;
     sfilter_t *ifilter;
     sfilter_t *ofilter;
     void (*cleanup)(struct iface *);

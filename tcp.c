@@ -155,7 +155,7 @@ size_t read_tcp(struct iface *ifa, char *buf)
     size_t nread;
 
     if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
-            if (!ifa->persist)
+            if (!flag_test(ifa,F_PERSIST))
                 return nread;
             if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
                 logerr(errno,"failed to reconnect tcp connection");
@@ -210,7 +210,7 @@ void write_tcp(struct iface *ifa)
         iov[data].iov_len=sptr->len;
 
         if (writev(ift->fd,iov,cnt) <0) {
-            if (!ifa->persist)
+            if (!flag_test(ifa,F_PERSIST))
                 break;
             senblk_free(sptr,ifa->q);
             if ((status=reconnect(ifa)) != 0) {
@@ -352,7 +352,7 @@ iface_t *init_tcp(iface_t *ifa)
         } else if (!strcasecmp(opt->var,"port")) {
             port=opt->val;
         } else if (!strcasecmp(opt->var,"retry")) {
-            if (!ifa->persist) {
+            if (!flag_test(ifa,F_PERSIST)) {
                 logerr(0,"retry valid only valid with persist option");
                 return(NULL);
             }
@@ -380,7 +380,7 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,"Must specify address for tcp client mode\n");
             return(NULL);
         }
-    } else if (ifa->persist) {
+    } else if (flag_test(ifa,F_PERSIST)) {
         logerr(0,"persist option not valid for tcp servers");
         return(NULL);
     }
@@ -436,7 +436,7 @@ iface_t *init_tcp(iface_t *ifa)
         return(NULL);
     }
 
-    if (ifa->persist) {
+    if (flag_test(ifa,F_PERSIST)) {
         if ((ift->shared = malloc(sizeof(struct if_tcp_shared))) == NULL) {
             logerr(errno,"Could not allocate memory");
             free(ift);

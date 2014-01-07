@@ -557,7 +557,8 @@ void *run_engine(void *info)
             pthread_mutex_lock(&eptr->lists->io_mutex);
             /* Traverse list of outputs and push a copy of senblk to each */
             for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-                if ((optr->q) && ((!sptr) || (sptr->src != optr->id))) {
+                if ((optr->q) && ((!sptr) ||
+                        ((sptr->src != optr->id) || (flag_test(optr,F_LOOPBACK))))) {
                     push_senblk(sptr,optr->q);
                 }
             }
@@ -813,7 +814,7 @@ iface_t *ifdup (iface_t *ifa)
 
     ifa->pair=newif;
     newif->tid=ifa->tid;
-    newif->persist=ifa->persist;
+    newif->flags=ifa->flags;
     newif->id=ifa->id;
     newif->name=ifa->name;
     newif->pair=ifa;

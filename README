@@ -106,6 +106,13 @@ where:
         "checksum": May be "yes" to enable checksumming of incoming sentences on
             an interface or "no" to disable it. This option overrides the global
             checksum option.
+        "loopback": May be "yes" to enable sentences read from an interface to
+            be written back to it when communication is bi-directional or "no"
+            (the default) to ensure sentences are not looped back to the
+            interface they were read from.  This option should be used with
+            extreme caution and generally not at all with broadcast or
+            multicast interfaces.  This option has no effect on unidirectional
+            interfaces.
         "ifilter": Specifies an input filter (see below)
         "ofilter": Specifies an output filter (see below)
         "name": Attaches a symbolic name to an interface.  This is only required
