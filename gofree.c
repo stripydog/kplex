@@ -211,7 +211,7 @@ char *next_json_key(char **pptr)
     char *ptr;
     char *key;
 
-    for (ptr=(*pptr);*ptr;ptr++) {
+    for (ptr=(*pptr);;ptr++) {
         switch (*ptr) {
         case ' ':
         case '\t':
@@ -221,6 +221,7 @@ char *next_json_key(char **pptr)
         case '"':
             break;
         default:
+            *pptr=ptr;
             return NULL;
         }
         break;
@@ -281,7 +282,7 @@ char *get_next_json_elem(char **pptr)
  */
 int parse_json(struct gofree_mfd *mfd, char *buf, size_t len)
 {
-    char *ptr,*key,*val,*elem;
+    char *ptr,*key,*val,*eval,*elem;
     int gotaddr=0,gotport=0,thisservice;
 
     /* This *should* be the terminating '}' or subsequent whitespace */
@@ -318,13 +319,13 @@ int parse_json(struct gofree_mfd *mfd, char *buf, size_t len)
                 for (;;) {
                     if ((key = next_json_key(&elem)) == NULL)
                         break;
-                    if ((val = next_json_val(&elem)) == NULL)
+                    if ((eval = next_json_val(&elem)) == NULL)
                         return(-1);
                     if (strcmp(key,"Service") == 0) {
-                        if (strcmp(val,"\"nmea-0183") == 0)
+                        if (strcmp(eval,"\"nmea-0183") == 0)
                             thisservice=1;
                     } else if (strcmp(key,"Port") == 0) {
-                        mfd->addr.sin_port=htons(atoi(val));
+                        mfd->addr.sin_port=htons(atoi(eval));
                     }
                 }
                 if (thisservice) {

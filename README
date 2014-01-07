@@ -666,6 +666,9 @@ logto=<facility>
     "daemon", telling kplex to use the LOG_DAEMON syslog facility. <facility> is
     the same string as would be used in a syslog.conf(5) file, so to log to
     LOG_LOCAL7, specify "logto=local7".
+failover=<failover specification>
+    Where <failover specification> is described in the "Failover" section
+    above.
 
 As an example, the first example from the "example usage" section above could
 be specified in a configuration file:
