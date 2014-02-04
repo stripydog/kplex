@@ -154,7 +154,7 @@ void write_bcast(struct iface *ifa)
     iface_thread_exit(errno);
 }
 
-size_t read_bcast(struct iface *ifa, char *buf)
+ssize_t read_bcast(struct iface *ifa, char *buf)
 {
     struct if_bcast *ifb=(struct if_bcast *) ifa->info;
     struct sockaddr_storage src;

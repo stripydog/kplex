@@ -352,7 +352,7 @@ void gofree_server (iface_t *ifa)
     pthread_t tid;
     int isConnected=0;
     int newconn;
-    size_t len;
+    ssize_t len;
     struct sockaddr sa;
     socklen_t sl;
 

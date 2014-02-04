@@ -183,7 +183,7 @@ struct iface {
     void (*cleanup)(struct iface *);
     void (*read)(struct iface *);
     void (*write)(struct iface *);
-    size_t (*readbuf)(struct iface *,char *buf);
+    ssize_t (*readbuf)(struct iface *,char *buf);
 };
 
 typedef struct iface iface_t;
