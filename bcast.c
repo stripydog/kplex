@@ -206,7 +206,8 @@ struct iface *init_bcast(struct iface *ifa)
             if (((port=atoi(opt->val)) <= 0) || (port > 65535)) {
                 logerr(0,"port %s out of range",opt->val);
                 return(NULL);
-            }
+            } else
+                port=htons(port);
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
                 logerr(0,"Invalid queue size specified: %s",opt->val);
@@ -220,9 +221,10 @@ struct iface *init_bcast(struct iface *ifa)
 
     if (!port) {
         if ((svent = getservbyname("nmea-0183","udp")) != NULL)
+            /* This is in network byte order already */
             port=svent->s_port;
         else
-            port=DEFPORT;
+            port=htons(DEFPORT);
     }
 
     ifb->addr.sin_family = ifb->laddr.sin_family = AF_INET;
@@ -267,9 +269,9 @@ struct iface *init_bcast(struct iface *ifa)
             ifb->laddr.sin_addr.s_addr=((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
     }
 
-    ifb->addr.sin_port=htons(port);
+    ifb->addr.sin_port=port;
     if (ifa->direction != OUT)
-        ifb->laddr.sin_port=htons(port);
+        ifb->laddr.sin_port=port;
 
     if ((ifb->fd=socket(AF_INET,SOCK_DGRAM,0)) < 0) {
         logerr(errno,"Could not create UDP socket");
