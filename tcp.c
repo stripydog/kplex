@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <signal.h>
+#include <sys/uio.h>
 
 /*
  * Duplicate struct if_tcp
@@ -101,10 +102,10 @@ int reconnect(iface_t *ifa)
     return(retval);
 }
     
-int reread(iface_t *ifa, char *buf, int bsize)
+ssize_t reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    int nread,ret;
+    ssize_t nread,ret;
     int fflags;
 
     /* Make socket non-blocking so we don'hold the mutex longer
@@ -149,10 +150,10 @@ int reread(iface_t *ifa, char *buf, int bsize)
     return(nread);
 }
 
-size_t read_tcp(struct iface *ifa, char *buf)
+ssize_t read_tcp(struct iface *ifa, char *buf)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    size_t nread;
+    ssize_t nread;
 
     if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
             if (!flag_test(ifa,F_PERSIST))

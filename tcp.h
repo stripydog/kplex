@@ -23,6 +23,6 @@ struct if_tcp_shared {
 
 void cleanup_tcp(iface_t *ifa);
 void write_tcp(struct iface *ifa);
-size_t read_tcp(struct iface *ifa, char *buf);
+ssize_t read_tcp(struct iface *ifa, char *buf);
 
 

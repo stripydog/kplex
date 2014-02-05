@@ -125,7 +125,7 @@ void write_mcast(struct iface *ifa)
     iface_thread_exit(errno);
 }
 
-size_t read_mcast(iface_t *ifa, char *buf)
+ssize_t read_mcast(iface_t *ifa, char *buf)
 {
     struct if_mcast *ifm = (struct if_mcast *) ifa->info;
     struct sockaddr_storage src;

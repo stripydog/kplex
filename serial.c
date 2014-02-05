@@ -162,7 +162,7 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
  * Args: pointer to interface structure pointer to buffer
  * Returns: Number of bytes read, zero on error or end of file
  */
-size_t read_serial(struct iface *ifa, char *buf)
+ssize_t read_serial(struct iface *ifa, char *buf)
 {
     struct if_serial *ifs = (struct if_serial *) ifa->info;
 

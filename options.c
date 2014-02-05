@@ -121,7 +121,7 @@ int get_interface_section(FILE *fp, unsigned int *line, enum itype *type)
  * Returns: 0 on success, -1 on error
  * EOF or finding a (potential) section header terminating the current section
  * is "success", but var will be set to NULL
- * Side effects: If error is not a config fil syntax error, line count is set
+ * Side effects: If error is not a config file syntax error, line count is set
  * to 0, otherwise it is incremented as the file is read.  var and val are set
  * to point to a var/value pair
  * Anything after a '#' character is ignored
@@ -196,7 +196,7 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
         }
     }
     *ptr++='\0';
-    for (;*ptr == ' ' || *ptr == '\t';ptr++);
+    for (;*ptr == ' ' || *ptr == '\t';ptr++)
         if (*ptr == '\n' || *ptr == '#' || *ptr == '\0')
             return(0);
     return(-1);
