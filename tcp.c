@@ -51,12 +51,57 @@ void cleanup_tcp(iface_t *ifa)
     close(ift->fd);
 }
 
+int establish_keepalive(struct if_tcp *ift)
+{
+    int on=1;
+    int err=0;
+
+    if (ift->shared->keepalive) {
+        if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0) {
+            logerr(errno,"Could not enable keepalives on tcp socket");
+            return(-1);
+        }
+
+        if (ift->shared->keepidle)
+#ifdef __APPLE__
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPALIVE,
+                    &ift->shared->keepidle, sizeof(unsigned)) < 0) {
+                logerr(errno,"Could not set tcp keepidle");
+                err=-1;
+            }
+#else
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPIDLE,
+                    &ift->shared->keepidle,sizeof(unsigned)) < 0) {
+                logerr(errno,"Could not set tcp keepidle");
+                err=-1;
+            }
+#endif
+#if !defined (__APPLE__) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1090
+        if (ift->shared->keepintvl)
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPINTVL,
+                    &ift->shared->keepintvl,sizeof(unsigned)) < 0) {
+                logerr(errno,"Could not set tcp keepintvl");
+                err=-1;
+            }
+
+        if (ift->shared->keepcnt)
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPCNT,
+                    &ift->shared->keepcnt,sizeof(unsigned)) < 0) {
+                logerr(errno,"Could not set tcp keepcnt");
+                err=-1;
+            }
+#endif
+    }
+    return(err);
+}
+
 int reconnect(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     senblk_t *sptr;
     int retval=0;
     int conres;
+    int on=1;
 
     pthread_mutex_lock(&ift->shared->t_mutex);
     for (;;) {
@@ -86,6 +131,10 @@ int reconnect(iface_t *ifa)
                         retval=-1;
                         break;
                     }
+                    if (ifa->direction != IN)
+                        if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,
+                                sizeof(on)) < 0)
+                            logerr(errno,"Could not disable Nagle on new tcp connection");
                     conres=connect(ift->fd,(const struct sockaddr *)
                             &ift->shared->sa,ift->shared->sa_len);
                 }
@@ -101,14 +150,14 @@ int reconnect(iface_t *ifa)
     pthread_mutex_unlock(&ift->shared->t_mutex);
     return(retval);
 }
-    
+
 ssize_t reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    ssize_t nread,ret;
+    ssize_t nread;
     int fflags;
 
-    /* Make socket non-blocking so we don'hold the mutex longer
+    /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
     if ((fflags=fcntl(ift->fd,F_GETFL)) < 0) {
         logerr(errno,"Failed to get socket flags");
@@ -124,7 +173,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     if ((nread=read(ift->fd,buf,bsize)) <= 0) {
         if (nread == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
             /* An actual error as opposed to success but would block */
-            for (ret=-1;ret!=0;) {
+            for (nread=-1;nread!=0;) {
                 close(ift->fd);
                 if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
                         ift->shared->protocol)) < 0) {
@@ -134,11 +183,12 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                 }
 
                 sleep(ift->shared->retry);
-                ret=connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
+                nread=connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
                         ift->shared->sa_len);
             }
+        } else {
+            nread=0;
         }
-        nread=0;
     }
 
     if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
@@ -146,6 +196,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
         nread=-1;
     }
 
+    (void) establish_keepalive(ift);
     pthread_mutex_unlock(&ift->shared->t_mutex);
     return(nread);
 }
@@ -155,12 +206,21 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     ssize_t nread;
 
-    if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
+    /* Man pages lie!  On FreeBSD, Linux and OS X, SIGPIPE is NOT delivered
+     * to a process reading from socket which times out due to unreplied to
+     * keepalives.  Instead the read exits with ETIMEDOUT
+     */
+    for(;;) {
+        if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
             if (!flag_test(ifa,F_PERSIST))
-                return nread;
+                break;
             if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
                 logerr(errno,"failed to reconnect tcp connection");
+                break;
             }
+        } else {
+            break;
+        }
     }
     return nread;
 }
@@ -330,6 +390,10 @@ iface_t *init_tcp(iface_t *ifa)
     int i;
     struct kopts *opt;
     long retry=5;
+    int keepalive=-1;
+    unsigned keepidle=0;
+    unsigned keepintvl=0;
+    unsigned keepcnt=0;
 
     host=port=NULL;
 
@@ -340,6 +404,9 @@ iface_t *init_tcp(iface_t *ifa)
 
     ift->qsize=DEFTCPQSIZE;
     ift->shared=NULL;
+
+    if (flag_test(ifa,F_PERSIST))
+	    keepalive=1;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
@@ -365,15 +432,46 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"Invalid retry value %s",opt->val);
                 return(NULL);
             }
-        }  else if (!strcasecmp(opt->var,"qsize")) {
+        } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(ift->qsize=atoi(opt->val))) {
                 logerr(0,"Invalid queue size specified: %s",opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"keepalive")) {
+            if (!strcasecmp(opt->val,"yes"))
+                keepalive=1;
+            else if (!strcasecmp(opt->val,"no"))
+                keepalive=0;
+            else {
+                logerr(0,"keepalive must be \"yes\" or \"no\"");
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"keepcnt")) {
+            if (!(keepcnt=atoi(opt->val))) {
+                logerr(0,"Invalid keepcnt value specified: %s",opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"keepintvl")) {
+            if (!(keepintvl=atoi(opt->val))) {
+                logerr(0,"Invalid keepintvl value specified: %s",opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"keepidle")) {
+            if (!(keepidle=atoi(opt->val))) {
+                logerr(0,"Invalid keepidle value specified: %s",opt->val);
                 return(NULL);
             }
         } else  {
             logerr(0,"unknown interface option %s\n",opt->var);
             return(NULL);
         }
+    }
+
+    if (keepalive == -1) {
+        if (flag_test(ifa,F_PERSIST))
+            keepalive=1;
+        else
+            keepalive=0;
     }
 
     if (*conntype == 'c') {
@@ -458,6 +556,10 @@ iface_t *init_tcp(iface_t *ifa)
         (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
         ift->shared->donewith=1;
         ift->shared->protocol=aptr->ai_protocol;
+        ift->shared->keepalive=keepalive;
+        ift->shared->keepidle=keepidle;
+        ift->shared->keepintvl=keepintvl;
+        ift->shared->keepcnt=keepcnt;
     }
 
     freeaddrinfo(abase);
@@ -472,6 +574,35 @@ iface_t *init_tcp(iface_t *ifa)
         if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
             logerr(errno,"Could not disable Nagle algorithm for tcp socket");
     }
+
+    if (keepalive) {
+        if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0)
+            logerr(errno,"Could not enable keepalives on tcp socket");
+
+        if (keepidle)
+#ifdef __APPLE__
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle,
+                    sizeof(keepidle)) < 0)
+                logerr(errno,"Could not set tcp keepidle");
+#else
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle,
+                    sizeof(keepidle)) < 0)
+                logerr(errno,"Could not set tcp keepidle");
+#endif
+#if !defined (__APPLE__) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1090
+
+        if (keepintvl)
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl,
+                    sizeof(keepintvl)) < 0)
+                logerr(errno,"Could not set tcp keepintvl");
+
+        if (keepcnt)
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,
+                    sizeof(keepcnt)) < 0)
+                logerr(errno,"Could not set tcp keepcnt");
+#endif
+    }
+
 
     ifa->cleanup=cleanup_tcp;
     ifa->info = (void *) ift;

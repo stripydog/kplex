@@ -262,6 +262,10 @@ The exact number will be system dependent but it will certainly be "enough".
     port=<port>
     persist=[yes|no]
     retry=<seconds>
+    keepalive=[yes|no]
+    keepidle=<keepidle seconds>
+    keepintvl=<keepinterval seconds> * Not Mac OS X < 10.9
+    keepcnt=<keep count>   * Not Mac OS X < 10.9
         Where:
             <mode> is either "server" or "client". If not specified, defaults to
             "client".
@@ -288,6 +292,15 @@ The exact number will be system dependent but it will certainly be "enough".
             <seconds> is the number of seconds to wait before each attempt at
             reconnecting a lost tcp connection.  The "retry" option is only
             valid in conjunction with "persist=yes"
+            <keepidle seconds> is the number of seconds of inactivity on a tcp
+            connection to wait before sending the first keepalive probe (see
+            below).  Only valid with "keepalive=yes".
+            <keep interval seconds> is the number of seconds to wait between
+            each keepalive probe after the first (see below).  Only valid with
+            "keepalive=yes" and not available for Mac OS X prior to Mavericks.
+            <keep count> is the number of un-replied to keepalive probes  (see
+            below) before a tcp connection is considered lost.  Only valid with
+            "keepalive=yes" and not available for Mac OS X prior to Mavericks.
 
 For most purposes you can just specify "tcp:direction=both,mode=server" to
 create a bi-directional tcp server.
@@ -299,12 +312,35 @@ The interface will shut down, but other interfaces will continue to operate.  If
 reconnect when the connection is lost.  When attempting to reconnect an outbound
 or bi-directional connection, kplex will discard all but the last message in its
 queue to minimise the amount of potentially stale data arriving at the server.
-Lost connections may be detected when an outbound interface attempts to
-write to a server which has gone away.  For inbound client data connections or
-outbound client connections where no data is passed, detection of a lost
-connection may be system dependent.  See documentation for your OS regarding
-use of keepalive packets on tcp connections.  In server mode, kplex will never
-attempt to reconnect a lost tcp connection.
+The delay in seconds between successive attempt at reconnection may be specified
+using the "retry" option.  The default is an agressive 5 seconds.
+
+kplex will detect a dropped connection if the other end closes down "cleanly",
+i.e. the program it is connecting to shuts down or the machine it is running on
+is gracefully shut down.  kplex may also detect a failed endpoint if it gets no
+response to data it is attempting to write.  It may not, however, be able to
+detect a failed endpoint if it is purely reading from the other end and it is
+not notified that the data source has gone away.  This may frequently happen if
+connecting from behind NAT (NAT mappings are lost) or if the other computer
+crashes or has power removed.  In these cases it is useful to specify the
+"keepalive=yes" option (the default is "no").  This will cause tcp to send
+probes to the remote end point to check that it is still "alive".  The first
+probe is sent after <keepidle seconds> of inactivity.  The default value will be
+system dependant but is usually 2 hours.  If no reply is received to this probe,
+further probes are sent <keepinterval seconds> apart.  If <keep count> probes
+are sent without reply, kplex considers the connection dropped and will attempt
+to reconnect.  The default values for the interval between keepalive probes and
+the number sent before the connection is considered lost are system dependant,
+but invariably higher than desirable fro kplex's purposes.  On Mac OS X versions
+prior to Mavericks, only the delay before the initial probe is configurable from
+within kplex, but the other two values are configurable on a system-wide basis
+with sysctl(8).
+
+A suggested set of values for these parameters might be:
+keepalive=yes,keepidle=10,keepintvl=5,keepcnt=4
+which will probe an idle connection after 10 seconds and continue to do so 4
+times at 5 second intervals before dropping the connection if no reply is
+received.
 
 Broadcast Interfaces
 --------------------
@@ -570,7 +606,7 @@ You have 3 GPS sources available. The main GPS is fed via a serial connection
 you have named "serial1".  A second is available from a USB GPS you have
 named "USBpuck".  As a last resort you have your phone transmitting nmea over
 tcp on an input you have named "phone".  You might specify:
-failover:GP***:0:serial1:30:USBpuck:60:phone
+failover=GP***:0:serial1:30:USBpuck:60:phone
 This will always pass sentences with a talker id of "GP" from the interface
 named "serial1". If no "GP" sentences are seen on serial1 for 30 seconds, 
 kplex will pass sentences matching "GP***" from USBpuck until a "GP***" sentence

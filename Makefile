@@ -15,7 +15,7 @@ endif
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o
 
 kplex: $(objects)
-	cc -o kplex $(objects) $(LFLAGS)
+	$(CC) -o kplex $(objects) $(LFLAGS)
 
 tcp.o: tcp.h
 gofree.o: tcp.h

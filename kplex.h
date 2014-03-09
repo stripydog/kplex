@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #ifdef __APPLE__
+#include <AvailabilityMacros.h>
 #define KPLEXHOMECONF "Library/Preferences/kplex.ini"
 #else
 #define KPLEXHOMECONF ".kplex.conf"
