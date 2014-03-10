@@ -405,9 +405,6 @@ iface_t *init_tcp(iface_t *ifa)
     ift->qsize=DEFTCPQSIZE;
     ift->shared=NULL;
 
-    if (flag_test(ifa,F_PERSIST))
-	    keepalive=1;
-
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
             host=opt->val;
@@ -468,9 +465,17 @@ iface_t *init_tcp(iface_t *ifa)
     }
 
     if (keepalive == -1) {
-        if (flag_test(ifa,F_PERSIST))
+        if (flag_test(ifa,F_PERSIST)){
             keepalive=1;
-        else
+            if (!keepidle)
+                keepidle=30;
+#if !defined (__APPLE__) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1090
+            if (!keepintvl)
+                keepintvl=10;
+            if (!keepcnt)
+                keepcnt=3;
+#endif
+        } else
             keepalive=0;
     }
 

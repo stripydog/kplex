@@ -263,9 +263,9 @@ The exact number will be system dependent but it will certainly be "enough".
     persist=[yes|no]
     retry=<seconds>
     keepalive=[yes|no]
-    keepidle=<keepidle seconds>
-    keepintvl=<keepinterval seconds> * Not Mac OS X < 10.9
-    keepcnt=<keep count>   * Not Mac OS X < 10.9
+    keepidle=<keepidle>
+    keepintvl=<keepinterval>    * Not Mac OS X < 10.9
+    keepcnt=<count>             * Not Mac OS X < 10.9
         Where:
             <mode> is either "server" or "client". If not specified, defaults to
             "client".
@@ -292,13 +292,13 @@ The exact number will be system dependent but it will certainly be "enough".
             <seconds> is the number of seconds to wait before each attempt at
             reconnecting a lost tcp connection.  The "retry" option is only
             valid in conjunction with "persist=yes"
-            <keepidle seconds> is the number of seconds of inactivity on a tcp
+            <keepidle> is the number of seconds of inactivity on a tcp
             connection to wait before sending the first keepalive probe (see
             below).  Only valid with "keepalive=yes".
-            <keep interval seconds> is the number of seconds to wait between
+            <keepinterval> is the number of seconds to wait between
             each keepalive probe after the first (see below).  Only valid with
             "keepalive=yes" and not available for Mac OS X prior to Mavericks.
-            <keep count> is the number of un-replied to keepalive probes  (see
+            <count> is the number of un-replied to keepalive probes  (see
             below) before a tcp connection is considered lost.  Only valid with
             "keepalive=yes" and not available for Mac OS X prior to Mavericks.
 
@@ -325,22 +325,23 @@ connecting from behind NAT (NAT mappings are lost) or if the other computer
 crashes or has power removed.  In these cases it is useful to specify the
 "keepalive=yes" option (the default is "no").  This will cause tcp to send
 probes to the remote end point to check that it is still "alive".  The first
-probe is sent after <keepidle seconds> of inactivity.  The default value will be
+probe is sent after <keepidle> seconds of inactivity.  The default value will be
 system dependant but is usually 2 hours.  If no reply is received to this probe,
-further probes are sent <keepinterval seconds> apart.  If <keep count> probes
+further probes are sent <keepinterval> seconds apart.  If <count> probes
 are sent without reply, kplex considers the connection dropped and will attempt
 to reconnect.  The default values for the interval between keepalive probes and
 the number sent before the connection is considered lost are system dependant,
-but invariably higher than desirable fro kplex's purposes.  On Mac OS X versions
+but invariably higher than desirable for kplex's purposes.  On Mac OS X versions
 prior to Mavericks, only the delay before the initial probe is configurable from
 within kplex, but the other two values are configurable on a system-wide basis
 with sysctl(8).
 
-A suggested set of values for these parameters might be:
-keepalive=yes,keepidle=10,keepintvl=5,keepcnt=4
-which will probe an idle connection after 10 seconds and continue to do so 4
-times at 5 second intervals before dropping the connection if no reply is
-received.
+If "persist=yes" is specified for a tcp client connection but no "keepalive="
+option is given, keepalives will default to "on" and unless explicitly specified
+otherwise, the following values will be set:
+keepidle=30
+keepintvl=10 (Not Mac OS X prior to 10.9)
+keepcnt=3 (Not Mac OS X prior to 10.9)
 
 Broadcast Interfaces
 --------------------
