@@ -267,6 +267,12 @@ struct iface *init_serial (struct iface *ifa)
                 baud=B9600;
             else if (!strcmp(opt->val,"4800"))
                 baud=B4800;
+            else if (!strcmp(opt->val,"19200"))
+                baud=B19200;
+            else if (!strcmp(opt->val,"57600"))
+                baud=B57600;
+            else if (!strcmp(opt->val,"115200"))
+                baud=B115200;
             else {
                 logerr(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
                 return(NULL);
@@ -373,6 +379,12 @@ struct iface *init_pty (struct iface *ifa)
                 baud=B9600;
             else if (!strcmp(opt->val,"4800"))
                 baud=B4800;
+            else if (!strcmp(opt->val,"19200"))
+                baud=B19200;
+            else if (!strcmp(opt->val,"57600"))
+                baud=B57600;
+            else if (!strcmp(opt->val,"115200"))
+                baud=B115200;
             else {
                 logerr(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
                 return(NULL);
