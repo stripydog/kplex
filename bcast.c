@@ -157,11 +157,35 @@ void write_bcast(struct iface *ifa)
 ssize_t read_bcast(struct iface *ifa, char *buf)
 {
     struct if_bcast *ifb=(struct if_bcast *) ifa->info;
-    struct sockaddr_storage src;
+    struct sockaddr_in src;
+    struct ignore_addr *igp;
     socklen_t sz = (socklen_t) sizeof(src);
+    ssize_t nread;
 
 
-    return recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
+    do {
+        nread = recvfrom(ifb->fd,buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
+        /* Probably superfluous check that we got the right size
+         * structure back */
+        if (sz != (socklen_t) sizeof(src)) {
+            sz = (socklen_t) sizeof(src);
+            continue;
+        }
+
+        /* Compare the source address to the list of interfaces we're
+         * ignoring */
+        pthread_rwlock_rdlock(&sysaddr_lock);
+        for (igp=ignore;igp;igp=igp->next) {
+            if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
+                break;
+        }
+        pthread_rwlock_unlock(&sysaddr_lock);
+        /* If igp points to anything, we broke out of the above loop
+         * on a match. Drop the packet and carry on */
+        if (igp == NULL)
+            break;
+    } while (1);
+    return nread;
 }
 
 struct iface *init_bcast(struct iface *ifa)

@@ -515,8 +515,12 @@ iface_t *parse_arg(char *arg)
         ifp->type = TCP;
     else if (!strcasecmp(arg,"broadcast"))
         ifp->type = BCAST;
+    else if (!strcasecmp(arg,"bcast"))
+        ifp->type = BCAST;
     else if (!strcasecmp(arg,"pty"))
         ifp->type = PTY;
+    else if (!strcasecmp(arg,"multicast"))
+        ifp->type = MCAST;
     else if (!strcasecmp(arg,"mcast"))
         ifp->type = MCAST;
 /*

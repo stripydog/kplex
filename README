@@ -88,7 +88,9 @@ where:
         "file": file (or standard in/out)
         "tcp": nmea over TCP
         "broadcast": nmea over UDP broadcast
-        "mcast": nmea over UDP multicast
+        "bcast": synonym for "broadcast"
+        "multicast": nmea over UDP multicast
+        "mcast": synonym for "multicast"
         "pty": serial nmea data over a pseudo terminal
         "gofree": nmea over TCP announced by Navico's "GoFree" protocol
     <option> is one or more options of the form <var>=<val>. Some options are
@@ -326,11 +328,11 @@ crashes or has power removed.  In these cases it is useful to specify the
 "keepalive=yes" option (the default is "no").  This will cause tcp to send
 probes to the remote end point to check that it is still "alive".  The first
 probe is sent after <keepidle> seconds of inactivity.  The default value will be
-system dependant but is usually 2 hours.  If no reply is received to this probe,
+system dependent but is usually 2 hours.  If no reply is received to this probe,
 further probes are sent <keepinterval> seconds apart.  If <count> probes
 are sent without reply, kplex considers the connection dropped and will attempt
 to reconnect.  The default values for the interval between keepalive probes and
-the number sent before the connection is considered lost are system dependant,
+the number sent before the connection is considered lost are system dependent,
 but invariably higher than desirable for kplex's purposes.  On Mac OS X versions
 prior to Mavericks, only the delay before the initial probe is configurable from
 within kplex, but the other two values are configurable on a system-wide basis
@@ -426,8 +428,9 @@ node's network stack needs to process.
             service "nmea-0183" and if that fails the IANA assigned port for
             nmea-0183 (10110) is used.
 
-A multicast group address to used must be specified for an "mcast:" interface.
-For link local IPv6 multicast addresses, an interface device must be specified.
+A multicast group address to used must be specified for a "multicast:"
+interface.  For link local IPv6 multicast addresses, an interface device must 
+be specified.
 This may be done in one of two ways:
     1) by appending the multicast group address with "%" followed by the
     interface name, for example:
@@ -673,7 +676,7 @@ multicast group ff05::10:110 on the default port and a data log file which
 appends an RMC sentence once per hour:
 kplex serial:direction=in,filename=/dev/ttyUSB0 \
     tcp:mode=server,direction=out \
-    mcast:group=ff05::10:110,direction=out \
+    multicast:group=ff05::10:110,direction=out \
     file:filename=/var/tmp/datalog,direction=out,append=yes,ofilter=~GPRMC/3600:-all
 
 Configuration File syntax
