@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2013
+ * Copyright Keith Young 2012-2014
  * For copying information, see the file COPYING distributed with this file
  */
 

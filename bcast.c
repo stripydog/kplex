@@ -1,6 +1,6 @@
 /* bcast.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2013
+ * Copyright Keith Young 2012 - 2014
  * For copying information see the file COPYING distributed with this software
  *
  * This is hideous and proves what an abomination IPv4 broadcast is.
@@ -36,6 +36,16 @@ struct if_bcast {
     struct sockaddr_in laddr;       /* local (bind) address */
 };
 
+/* Prevention of re-reading what has been written by a bi-directional interface
+ * is accomplished here by adding source addresses of outgoing interfaces to a
+ * list of addresses to ignore.  The list is protected by a reader/writer lock but
+ * this is not supported on some embedded platforms.  In fact, list manipulation is
+ * currently only performed when single threaded so we can forget locking
+ * completely.  This code will be re-introduced when interfaces addition/deletion
+ * becomes dynamic at which point we'll do something sensible with the
+ * _POSIX_READER_WRITER_LOCKS macro.
+ */
+#if 0
 /* mutex for shared broadcast structures */
 pthread_rwlock_t sysaddr_lock;
 
@@ -51,6 +61,7 @@ void init_bcast_lock(void)
     if (pthread_rwlock_init(&sysaddr_lock,NULL) == 0)
         bcast_rwlock_initialized=1;
 }
+#endif
 
 /*
  * Duplicate broadcast specific info
@@ -171,15 +182,18 @@ ssize_t read_bcast(struct iface *ifa, char *buf)
             sz = (socklen_t) sizeof(src);
             continue;
         }
-
         /* Compare the source address to the list of interfaces we're
          * ignoring */
+#if 0
         pthread_rwlock_rdlock(&sysaddr_lock);
+#endif
         for (igp=ignore;igp;igp=igp->next) {
             if (igp->iaddr.sin_addr.s_addr == src.sin_addr.s_addr)
                 break;
         }
+#if 0
         pthread_rwlock_unlock(&sysaddr_lock);
+#endif
         /* If igp points to anything, we broke out of the above loop
          * on a match. Drop the packet and carry on */
         if (igp == NULL)
@@ -209,11 +223,13 @@ struct iface *init_bcast(struct iface *ifa)
     }
     memset(ifb,0,sizeof(struct if_bcast));
 
+#if 0
     if (pthread_once(&bcast_init,init_bcast_lock) != 0 ||
             bcast_rwlock_initialized != 1) {
         logerr(errno,"rwlock initialization failed");
         return(NULL);
     }
+#endif
 
     ifname=bname=NULL;
 
@@ -263,13 +279,17 @@ struct iface *init_bcast(struct iface *ifa)
         else
             ifb->laddr.sin_addr.s_addr = htonl(INADDR_ANY);
     } else {
+#if 0
         pthread_rwlock_wrlock(&sysaddr_lock);
+#endif
         if (ifap == NULL)
             if (getifaddrs(&ifap) < 0) {
                 logerr(errno,"Error getting interface info");
                 return(NULL);
         }
+#if 0
         pthread_rwlock_unlock(&sysaddr_lock);
+#endif
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
             if (!strcmp(ifname,ifp->ifa_name)) {
                 iffound++;
@@ -344,7 +364,9 @@ struct iface *init_bcast(struct iface *ifa)
 
         /* find the end of the linked list, or a structure with the
          * ignore address already in it */
+#if 0
         pthread_rwlock_wrlock(&sysaddr_lock);
+#endif
         for (igpp=&ignore;*igpp;igpp=&(*igpp)->next)
         /* DANGER! Only checks address, not port. Need to change this later
          * if port becomes significant */
@@ -355,7 +377,9 @@ struct iface *init_bcast(struct iface *ifa)
         /* Tack on new address if not a duplicate */
         if (*igpp == NULL)
             *igpp=newig;
+#if 0
         pthread_rwlock_unlock(&sysaddr_lock);
+#endif
 
         /* write queue initialization */
         if ((ifa->q = init_q(qsize)) == NULL) {

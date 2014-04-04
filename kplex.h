@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012-2013
+ * Copyright Keith Young 2012-2014
  * For copying information see the file COPYING distributed with this software
  */
 #include <sys/types.h>

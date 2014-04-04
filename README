@@ -442,8 +442,8 @@ If a device is not specified in one of the above ways for multicast addresses
 other than IPv6 link and interface local groups, the routing table will be used
 to select the outgoing interface for multicast packets.
 
-GoFree Interfaces
------------------
+GoFree Interfaces (EXPERIMENTAL)
+--------------------------------
 
 GoFree is Navico's service discovery protocol which allows applications to
 connect to a network services without knowing details of its address.  A
@@ -759,19 +759,6 @@ Q: Is this free software?
 A: Yes. As in "Beer" and as in "Speech".  It is released under the terms of
    GPLv3 (see the COPYING file which should be included with this software)
 
-Q: Hasn't this already been done?
-A: Not in free software for linux that I'm aware of. Although it possibly has.
-   I've seen something for windows.  socat can translate lots of things to lots
-   of things, but this multiplexes lots of things to lots of things. For linux.
-   Including ptys, which is important if you want to tap off a feed for a
-   program which doesn't support network data.
-
-Q: If it *has* been done before, why is this even interesting?
-A: It supports IPv6, it supports multicast, and it's multithreaded.
-
-Q: Who runs IPv6 on their boat?
-A: Me.  Actually that's about it.
-
 Q: Does this run on a raspberry pi?
 A: Yes.  Note the 3.3v weirdness of the serial interface though if not using
    serial to usb adaptors.
@@ -791,8 +778,10 @@ A: Originally it was called "mplex", but that's the name of an mpeg stream
 Q: Is this available for windows/plan9/haiku/solaris
 A: It shouldn't be much work to port to another POSIX-compliant system. If
    anyone genuinely wants such a thing let me know.  For windows a better plan
-   would be to port it all to java (on the to do list). Solaris would already
-   be supported if Larry hadn't turned it all to the dark side.
+   would be to port it all to java (on the to do list). It has been ported to
+   Solaris but the ifdefs make the code uglier and Larry has turned my previous
+   OS of choice to the darkside so support is not included in the mainstream
+   codebase.
 
 Q: I am a venture capitalist with $20m dollars to employ someone who can write
    multithreaded IPv6 network code and also look after my infrequently used

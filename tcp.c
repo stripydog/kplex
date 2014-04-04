@@ -1,6 +1,6 @@
 /* tcp.c
  * This file is part of kplex
- * Copyright Keith Young 2012-2013
+ * Copyright Keith Young 2012-2014
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -118,6 +118,7 @@ int reconnect(iface_t *ifa)
         if ((send(ift->fd,sptr->data,sptr->len,0)) <0) {
             senblk_free(sptr,ifa->q);
             switch(errno) {
+            case EPIPE:
             case ECONNREFUSED:
             case ENETUNREACH:
             case ETIMEDOUT:

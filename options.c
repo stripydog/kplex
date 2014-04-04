@@ -1,6 +1,6 @@
 /* options.c.
  * This flie is part of kplex.
- * Copyright Keith Young 2012-2013
+ * Copyright Keith Young 2012-2014
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command

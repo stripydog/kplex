@@ -1,6 +1,6 @@
 /* tcp.h
  * This file is part of kplex
- * Copyright Keith Young 2013
+ * Copyright Keith Young 2013-2014
  * For copying information see the file COPYING distributed with this software
  */
 
