@@ -1129,7 +1129,7 @@ int main(int argc, char ** argv)
     char *config=NULL;
     iface_t  *engine;
     struct if_engine *ifg;
-    iface_t *ifptr,*ifptr2;
+    iface_t *ifptr,*ifptr2,*rptr;
     iface_t **tiptr;
     unsigned int i=1;
     int opt,err=0;
@@ -1287,10 +1287,17 @@ int main(int argc, char ** argv)
 
         ifptr->lists = &lists;
 
-        if ((ifptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
-            logerr(0,"Failed to initialize Interface");
-            timetodie++;
-            break;
+        if ((rptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
+            logerr(0,"Failed to initialize Interface %s",(ifptr->name)?
+                    ifptr->name:"(unnamed)");
+            if (!flag_test(ifptr,F_OPTIONAL)) {
+                timetodie++;
+                break;
+            }
+            /* Free all resources associated with interface */
+            /* This is a bigger task than it looks */
+            free(ifptr);
+            continue;
         }
         for (;ifptr;ifptr = ifptr->next) {
         /* This loop should be done once for IN or OUT interfaces twice for

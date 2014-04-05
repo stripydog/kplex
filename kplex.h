@@ -49,6 +49,7 @@
 /* Iinterface flags */
 #define F_PERSIST 1
 #define F_LOOPBACK 2
+#define F_OPTIONAL 4
 
 #define flag_test(a,b) (a->flags & b)
 #define flag_set(a,b) (a->flags |= b)

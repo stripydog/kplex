@@ -362,6 +362,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             flag_clear(ifp,F_LOOPBACK);
         } else
             return(-2);
+    } else if (!strcmp(var,"optional")) {
+        if (!strcasecmp(val,"yes")) {
+            flag_set(ifp,F_OPTIONAL);
+        } else if (!strcasecmp(val,"no")) {
+            flag_clear(ifp,F_OPTIONAL);
+        } else
+            return(-2);
     } else if (!strcasecmp(var,"name")) {
         if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
             return(-1);
