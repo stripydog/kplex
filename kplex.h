@@ -60,6 +60,9 @@
 #define TAG_MS 2
 #define TAG_SRC 4
 
+extern int debuglevel;
+#define DEBUG(level,...) if (debuglevel >= level) logdebug(__VA_ARGS__)
+
 /* parsing states */
 enum sstate {
     SEN_NODATA,
@@ -257,6 +260,7 @@ void free_filter(sfilter_t *);
 void logerr(int,char *,...);
 void logterm(int,char *,...);
 void logtermall(int,char *,...);
+void logdebug(char *,...);
 void logwarn(char *,...);
 void loginfo(char *,...);
 void initlog(int);

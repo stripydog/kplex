@@ -672,7 +672,8 @@ void free_if_data(iface_t *ifa)
     free_filter(ifa->ofilter);
 
     if (ifa->info) {
-        ifa->cleanup(ifa);
+        if (ifa->cleanup)
+            ifa->cleanup(ifa);
         free(ifa->info);
     }
 
@@ -999,7 +1000,6 @@ int calcsum(char *buf, size_t len)
 
     return c;
 }
-        
 
 /* Add tag data
  * Args: Interface pointer, buffer for tags
@@ -1124,6 +1124,7 @@ void do_read(iface_t *ifa)
 
 int main(int argc, char ** argv)
 {
+    long templ;
     pthread_t tid;
     pid_t pid;
     char *config=NULL;
@@ -1149,14 +1150,24 @@ int main(int argc, char ** argv)
     pthread_mutexattr_t mattr;
     struct rlimit lim;
     int gotinputs=0;
+    int debuglevel=0;                    /* debug off by default */
 
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&lists.io_mutex,&mattr);
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"f:o:V")) != -1) {
+    while ((opt=getopt(argc,argv,"d:f:o:V")) != -1) {
         switch (opt) {
+            case 'd':
+                if ((((templ=strtol(optarg,NULL,0)) == 0) &&
+                        (errno == EINVAL || errno == ERANGE )) ||
+                        (templ < 0) || (templ > 9)) {
+                    logerr(errno,"Bad debug level %s: Must be 1-9",optarg);
+                    err++;
+                } else
+                    debuglevel=templ;
+                break;
             case 'o':
                 if (cmdlineopt(&options,optarg) < 0)
                     err++;
@@ -1177,7 +1188,7 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-d <1-9>] [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
 
@@ -1187,15 +1198,18 @@ int main(int argc, char ** argv)
      */
     if ((config && (strcmp(config,"-"))) ||
             (!config && (config = get_def_config()))) {
+        DEBUG(1,"Using config file %s",config);
         if ((engine=parse_file(config)) == NULL) {
             fprintf(stderr,"Error parsing config file: %s\n",errno?
                     strerror(errno):"Syntax Error");
             exit(1);
         }
-    } else
+    } else {
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
+        DEBUG(1,"No config file available");
         engine = get_default_global();
+    }
 
     proc_engine_options(engine,options);
 

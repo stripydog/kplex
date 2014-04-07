@@ -30,6 +30,23 @@ void initlog(int where)
         openlog(IDENT,LOG_NOWAIT,facility);
 }
 
+void logdebug(char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap,fmt);
+
+    if (facility >= 0)
+        vsyslog(LOG_DEBUG,fmt,ap);
+    else {
+        fprintf(stderr,"%s DEBUG: ",IDENT);
+        vfprintf(stderr,fmt,ap);
+        fputc('\n',stderr);
+    }
+    va_end(ap);
+    return;
+}
+
 void loginfo(char *fmt, ...)
 {
     va_list ap;
