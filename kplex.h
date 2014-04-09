@@ -236,10 +236,11 @@ void *ifdup_gofree(void *);
 
 ioqueue_t *init_q(size_t);
 
-senblk_t *next_senblk(ioqueue_t *q);
-senblk_t *last_senblk(ioqueue_t *q);
+senblk_t *next_senblk(ioqueue_t *);
+senblk_t *last_senblk(ioqueue_t *);
 void push_senblk(senblk_t *, ioqueue_t *);
 void senblk_free(senblk_t *, ioqueue_t *);
+void flush_queue(ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
 int link_to_initialized(iface_t *);

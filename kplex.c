@@ -473,7 +473,7 @@ senblk_t *last_senblk(ioqueue_t *q)
 
     pthread_mutex_lock(&q->q_mutex);
     /* Move all but last senblk on the queue to the free list */
-    if ((nptr=tptr=q->qhead) != NULL) {
+    if ((tptr=q->qhead) != NULL) {
         for (nptr=tptr->next;nptr;tptr=nptr,nptr=nptr->next) {
             tptr->next=q->free;
             q->free=tptr;
@@ -499,6 +499,24 @@ senblk_t *last_senblk(ioqueue_t *q)
     pthread_mutex_unlock(&q->q_mutex);
     return(tptr);
 }
+
+/*
+ * Flush a queue, returning anything on it to the free list
+ * Args: Queue to be flushed
+ * Returns: Nothing
+ * Side Effect: Returns anything on the queue to the free list
+ */
+void flush_queue(ioqueue_t *q)
+{
+    pthread_mutex_lock(&q->q_mutex);
+    if (q->qhead != NULL) {
+        q->qtail->next = q->free;
+        q->free=q->qhead;
+        q->qhead=q->qtail=NULL;
+    }
+    pthread_mutex_unlock(&q->q_mutex);
+}
+
 /*
  * Return a senblk to a queue's free list
  * Args: pointer to senblk, and pointer to the queue whose free list it is to
