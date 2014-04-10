@@ -15,6 +15,7 @@
 #include "version.h"
 #include <signal.h>
 #include <pwd.h>
+#include <time.h>
 #include <syslog.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -47,6 +48,20 @@ void killemall (int sig)
     timetodie++;
     pthread_cond_signal(&listp->dead_cond);
     pthread_mutex_unlock(&listp->io_mutex);
+}
+
+/* Sleep function not relying on SIGALRM for thread safety
+ * Unnecessary on many platforms but here to minimise portability issues
+ * Could do this with nanosleep() or select()
+ */
+int mysleep(time_t sleepytime)
+{
+    struct timespec rqtp;
+
+    rqtp.tv_sec = sleepytime;
+    rqtp.tv_nsec=0;
+
+    return (nanosleep(&rqtp,NULL));
 }
 
 /* functions */

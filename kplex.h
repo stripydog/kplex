@@ -217,6 +217,8 @@ struct if_engine {
     int logto;
 };
 
+int mysleep(time_t);
+
 iface_t *init_file( iface_t *);
 iface_t *init_serial(iface_t *);
 iface_t *init_bcast(iface_t *);

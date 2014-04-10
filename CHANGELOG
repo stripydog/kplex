@@ -5,6 +5,7 @@ v1.1: ????
 * Added GoFree support
 * Added loopback option
 * Added keepalive options to tcp interfaces
+* Added timeout option to tcp interfaces
 * Added more supported baud rates for serial and pty interfaces
 * More consistent interface specifiers for broadcast and multicast
 * Corrected bug in default port assignment for broadcast interfaces

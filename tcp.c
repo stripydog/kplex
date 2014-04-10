@@ -110,12 +110,9 @@ int reconnect(iface_t *ifa, int err)
     /* If the write timed out, we don't need to sleep before retrying */
     switch (err) {
     case EAGAIN:
-#ifndef __APPLE__
-    case EWOULDBLOCK:
-#endif
         break;
     default:
-        sleep(ift->shared->retry);
+        mysleep(ift->shared->retry);
     }
 
     /* Loop retrying until we reconnect or encounter an error which doesn't
@@ -140,7 +137,7 @@ int reconnect(iface_t *ifa, int err)
         case EHOSTUNREACH:
         case ENETDOWN:
         case ENETUNREACH:
-            sleep(ift->shared->retry);
+            mysleep(ift->shared->retry);
         case ETIMEDOUT:
             continue;
         default:
@@ -192,7 +189,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                     break;
                 }
 
-                sleep(ift->shared->retry);
+                mysleep(ift->shared->retry);
                 nread=connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
                         ift->shared->sa_len);
             }
