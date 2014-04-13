@@ -143,6 +143,11 @@ void read_file(iface_t *ifa)
 
     for(;;) {
         if ((ch = fgetc(ifc->fp)) == EOF) {
+            if (errno) {
+                if (errno == EINTR)
+                    errno=0;
+                break;
+            }
             if (feof(ifc->fp) && (flag_test(ifa,F_PERSIST))) {
                 if ((ifc->fp = freopen(ifc->filename,"r",ifc->fp)) == NULL) {
                     logerr(errno,"Failed to re-open FIFO %s for reading\n",

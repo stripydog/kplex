@@ -1,3 +1,25 @@
+v1.1: ????
+* Parsing algorithm changed to strip TAG blocks
+* Added optional TAG-based timestamping
+* Added optional TAG-based source identifiers
+* Added GoFree support
+* Added loopback option
+* Added keepalive options to tcp interfaces
+* Added timeout option to tcp interfaces
+* Added more supported baud rates for serial and pty interfaces
+* More consistent interface specifiers for broadcast and multicast
+* Corrected bug in default port assignment for broadcast interfaces
+* Fixed bugs in tcp persist code
+
+v1.0: 31st August 2013
+* Added multicast support
+* Added "persist" and "retry" options for tcp client interfaces
+* Added support for rate limiting
+* Disable Nagle algorithm on tcp interfaces
+* Fix bug in appending to non-existent files
+* Fix hang when configuration with no inputs specified
+* Corrected multiple typos in README
+
 v0.2.11: 25th June 2013
 * Fixed error with seatalk flag in serial.c
 * Fixed makefile for bsd/macos

@@ -264,6 +264,7 @@ The exact number will be system dependent but it will certainly be "enough".
     port=<port>
     persist=[yes|no]
     retry=<seconds>
+    timeout=<timeout>
     keepalive=[yes|no]
     keepidle=<keepidle>
     keepintvl=<keepinterval>    * Not Mac OS X < 10.9
@@ -294,6 +295,11 @@ The exact number will be system dependent but it will certainly be "enough".
             <seconds> is the number of seconds to wait before each attempt at
             reconnecting a lost tcp connection.  The "retry" option is only
             valid in conjunction with "persist=yes"
+            <timeout> is the number of seconds to wait for an output operation
+            to complete before assuming a connection has died, abandoning the
+            data send operation and attempting to reconnect the interface.  Only
+            valid with output or bi-directional interfaces and only in
+            conjunction with "persist=yes"
             <keepidle> is the number of seconds of inactivity on a tcp
             connection to wait before sending the first keepalive probe (see
             below).  Only valid with "keepalive=yes".
@@ -312,31 +318,32 @@ kplex will not attempt to reconnect if "persist=no" (the default) is specified.
 The interface will shut down, but other interfaces will continue to operate.  If
 "persist=yes" is specified for a client connection, kplex will attempt to
 reconnect when the connection is lost.  When attempting to reconnect an outbound
-or bi-directional connection, kplex will discard all but the last message in its
-queue to minimise the amount of potentially stale data arriving at the server.
+or bi-directional connection, kplex will discard all data in its queue to
+minimise the amount of potentially stale data arriving at the server.
 The delay in seconds between successive attempt at reconnection may be specified
 using the "retry" option.  The default is an agressive 5 seconds.
 
 kplex will detect a dropped connection if the other end closes down "cleanly",
 i.e. the program it is connecting to shuts down or the machine it is running on
-is gracefully shut down.  kplex may also detect a failed endpoint if it gets no
-response to data it is attempting to write.  It may not, however, be able to
-detect a failed endpoint if it is purely reading from the other end and it is
-not notified that the data source has gone away.  This may frequently happen if
-connecting from behind NAT (NAT mappings are lost) or if the other computer
-crashes or has power removed.  In these cases it is useful to specify the
-"keepalive=yes" option (the default is "no").  This will cause tcp to send
-probes to the remote end point to check that it is still "alive".  The first
-probe is sent after <keepidle> seconds of inactivity.  The default value will be
-system dependent but is usually 2 hours.  If no reply is received to this probe,
-further probes are sent <keepinterval> seconds apart.  If <count> probes
-are sent without reply, kplex considers the connection dropped and will attempt
-to reconnect.  The default values for the interval between keepalive probes and
-the number sent before the connection is considered lost are system dependent,
-but invariably higher than desirable for kplex's purposes.  On Mac OS X versions
-prior to Mavericks, only the delay before the initial probe is configurable from
-within kplex, but the other two values are configurable on a system-wide basis
-with sysctl(8).
+is gracefully shut down.  If the "timeout" option is specified, kplex will
+consider a connection dropped if it receives no acknowledgment to data it is
+attempting to send within the number of seconds specified in the argument.
+It may not so easily be able to detect a failed endpoint if it is purely reading
+from the other end and it is not notified that the data source has gone away.
+This may frequently happen if connecting from behind NAT (NAT mappings are lost)
+or if the other computer crashes or has power removed.  In these cases it is
+useful to specify the "keepalive=yes" option (the default is "no").  This will
+cause tcp to send probes to the remote end point to check that it is still
+"alive".  The first probe is sent after <keepidle> seconds of inactivity.  The
+default value will be system dependent but is usually 2 hours.  If no reply is
+received to this probe, further probes are sent <keepinterval> seconds apart.
+If <count> probes are sent without reply, kplex considers the connection dropped
+and will attempt to reconnect.  The default values for the interval between
+keepalive probes and the number sent before the connection is considered lost
+are system dependent, but invariably higher than desirable for kplex's purposes.
+On Mac OS X versions prior to Mavericks, only the delay before the initial probe
+is configurable from within kplex, but the other two values are configurable on
+a system-wide basis with sysctl(8).
 
 If "persist=yes" is specified for a tcp client connection but no "keepalive="
 option is given, keepalives will default to "on" and unless explicitly specified
@@ -590,7 +597,7 @@ use a particular source for one type of data if it is available, but allowing
 that type of data to be passed from another interface if it hasn't been seen
 on the preferred input interface for a specified period of time.  This behaviour
 is specified using the "failover=" directive in the [global] section of the
-configuration file or as a -o optoin on the command line. The format is:
+configuration file or as a -o option on the command line. The format is:
 failover=<filter>:<delay>:<interface>[:<delay>:<interface>]...
 Where:
     <filter> is a filter specifier as described in "Filtering" above

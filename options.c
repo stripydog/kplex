@@ -28,6 +28,15 @@ enum itype name2type(const char *str)
 {
     struct iftypedef *iftptr;
 
+    /* fudge! Special case for bcast/mcast compatibility. This is ugly:
+     * need to fix */
+    if (!strcmp(str+1,"cast")) {
+        if (*str == 'b')
+            return BCAST;
+        if (*str == 'm')
+            return MCAST;
+    }
+
     for (iftptr=iftypes; iftptr->index != END; iftptr++)
         if (!strcmp(str,iftptr->name))
             break;
