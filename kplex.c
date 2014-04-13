@@ -24,30 +24,13 @@
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
+pthread_t reaper;       /* tid of thread responsible for reaping */
 int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
+time_t graceperiod=3;
 
-/* Signal handlers */
-/* This one is used on receipt of SIGUSR1, used to tell an input interface
- * handler thread to terminate.  Output thread termination is handled a little
- * more gently giving them the opportunity to transmit buffered data */
-void terminate (int sig)
+void terminate(int sig)
 {
     pthread_exit((void *)&sig);
-}
-
-/*  Signal handler for externally generated termination signals: Current
- * implementation this handles SIGTERM and SIGINT */
-void killemall (int sig)
-{
-    struct iolists *listp;
-
-    listp = (struct iolists *) pthread_getspecific(ifkey);
-
-    /* io_mutex is declared as recursive, so we can do this here */
-    pthread_mutex_lock(&listp->io_mutex);
-    timetodie++;
-    pthread_cond_signal(&listp->dead_cond);
-    pthread_mutex_unlock(&listp->io_mutex);
 }
 
 /* Sleep function not relying on SIGALRM for thread safety
@@ -764,7 +747,8 @@ int unlink_interface(iface_t *ifa)
                     ifa->lists->engine->q->active=0;
                     pthread_cond_broadcast(&ifa->lists->engine->q->freshmeat);
                     pthread_mutex_unlock(&ifa->lists->engine->q->q_mutex);
-                    timetodie++;
+                    if (timetodie == 0)
+                        timetodie++;
                 }
             }
     }
@@ -793,7 +777,6 @@ void iface_destroy(void *ifptr)
     iface_t *ifa = (iface_t *) ifptr;
 
     sigset_t set,saved;
-
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
@@ -801,7 +784,7 @@ void iface_destroy(void *ifptr)
     if (ifa->tid) {
         unlink_interface(ifa);
         /* Signal the reaper thread */
-        pthread_cond_signal(&ifa->lists->dead_cond);
+        (void) pthread_kill(reaper,SIGUSR2);
     } else
         free_if_data(ifa);
 
@@ -1168,7 +1151,7 @@ int main(int argc, char ** argv)
     int opt,err=0;
     void *ret;
     struct kopts *options=NULL;
-    sigset_t set,saved;
+    sigset_t set;
     struct iolists lists = {
         /* initialize io_mutex separately below */
         .init_mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -1182,6 +1165,8 @@ int main(int argc, char ** argv)
     pthread_mutexattr_t mattr;
     struct rlimit lim;
     int gotinputs=0;
+    int rcvdsig;
+    struct sigaction sa;
 
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
@@ -1365,15 +1350,20 @@ int main(int argc, char ** argv)
         free_options(engine->options);
 
     pthread_setspecific(ifkey,(void *)&lists);
+    reaper=pthread_self();
 
     sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    sigaddset(&set, SIGTERM);
-    sigaddset(&set, SIGINT);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
-    signal(SIGINT,killemall);
-    signal(SIGTERM,killemall);
-    signal(SIGUSR1,terminate);
+    sa.sa_handler=terminate;
+    sa.sa_flags=0;
+    sigaction(SIGUSR1,&sa,NULL);
+
+    sigaddset(&set,SIGUSR1);
+    sigaddset(&set,SIGUSR2);
+    sigaddset(&set,SIGALRM);
+    sigaddset(&set,SIGTERM);
+    sigaddset(&set,SIGINT);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+    sigdelset(&set,SIGUSR1);
     signal(SIGPIPE,SIG_IGN);
     pthread_create(&tid,NULL,run_engine,(void *) engine);
 
@@ -1401,9 +1391,6 @@ int main(int argc, char ** argv)
         timetodie++;
     }
 
-    pthread_sigmask(SIG_SETMASK, &saved,NULL);
-    
-
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
      * until all the outputs have been reaped
@@ -1412,10 +1399,19 @@ int main(int argc, char ** argv)
      * inactive and shutting them down. Thus the last input exiting also shuts
      * everything down */
     while (lists.outputs || lists.inputs || lists.dead) {
-        while (lists.dead  == NULL && !timetodie)
-            pthread_cond_wait(&lists.dead_cond,&lists.io_mutex);
-        if (timetodie || (lists.outputs == NULL)) {
-            timetodie=0;
+        if (lists.dead  == NULL && (timetodie <= 0)) {
+            pthread_mutex_unlock(&lists.io_mutex);
+            (void) sigwait(&set,&rcvdsig);
+            pthread_mutex_lock(&lists.io_mutex);
+        }
+
+        if ((timetodie > 0) || ( lists.outputs == NULL && (timetodie == 0)) ||
+                rcvdsig == SIGTERM || rcvdsig == SIGINT) {
+            timetodie=-1;
+            signal(SIGTERM,SIG_IGN);
+            signal(SIGINT,SIG_IGN);
+            sigdelset(&set,SIGTERM);
+            sigdelset(&set,SIGINT);
             for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
                 pthread_kill(ifptr->tid,SIGUSR1);
             }
@@ -1423,11 +1419,19 @@ int main(int argc, char ** argv)
                 if (ifptr->q == NULL)
                     pthread_kill(ifptr->tid,SIGUSR1);
             }
+            alarm(graceperiod);            
+        }
+        if (rcvdsig == SIGALRM) {
+            sigdelset(&set,SIGALRM);
+            for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
+                if (ifptr->q)
+                    pthread_kill(ifptr->tid,SIGUSR1);
+            }
         }
         for (ifptr=lists.dead;ifptr;ifptr=lists.dead) {
             lists.dead=ifptr->next;
-                pthread_join(ifptr->tid,&ret);
-                free(ifptr);
+            pthread_join(ifptr->tid,&ret);
+            free(ifptr);
         }
     }
 

@@ -597,7 +597,7 @@ use a particular source for one type of data if it is available, but allowing
 that type of data to be passed from another interface if it hasn't been seen
 on the preferred input interface for a specified period of time.  This behaviour
 is specified using the "failover=" directive in the [global] section of the
-configuration file or as a -o optoin on the command line. The format is:
+configuration file or as a -o option on the command line. The format is:
 failover=<filter>:<delay>:<interface>[:<delay>:<interface>]...
 Where:
     <filter> is a filter specifier as described in "Filtering" above
