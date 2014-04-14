@@ -137,6 +137,11 @@ where:
         output on the interface.  The timestamp is in seconds if the value is
         "s" or milliseconds if the value is "ms".  Note that NMEA-0183v4
         timestamps do not take account of leap seconds.
+        "optional": If "optional=no" is specified or this option is not given,
+        kplex will exit if it cannot initialize the interface. If "optional=yes"
+        is specified, failure of the interface to initialize will only cause
+        kplex to exit if, as a result of it failing, kplex has no inputs or no
+        outputs.
 
 If source identifier and timestamps are both requested for an interface, they
 are combined into a single TAG block, source identifier first, e.g.:
@@ -723,6 +728,9 @@ logto=<facility>
 failover=<failover specification>
     Where <failover specification> is described in the "Failover" section
     above.
+graceperiod=<secs>
+    Where <secs> is the number of seconds to wait for output to be cleanly sent
+    before termination when kplex shuts down (default 3).
 
 As an example, the first example from the "example usage" section above could
 be specified in a configuration file:

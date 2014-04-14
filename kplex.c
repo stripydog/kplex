@@ -20,14 +20,20 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <inttypes.h>
 
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
 pthread_t reaper;       /* tid of thread responsible for reaping */
 int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
-time_t graceperiod=3;
+time_t graceperiod=3;   /* Grace period for unsent data before shutdown (secs)*/
 
+/* Signal handler for SIGUSR1 used by interface threads.  Note that this is
+ * highly dubious: pthread_exit() is not async safe.  No associated problems
+ * reported so far and if they do occur they should occur on exit, but this
+ * will be changed in the next release
+ */
 void terminate(int sig)
 {
     pthread_exit((void *)&sig);
@@ -980,6 +986,12 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
                 fprintf(stderr,"Unknown log facility \'%s\' specified\n",optr->val);
                 exit(1);
             }
+        } else if (!strcasecmp(optr->var,"graceperiod")) {
+            if (((graceperiod=(time_t) strtoumax(optr->val,NULL,0)) == 0) &&
+                    (errno)) {
+                fprintf(stderr,"Bad value for graceperiod: %s\n",optr->val);
+                exit(1);
+            }
         } else if (!strcasecmp(optr->var,"checksum")) {
             if (!strcasecmp(optr->val,"yes"))
                 e_info->checksum=1;
@@ -1163,16 +1175,13 @@ int main(int argc, char ** argv)
     .inputs = NULL,
     .dead = NULL
     };
-    pthread_mutexattr_t mattr;
     struct rlimit lim;
     int gotinputs=0;
     int debuglevel=0;                    /* debug off by default */
     int rcvdsig;
     struct sigaction sa;
 
-    pthread_mutexattr_init(&mattr);
-    pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&lists.io_mutex,&mattr);
+    pthread_mutex_init(&lists.io_mutex,NULL);
 
     /* command line argument processing */
     while ((opt=getopt(argc,argv,"d:f:o:V")) != -1) {
@@ -1206,7 +1215,7 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-d <1-9>] [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
 
@@ -1326,8 +1335,12 @@ int main(int argc, char ** argv)
                 timetodie++;
                 break;
             }
-            /* Free all resources associated with interface */
-            /* This is a bigger task than it looks */
+            /* Free all resources associated with interface
+             * This is a bigger task than it looks.  Before the "optional"
+             * flag this was not an issue as we'd just be exiting after this
+             * Now we need to clean up properly but not yet implemented.  This
+             * is a little memory leak with each failed init attempt
+             */
             free(ifptr);
             continue;
         }
@@ -1422,6 +1435,10 @@ int main(int argc, char ** argv)
     while (lists.outputs || lists.inputs || lists.dead) {
         if (lists.dead  == NULL && (timetodie <= 0)) {
             pthread_mutex_unlock(&lists.io_mutex);
+            /* Here we're waiting for SIGTERM/SIGINT (user shutdown requests),
+             * SIGUSR2 (notifications of termination from interface threads)
+             * and (later) SIGALRM to notify of the grace period expiry
+             */
             (void) sigwait(&set,&rcvdsig);
             pthread_mutex_lock(&lists.io_mutex);
         }
@@ -1429,6 +1446,9 @@ int main(int argc, char ** argv)
         if ((timetodie > 0) || ( lists.outputs == NULL && (timetodie == 0)) ||
                 rcvdsig == SIGTERM || rcvdsig == SIGINT) {
             timetodie=-1;
+            /* Once we've caught a user shutdown address we don't need to be
+             * told twice
+             */
             signal(SIGTERM,SIG_IGN);
             signal(SIGINT,SIG_IGN);
             sigdelset(&set,SIGTERM);
@@ -1440,10 +1460,15 @@ int main(int argc, char ** argv)
                 if (ifptr->q == NULL)
                     pthread_kill(ifptr->tid,SIGUSR1);
             }
-            alarm(graceperiod);            
+            /* Set up the graceperiod alarm */
+            if (graceperiod)
+                alarm(graceperiod);
         }
-        if (rcvdsig == SIGALRM) {
+        if (rcvdsig == SIGALRM || graceperiod == 0) {
             sigdelset(&set,SIGALRM);
+            /* Make sure we don't come back here with 0 graceperiod */
+            if (graceperiod == 0)
+                graceperiod=1;
             for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
                 if (ifptr->q)
                     pthread_kill(ifptr->tid,SIGUSR1);
