@@ -24,10 +24,10 @@
  */
 #define RECVBUFSZ 1472
 
-/* the ip_mreqn is needed to drop group membership when the interface exits */
+/* the ip_mreq is needed to drop group membership when the interface exits */
 struct if_gofree {
     int fd;
-    struct ip_mreqn ipmr;
+    struct ip_mreq ipmr;
 };
 
 /* We don't really have a use for name except for debugging. In this release
@@ -46,7 +46,7 @@ void cleanup_gofree(iface_t *ifa)
     /* Drop group membership from the interface, closed fd and exit */
 
     if (setsockopt(ifg->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,&ifg->ipmr,
-            sizeof(struct ip_mreqn)) < 0)
+            sizeof(struct ip_mreq)) < 0)
         logerr(errno,"IP_DROP_MEMBERSHIP failed");
 
     close(ifg->fd);
@@ -456,15 +456,13 @@ iface_t *init_gofree(iface_t *ifa)
             return(NULL);
         }
 
-        memcpy(&ifg->ipmr.imr_address,
+        memcpy(&ifg->ipmr.imr_interface,
                 &((struct sockaddr_in *)ifp->ifa_addr)->sin_addr,
                 sizeof(struct in_addr));
-        ifg->ipmr.imr_ifindex=ifindex;
 
         freeifaddrs(ifap);
     } else {
-        ifg->ipmr.imr_address.s_addr=INADDR_ANY;
-        ifg->ipmr.imr_ifindex=0;
+        ifg->ipmr.imr_interface.s_addr=INADDR_ANY;
     }
 
     if ((ifg->fd = socket(PF_INET,SOCK_DGRAM,0)) < 0) {
@@ -484,7 +482,7 @@ iface_t *init_gofree(iface_t *ifa)
     memcpy(&ifg->ipmr.imr_multiaddr,&maddr.sin_addr,sizeof(struct in_addr));
 
     if (setsockopt(ifg->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&ifg->ipmr,
-            sizeof(struct ip_mreqn)) < 0) {
+            sizeof(struct ip_mreq)) < 0) {
         logerr(errno,"Failed to join multicast group %s",GOFREE_GROUP);
         return(NULL);
     }

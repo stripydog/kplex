@@ -1,6 +1,6 @@
 /* mcast.c
  * This file is part of kplex
- * Copyright Keith Young 2013
+ * Copyright Keith Young 2013 - 2014
  * For copying information see the file COPYING distributed with this software
  *
  * Multicast interfaces
@@ -19,7 +19,7 @@ struct if_mcast {
     struct sockaddr_storage maddr;
     socklen_t asize;
     union {
-        struct ip_mreqn ipmr;
+        struct ip_mreq ipmr;
         struct ipv6_mreq ip6mr;
     } mr;
 };
@@ -51,7 +51,7 @@ void cleanup_mcast(iface_t *ifa)
     if (ifa->direction == IN) {
         if (ifb->maddr.ss_family == AF_INET) {
             if (setsockopt(ifb->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,
-                    &ifb->mr.ipmr,sizeof(struct ip_mreqn)) < 0)
+                    &ifb->mr.ipmr,sizeof(struct ip_mreq)) < 0)
                 logerr(errno,"IP_DROP_MEMBERSHIP failed");
         } else if (setsockopt(ifb->fd,IPPROTO_IPV6,IPV6_LEAVE_GROUP,
                     &ifb->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
@@ -251,7 +251,7 @@ struct iface *init_mcast(struct iface *ifa)
         memcpy(&ifm->mr.ipmr.imr_multiaddr,
                 &((struct sockaddr_in*) &ifm->maddr)->sin_addr,
                 sizeof(struct in_addr));
-        ifm->mr.ipmr.imr_address.s_addr=INADDR_ANY;
+        ifm->mr.ipmr.imr_interface.s_addr=INADDR_ANY;
     } else if (ifm->maddr.ss_family == AF_INET6) {
         memcpy(&ifm->mr.ip6mr.ipv6mr_multiaddr,
                 &((struct sockaddr_in6 *)&ifm->maddr)->sin6_addr,
@@ -328,10 +328,9 @@ struct iface *init_mcast(struct iface *ifa)
         }
 
         if (ifm->maddr.ss_family == AF_INET) {
-            memcpy(&ifm->mr.ipmr.imr_address,
+            memcpy(&ifm->mr.ipmr.imr_interface,
                     &((struct sockaddr_in *)ifp->ifa_addr)->sin_addr,
                     sizeof(struct in_addr));
-            ifm->mr.ipmr.imr_ifindex=ifindex;
         } else {
             ifm->mr.ip6mr.ipv6mr_interface=ifindex;
             if (linklocal)
@@ -343,7 +342,7 @@ struct iface *init_mcast(struct iface *ifa)
         if (ifa->direction != IN) {
                 if (ifm->maddr.ss_family==AF_INET) {
                     if (setsockopt(ifm->fd,IPPROTO_IP,IP_MULTICAST_IF,
-                            &ifm->mr.ipmr,sizeof(struct ip_mreqn)) < 0) {
+                            &ifm->mr.ipmr,sizeof(struct ip_mreq)) < 0) {
                         logerr(errno,"Failed to set multicast interface");
                         return(NULL);
                     }
@@ -358,8 +357,7 @@ struct iface *init_mcast(struct iface *ifa)
 
     } else {
         if (ifm->maddr.ss_family == AF_INET) {
-            ifm->mr.ipmr.imr_address.s_addr=INADDR_ANY;
-            ifm->mr.ipmr.imr_ifindex=0;
+            ifm->mr.ipmr.imr_interface.s_addr=INADDR_ANY;
         } else {
             if (linklocal) {
                 if (((struct sockaddr_in6 *)&ifm->maddr)->sin6_scope_id == 0) {
@@ -382,7 +380,7 @@ struct iface *init_mcast(struct iface *ifa)
     if (ifa->direction != OUT) {
         if (ifm->maddr.ss_family==AF_INET) {
             if (setsockopt(ifm->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&ifm->mr.ipmr,
-                    sizeof(struct ip_mreqn)) < 0) {
+                    sizeof(struct ip_mreq)) < 0) {
                 logerr(errno,"Failed to join multicast group %s",host);
                 return(NULL);
             }
