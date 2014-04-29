@@ -55,8 +55,9 @@ int establish_keepalive(struct if_tcp *ift)
 {
     int on=1;
     int err=0;
+    int smax=2048;
 
-    if (ift->shared->keepalive) {
+    if (ift->shared->keepalive)  {
         if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0) {
             logerr(errno,"Could not enable keepalives on tcp socket");
             return(-1);
@@ -91,9 +92,11 @@ int establish_keepalive(struct if_tcp *ift)
                 err=-1;
             }
 #endif
-    if (ift->shared->tv.tv_sec)
-        if (setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
-                sizeof(ift->shared->tv)) < 0)
+    }
+    if (ift->shared->tv.tv_sec) {
+        if ((setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
+                    sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
+                    SOL_SOCKET,SO_SNDBUF,&smax,sizeof(smax)) <0))
             logerr(errno,"Could not set tcp send timeout");
     }
     return(err);
@@ -256,6 +259,7 @@ void write_tcp(struct iface *ifa)
     }
 
     for(;;) {
+
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
 
@@ -407,6 +411,7 @@ iface_t *init_tcp(iface_t *ifa)
     unsigned keepidle=0;
     unsigned keepintvl=0;
     unsigned keepcnt=0;
+    int smax=2048;
     long timeout=-1;
 
     host=port=NULL;
@@ -642,10 +647,12 @@ iface_t *init_tcp(iface_t *ifa)
 #endif
         }
 
-        if (timeout)
-            if (setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
-                    sizeof(ift->shared->tv)) < 0)
+        if (timeout) {
+            if ((setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
+                    sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
+                    SOL_SOCKET,SO_SNDBUF,&smax,sizeof(smax)) <0))
                 logerr(errno,"Could not set tcp send timeout");
+        }
     }
 
     ifa->cleanup=cleanup_tcp;

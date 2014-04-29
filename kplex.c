@@ -28,6 +28,7 @@ pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
 pthread_t reaper;       /* tid of thread responsible for reaping */
 int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
 time_t graceperiod=3;   /* Grace period for unsent data before shutdown (secs)*/
+int debuglevel=0;                    /* debug off by default */
 
 /* Signal handler for SIGUSR1 used by interface threads.  Note that this is
  * highly dubious: pthread_exit() is not async safe.  No associated problems
@@ -1177,7 +1178,6 @@ int main(int argc, char ** argv)
     };
     struct rlimit lim;
     int gotinputs=0;
-    int debuglevel=0;                    /* debug off by default */
     int rcvdsig;
     struct sigaction sa;
 
@@ -1234,7 +1234,7 @@ int main(int argc, char ** argv)
     } else {
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
-        DEBUG(1,"No config file available");
+        DEBUG(1,"Not using  config file");
         engine = get_default_global();
     }
 
