@@ -10,7 +10,6 @@
 #define DEFKEEPIDLE 30
 #define DEFKEEPINTVL 10
 #define DEFKEEPCNT 3
-#define SNDMAX 65536
 
 struct if_tcp {
     int fd;

@@ -507,13 +507,6 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"Invalid sndbuf size value specified: %s",opt->val);
                 return(NULL);
             }
-            if (sndbuf > SNDMAX) {
-                logwarn(0,"sndbuf size %s is too large (ignoring)",opt->val);
-                sndbuf=DEFSNDBUF;
-            } else  {
-                /* Convert to bytes from kbytes */
-                sndbuf <<=10;
-            }
         } else  {
             logerr(0,"unknown interface option %s\n",opt->var);
             return(NULL);
