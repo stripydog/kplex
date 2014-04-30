@@ -6,9 +6,11 @@
 
 #define DEFTCPQSIZE 128
 #define DEFSNDTIMEO 30
+#define DEFSNDBUF 2048
 #define DEFKEEPIDLE 30
 #define DEFKEEPINTVL 10
 #define DEFKEEPCNT 3
+#define SNDMAX 65536
 
 struct if_tcp {
     int fd;
@@ -26,6 +28,7 @@ struct if_tcp_shared {
     unsigned keepidle;
     unsigned keepintvl;
     unsigned keepcnt;
+    unsigned sndbuf;
     pthread_mutex_t t_mutex;
     struct timeval tv;
 };

@@ -55,7 +55,6 @@ int establish_keepalive(struct if_tcp *ift)
 {
     int on=1;
     int err=0;
-    int smax=2048;
 
     if (ift->shared->keepalive)  {
         if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0) {
@@ -96,7 +95,8 @@ int establish_keepalive(struct if_tcp *ift)
     if (ift->shared->tv.tv_sec) {
         if ((setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
                     sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
-                    SOL_SOCKET,SO_SNDBUF,&smax,sizeof(smax)) <0))
+                    SOL_SOCKET,SO_SNDBUF,&ift->shared->sndbuf,
+                    sizeof(ift->shared->sndbuf)) <0))
             logerr(errno,"Could not set tcp send timeout");
     }
     return(err);
@@ -411,7 +411,7 @@ iface_t *init_tcp(iface_t *ifa)
     unsigned keepidle=0;
     unsigned keepintvl=0;
     unsigned keepcnt=0;
-    int smax=2048;
+    unsigned sndbuf=DEFSNDBUF;
     long timeout=-1;
 
     host=port=NULL;
@@ -493,6 +493,26 @@ iface_t *init_tcp(iface_t *ifa)
             if ((timeout=atoi(opt->val)) <= 0) {
                 logerr(0,"Invalid timeout value specified: %s",opt->val);
                 return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"sndbuf")) {
+            if (!flag_test(ifa,F_PERSIST)) {
+                logerr(0,"sndbuf valid only valid with persist option");
+                return(NULL);
+            }
+            if (ifa->direction == IN) {
+                logerr(0,"sndbuf option is for sending tcp data only (not receiving)");
+                return(NULL);
+            }
+            if ((sndbuf=atoi(opt->val)) <= 0) {
+                logerr(0,"Invalid sndbuf size value specified: %s",opt->val);
+                return(NULL);
+            }
+            if (sndbuf > SNDMAX) {
+                logwarn(0,"sndbuf size %s is too large (ignoring)",opt->val);
+                sndbuf=DEFSNDBUF;
+            } else  {
+                /* Convert to bytes from kbytes */
+                sndbuf <<=10;
             }
         } else  {
             logerr(0,"unknown interface option %s\n",opt->var);
@@ -602,6 +622,7 @@ iface_t *init_tcp(iface_t *ifa)
         ift->shared->keepidle=keepidle;
         ift->shared->keepintvl=keepintvl;
         ift->shared->keepcnt=keepcnt;
+        ift->shared->sndbuf=sndbuf;
         ift->shared->tv.tv_sec=timeout;
         ift->shared->tv.tv_usec=0;
     }
@@ -650,7 +671,8 @@ iface_t *init_tcp(iface_t *ifa)
         if (timeout) {
             if ((setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
                     sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
-                    SOL_SOCKET,SO_SNDBUF,&smax,sizeof(smax)) <0))
+                    SOL_SOCKET,SO_SNDBUF,&ift->shared->sndbuf,
+                    sizeof(ift->shared->sndbuf)) <0))
                 logerr(errno,"Could not set tcp send timeout");
         }
     }
