@@ -270,6 +270,7 @@ The exact number will be system dependent but it will certainly be "enough".
     persist=[yes|no]
     retry=<seconds>
     timeout=<timeout>
+    sndbuf=<bufsize>
     keepalive=[yes|no]
     keepidle=<keepidle>
     keepintvl=<keepinterval>    * Not Mac OS X < 10.9
@@ -304,7 +305,15 @@ The exact number will be system dependent but it will certainly be "enough".
             to complete before assuming a connection has died, abandoning the
             data send operation and attempting to reconnect the interface.  Only
             valid with output or bi-directional interfaces and only in
-            conjunction with "persist=yes"
+            conjunction with "persist=yes". Note that timeouts will not occur
+            while data can still be passed to TCP, so the size of TCP buffers
+            has an impact on how quickly a hung connection will be timed out.
+            <bufsize> is the size in bytes to set the TCP output buffer to.
+            This option is valid only with "persist=yes" and defaults to 2048.
+            Without "persist=yes" system default TCP buffer size is used. A
+            buffer size of 2k should not negatively impact performance in this
+            application.  A smaller output buffer size generally results in
+            hung output connections being detected faster.
             <keepidle> is the number of seconds of inactivity on a tcp
             connection to wait before sending the first keepalive probe (see
             below).  Only valid with "keepalive=yes".
