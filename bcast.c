@@ -332,6 +332,13 @@ struct iface *init_bcast(struct iface *ifa)
         logwarn("setsockopt failed: %s",strerror(errno));
     }
 
+#ifdef SO_REUSEPORT
+    if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
+        logerr(errno,"Failed to set SO_REUSEPORT");
+        return(NULL);
+    }
+#endif
+
 #ifdef linux
     struct ifreq ifr;
 

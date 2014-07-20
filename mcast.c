@@ -377,6 +377,13 @@ struct iface *init_mcast(struct iface *ifa)
         return(NULL);
     }
 
+#ifdef SO_REUSEPORT
+    if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
+        logerr(errno,"Failed to set SO_REUSEPORT");
+        return(NULL);
+    }
+#endif
+
     if (ifa->direction != OUT) {
         if (ifm->maddr.ss_family==AF_INET) {
             if (setsockopt(ifm->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&ifm->mr.ipmr,
