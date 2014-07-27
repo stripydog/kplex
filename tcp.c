@@ -45,6 +45,10 @@ void cleanup_tcp(iface_t *ifa)
             ift->shared->donewith++;
             return;
         }
+        if (ift->shared->port)
+            free(ift->shared->port);
+        if (ift->shared->host)
+            free(ift->shared->host);
         pthread_mutex_destroy(&ift->shared->t_mutex);
         free(ift->shared);
     }
@@ -246,7 +250,6 @@ void write_tcp(struct iface *ifa)
     int data=0;
     int cnt=1;
     struct iovec iov[2];
-
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
                 logerr(errno,"Disabing tag output on interface id %u (%s)",
@@ -283,7 +286,6 @@ void write_tcp(struct iface *ifa)
          */
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
-
         if (writev(ift->fd,iov,cnt) <0) {
             err=errno;
             if (!flag_test(ifa,F_PERSIST))
@@ -301,6 +303,60 @@ void write_tcp(struct iface *ifa)
     }
 
     iface_thread_exit(errno);
+}
+
+void delayed_connect(iface_t *ifa)
+{
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    struct if_tcp *iftp;
+    struct addrinfo hints,*abase,*aptr;
+    int err;
+    int on=1;
+
+    memset((void *)&hints,0,sizeof(hints));
+
+    hints.ai_family=AF_UNSPEC;
+    hints.ai_socktype=SOCK_STREAM;
+
+    pthread_mutex_lock(&ift->shared->t_mutex);
+
+    while (ift->shared->host) {
+        if ((err=getaddrinfo(ift->shared->host,ift->shared->port,&hints,&abase))) {
+            if ((err != EAI_AGAIN && err != EAI_FAIL)) {
+                logerr(0,"Lookup failed for host %s/service %s: %s",ift->shared->host,ift->shared->port,gai_strerror(err));
+                iface_thread_exit(errno);
+            }
+            abase=NULL;
+        }
+
+        for (aptr=abase;aptr;aptr=aptr->ai_next) {
+            if ((ift->fd=socket(aptr->ai_family,aptr->ai_socktype,aptr->ai_protocol)) < 0)
+                continue;
+            if (connect(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
+                break;
+            close(ift->fd);
+        }
+        if (aptr) {
+            freeaddrinfo(abase);
+            ift->shared->host=NULL;
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+                logerr(errno,"Could not disable Nagle on new tcp connection");
+
+            (void) establish_keepalive(ift);
+            if (ifa->pair) {
+                iftp = (struct if_tcp *) ifa->pair->info;
+                iftp->fd = ift->fd;
+            }
+        } else {
+            mysleep(ift->shared->retry);
+        }
+    }
+
+    pthread_mutex_unlock(&ift->shared->t_mutex);
+
+    if (ifa->direction == IN)
+        do_read(ifa);
+    write_tcp(ifa);
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
@@ -398,7 +454,7 @@ iface_t *init_tcp(iface_t *ifa)
 {
     struct if_tcp *ift;
     char *host,*port,*eptr=NULL;
-    struct addrinfo hints,*aptr,*abase;
+    struct addrinfo hints,*connection,*abase;
     struct servent *svent;
     int err;
     int on=1,off=0;
@@ -553,22 +609,24 @@ iface_t *init_tcp(iface_t *ifa)
     hints.ai_socktype=SOCK_STREAM;
 
     if ((err=getaddrinfo(host,port,&hints,&abase))) {
-        logerr(0,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
-        return(NULL);
+        if (flag_test(ifa,F_IPERSIST) && (err == EAI_AGAIN || err == EAI_FAIL)){
+            abase=NULL;
+        } else {
+            logerr(0,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
+            return(NULL);
+        }
     }
 
-    aptr=abase;
-
-    do {
-        if ((ift->fd=socket(aptr->ai_family,aptr->ai_socktype,aptr->ai_protocol)) < 0)
+    for (connection=abase;connection;connection=connection->ai_next) {
+        if ((ift->fd=socket(connection->ai_family,connection->ai_socktype,connection->ai_protocol)) < 0)
             continue;
         if (*conntype == 'c') {
-            if (connect(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
+            if (connect(ift->fd,connection->ai_addr,connection->ai_addrlen) == 0)
                 break;
         } else {
             setsockopt(ift->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
-            if (aptr->ai_family == AF_INET6) {
-                for (ptr=((struct sockaddr_in6 *)aptr->ai_addr)->sin6_addr.s6_addr,i=0;i<16;i++,ptr++)
+            if (connection->ai_family == AF_INET6) {
+                for (ptr=((struct sockaddr_in6 *)connection->ai_addr)->sin6_addr.s6_addr,i=0;i<16;i++,ptr++)
                     if (*ptr)
                         break;
                 if (i == sizeof(struct in6_addr)) {
@@ -578,14 +636,14 @@ iface_t *init_tcp(iface_t *ifa)
                     }
                 }
             }
-            if (bind(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
+            if (bind(ift->fd,connection->ai_addr,connection->ai_addrlen) == 0)
                 break;
             err=errno;
         }
         close(ift->fd);
-     } while ((aptr = aptr->ai_next));
+     }
 
-    if (aptr == NULL) {
+    if (connection == NULL && (!flag_test(ifa,F_IPERSIST))) {
         logerr(err,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
         return(NULL);
     }
@@ -607,10 +665,16 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,"retry value out of range");
             return(NULL);
         }
-        ift->shared->sa_len=aptr->ai_addrlen;
-        (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
+        if (connection) {
+            ift->shared->sa_len=connection->ai_addrlen;
+            (void) memcpy(&ift->shared->sa,connection->ai_addr,connection->ai_addrlen);
+            ift->shared->protocol=connection->ai_protocol;
+            ift->shared->host=ift->shared->port=NULL;
+        } else {
+            ift->shared->host=strdup(host);
+            ift->shared->port=strdup(port);
+        }
         ift->shared->donewith=1;
-        ift->shared->protocol=aptr->ai_protocol;
         ift->shared->keepalive=keepalive;
         ift->shared->keepidle=keepidle;
         ift->shared->keepintvl=keepintvl;
@@ -629,53 +693,26 @@ iface_t *init_tcp(iface_t *ifa)
             return(NULL);
         }
         /* Disable Nagle. Not fatal if we fail for any reason */
-        if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
-            logerr(errno,"Could not disable Nagle algorithm for tcp socket");
+        if (connection)
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+                logerr(errno,"Could not disable Nagle algorithm for tcp socket");
     }
 
-    if (flag_test(ifa,F_PERSIST)) {
-        if (keepalive) {
-            if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0)
-                logerr(errno,"Could not enable keepalives on tcp socket");
-
-            if (keepidle)
-#ifdef __APPLE__
-                if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle,
-                        sizeof(keepidle)) < 0)
-                    logerr(errno,"Could not set tcp keepidle");
-#else
-                if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle,
-                        sizeof(keepidle)) < 0)
-                    logerr(errno,"Could not set tcp keepidle");
-#endif
-#if !defined (__APPLE__) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1090
-
-            if (keepintvl)
-                if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl,
-                        sizeof(keepintvl)) < 0)
-                    logerr(errno,"Could not set tcp keepintvl");
-            if (keepcnt)
-                if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,
-                        sizeof(keepcnt)) < 0)
-                    logerr(errno,"Could not set tcp keepcnt");
-#endif
-        }
-
-        if (timeout) {
-            if ((setsockopt(ift->fd,SOL_SOCKET,SO_SNDTIMEO,&ift->shared->tv,
-                    sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
-                    SOL_SOCKET,SO_SNDBUF,&ift->shared->sndbuf,
-                    sizeof(ift->shared->sndbuf)) <0))
-                logerr(errno,"Could not set tcp send timeout");
-        }
+    if (flag_test(ifa,F_PERSIST) && (connection)) {
+        (void) establish_keepalive(ift);    
     }
 
     ifa->cleanup=cleanup_tcp;
     ifa->info = (void *) ift;
     if (*conntype == 'c') {
-        ifa->read=do_read;
+        if (connection) {
+            ifa->read=do_read;
+            ifa->write=write_tcp;
+        } else {
+            ifa->read=delayed_connect;
+            ifa->write=delayed_connect;
+        }
         ifa->readbuf=read_tcp;
-        ifa->write=write_tcp;
         if (ifa->direction == BOTH) {
             if ((ifa->next=ifdup(ifa)) == NULL) {
                 logerr(errno,"Interface duplication failed");

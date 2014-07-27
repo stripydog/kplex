@@ -333,7 +333,7 @@ struct iface *init_bcast(struct iface *ifa)
     }
 
 #ifdef SO_REUSEPORT
-    if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
+    if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
         logerr(errno,"Failed to set SO_REUSEPORT");
         return(NULL);
     }

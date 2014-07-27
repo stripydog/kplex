@@ -18,6 +18,8 @@ struct if_tcp {
 };
 
 struct if_tcp_shared {
+    char *host;
+    char *port;
     time_t retry;
     socklen_t sa_len;
     struct sockaddr_storage sa;
