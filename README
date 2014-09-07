@@ -267,7 +267,7 @@ The exact number will be system dependent but it will certainly be "enough".
     mode=<mode>
     address=<address>
     port=<port>
-    persist=[yes|no]
+    persist=[yes|no|fromstart]
     retry=<seconds>
     timeout=<timeout>
     sndbuf=<bufsize>
@@ -300,20 +300,22 @@ The exact number will be system dependent but it will certainly be "enough".
             10110 is used.
             <seconds> is the number of seconds to wait before each attempt at
             reconnecting a lost tcp connection.  The "retry" option is only
-            valid in conjunction with "persist=yes"
+            valid in conjunction with "persist=yes" or "persist=fromstart"
             <timeout> is the number of seconds to wait for an output operation
             to complete before assuming a connection has died, abandoning the
             data send operation and attempting to reconnect the interface.  Only
             valid with output or bi-directional interfaces and only in
-            conjunction with "persist=yes". Note that timeouts will not occur
-            while data can still be passed to TCP, so the size of TCP buffers
-            has an impact on how quickly a hung connection will be timed out.
+            conjunction with "persist=yes" or "persist=fromstart". Note that
+            timeouts will not occur while data can still be passed to TCP, so
+            the size of TCP buffers has an impact on how quickly a hung
+            connection will be timed out.
             <bufsize> is the size in bytes to set the TCP output buffer to.
-            This option is valid only with "persist=yes" and defaults to 2048.
-            Without "persist=yes" system default TCP buffer size is used. A
-            buffer size of 2k should not negatively impact performance in this
-            application.  A smaller output buffer size generally results in
-            hung output connections being detected faster.
+            This option is valid only with "persist=yes" or "persist=fromstart"
+            and defaults to 2048.  Without "persist=yes" or "persist=fromstart"
+            system default TCP buffer size is used. A buffer size of 2k should
+            not negatively impact performance in this application.  A smaller
+            output buffer size generally results in hung output connections
+            being detected faster.
             <keepidle> is the number of seconds of inactivity on a tcp
             connection to wait before sending the first keepalive probe (see
             below).  Only valid with "keepalive=yes".
@@ -335,7 +337,12 @@ reconnect when the connection is lost.  When attempting to reconnect an outbound
 or bi-directional connection, kplex will discard all data in its queue to
 minimise the amount of potentially stale data arriving at the server.
 The delay in seconds between successive attempt at reconnection may be specified
-using the "retry" option.  The default is an agressive 5 seconds.
+using the "retry" option.  "persist=yes" only tells kplex to reconnect a lost
+connection.  If the first connection attempt fails it will not be re-tried and
+initialisation of that interface will fail.  If persistent attempts to connect
+an initially failed connection are desired, "persist=fromstart" should be
+specified.  Note that this option should be used with care to avoid repeated
+attempts to conenct to a mis-typed hostname or address.
 
 kplex will detect a dropped connection if the other end closes down "cleanly",
 i.e. the program it is connecting to shuts down or the machine it is running on

@@ -1059,9 +1059,9 @@ size_t gettag(iface_t *ifa, char *buf)
         memcpy(ptr,"c:",2);
         ptr+=2;
         (void) gettimeofday(&tv,NULL);
-        ptr+=sprintf(ptr,"%u",(unsigned) tv.tv_sec);
+        ptr+=sprintf(ptr,"%010u",(unsigned) tv.tv_sec);
         if (ifa->tagflags & TAG_MS)
-            ptr += sprintf(ptr,"%u",((unsigned) tv.tv_usec+500)/1000);
+            ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec+500)/1000);
     }
     cksum=calcsum(buf,len=ptr-buf);
     len+=sprintf(ptr,"*%02X\\",cksum);
