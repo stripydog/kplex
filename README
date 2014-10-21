@@ -647,6 +647,9 @@ USBpuck for 60 seconds, kplex will start passing such sentences from the "phone"
 connection until such point as those sentences are seen on either of the higher
 priority interfaces.
 
+Note that failover declarations when made in a configuration file need to be
+put in the "global" section. For configuration file syntax see below.
+
 Stopping
 --------
 kplex closes down if it has no more outputs. If kplex has no more inputs,
@@ -731,7 +734,7 @@ mode=<mode>
     terminal and run as a daemon process.
 checksum=<checksum mode>
     Where <checksum mode> is either "no" (the default) or "yes", which tells
-    kplex to checksum al lincoming nmea sentences (except for interfaces where
+    kplex to checksum all incoming nmea sentences (except for interfaces where
     per-interface configuration overrides this). Sentences which do not
     match their calculated checksums are discarded.  The default is not to
     calculate checksums as it is assumed that this will be done by end consumer
@@ -770,6 +773,39 @@ filename=/dev/ttyUSB1
 baud=38400
 
 # This is the end of the example file
+
+This second example shows a configuration in which kplex has a GPS puck
+connected via the serial port on a raspberry pi and connects to a TCP data
+source for other information.  The TCP data source also provides GPS information
+but is only used if the directly attached GPS device fails for 15 seconds.  Data
+are then broadcast out of eth0 on the default port 10110. Checksum checking is
+enabled and all sentences which fail their checksum checks are discarded.  The
+"persist=fromstart" option on the TCP interface ensures that kplex will keep
+trying to connect to the remote device even if it is not available when kplex
+starts up.
+
+# Begin example 2
+[global]
+checksum=yes
+failover=GP***:0:puck:15:plotter
+
+[serial]
+filename=/dev/AMA0
+baud=9600
+direction=in
+name=puck
+
+[tcp]
+address=192.168.1.2
+direction=in
+name=plotter
+persist=fromstart
+
+[broadcast]
+device=eth0
+direction=out
+
+# End example 2
 
 To Do
 -----

@@ -1,6 +1,6 @@
 /* serial.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2013
+ * Copyright Keith Young 2012 - 2014
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for serial-like interfaces. This currently
@@ -83,7 +83,7 @@ void cleanup_serial(iface_t *ifa)
  */
 int ttyopen(char *device, enum iotype direction)
 {
-    int dev;
+    int dev,flags;
     struct stat sbuf;
 
     /* Check if device exists and is a character special device */
@@ -99,10 +99,15 @@ int ttyopen(char *device, enum iotype direction)
 
     /* Open device (RW for now..let's ignore direction...) */
     if ((dev=open(device,
-        ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY)) < 0) {
+        ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY|O_NONBLOCK)) < 0) {
         logerr(errno,"Failed to open %s",device);
         return(-1);
     }
+
+    if ((flags = fcntl(dev,F_GETFL)) < 0)
+        logerr(errno,"Failed to get flags for %s",device);
+    else if (fcntl(dev,F_SETFL,flags & ~O_NONBLOCK) < 0)
+        logerr(errno,"Failed to set %s to non-blocking",device);
 
     return(dev);
 }
@@ -114,7 +119,7 @@ int ttyopen(char *device, enum iotype direction)
  *     All a bit clunky and should be revised
  * Returns: 0 on success, -1 otherwise
  */
-int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
+int ttysetup(int dev,struct termios *otermios_p, int baud, int st)
 {
     struct termios ttermios,ntermios;
 
@@ -124,20 +129,41 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
         return(-2);
     }
 
-    memset(&ntermios,0,sizeof(struct termios));
+    memcpy(&ntermios,otermios_p,sizeof(struct termios));
 
-    ntermios.c_cflag=cflag;
     /* PARMRK is set for seatalk interface as parity errors are how we
      * identify commands
      */
-    ntermios.c_iflag=IGNBRK|INPCK|(st?PARMRK:0);
+    ntermios.c_iflag|=(IGNBRK|INPCK);
+    if (st)
+        ntermios.c_iflag |= PARMRK;
+    else
+        ntermios.c_iflag &= ~PARMRK;
+
+    /* disable software flow control */
+    ntermios.c_cflag &= ~(IXON | IXOFF | IXANY);
+
+    /* CS8 1 Stop bit no parity */
+    ntermios.c_cflag &= ~PARENB;
+    ntermios.c_cflag &= ~CSTOPB;
+
+    ntermios.c_cflag &= ~CSIZE;
+    ntermios.c_cflag |= CS8;
+
+    /* Enable receiver (should be a problem for sender) and ignore hardware
+     * flow control */
+    ntermios.c_cflag |= (CLOCAL | CREAD);
+
+    /* set baud rate */
+    cfsetspeed(&ntermios,baud);
+
     ntermios.c_cc[VMIN]=1;
     ntermios.c_cc[VTIME]=0;
 
-    if (tcflush(dev,TCIOFLUSH) < 0)
-        logwarn("Failed to flush serial device");
+    /* select raw mode */
+    cfmakeraw(&ntermios);
 
-    if (tcsetattr(dev,TCSAFLUSH,&ntermios) < 0) {
+    if (tcsetattr(dev,TCSANOW,&ntermios) < 0) {
         logerr(errno,"Failed to set up serial line!");
         return(-1);
     }
@@ -165,7 +191,6 @@ int ttysetup(int dev,struct termios *otermios_p, tcflag_t cflag, int st)
 ssize_t read_serial(struct iface *ifa, char *buf)
 {
     struct if_serial *ifs = (struct if_serial *) ifa->info;
-
     return(read(ifs->fd,buf,BUFSIZ));
 }
 
@@ -252,7 +277,6 @@ struct iface *init_serial (struct iface *ifa)
     struct if_serial *ifs;
     int baud=B4800;        /* Default for NMEA 0183. AIS will need
                    explicit baud rate specification */
-    tcflag_t cflag;
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
@@ -288,9 +312,6 @@ struct iface *init_serial (struct iface *ifa)
         }
     }
 
-    /* CREAD could be just be set. Ignored on some interfaces in any case */
-    cflag=baud|CS8|CLOCAL|((ifa->direction == OUT)?0:CREAD);
-
     /* Allocate serial specific data storage */
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -305,7 +326,7 @@ struct iface *init_serial (struct iface *ifa)
     free_options(ifa->options);
 
     /* Set up interface or die */
-    if ((ret = ttysetup(ifs->fd,&ifs->otermios,cflag,0)) < 0) {
+    if ((ret = ttysetup(ifs->fd,&ifs->otermios,baud,0)) < 0) {
         if (ret == -1) {
             if (tcsetattr(ifs->fd,TCSANOW,&ifs->otermios) < 0) {
                 logerr(errno,"Failed to reset serial line");
@@ -354,7 +375,6 @@ struct iface *init_pty (struct iface *ifa)
     char *devname=NULL;
     struct if_serial *ifs;
     int baud=B4800,slavefd;
-    tcflag_t cflag;
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
@@ -399,8 +419,6 @@ struct iface *init_pty (struct iface *ifa)
             return(NULL);
         }
     }
-
-    cflag=baud|CS8|CLOCAL|CREAD;
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -451,7 +469,7 @@ struct iface *init_pty (struct iface *ifa)
 
     free_options(ifa->options);
 
-    if ((ret=ttysetup(ifs->fd,&ifs->otermios,cflag,0)) < 0) {
+    if ((ret=ttysetup(ifs->fd,&ifs->otermios,baud,0)) < 0) {
         if (ret == -1) {
             if (tcsetattr(ifs->fd,TCSANOW,&ifs->otermios) < 0) {
                 logerr(errno,"Failed to reset serial line");

@@ -1,3 +1,8 @@
+v1.1.1: October 22nd 2014
+* Fixed serial ports in OS X
+* Fixed processing of file interfaces with "eol=rn"
+* Fixed specification of multicast interface
+
 v1.1: June 5th 2014
 * Parsing algorithm changed to strip TAG blocks
 * Added optional TAG-based timestamping

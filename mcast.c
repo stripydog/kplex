@@ -342,7 +342,7 @@ struct iface *init_mcast(struct iface *ifa)
         if (ifa->direction != IN) {
                 if (ifm->maddr.ss_family==AF_INET) {
                     if (setsockopt(ifm->fd,IPPROTO_IP,IP_MULTICAST_IF,
-                            &ifm->mr.ipmr,sizeof(struct ip_mreq)) < 0) {
+                            &ifm->mr.ipmr.imr_interface,sizeof(ifm->mr.ipmr.imr_interface)) < 0) {
                         logerr(errno,"Failed to set multicast interface");
                         return(NULL);
                     }

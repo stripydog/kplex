@@ -92,12 +92,11 @@ void write_file(iface_t *ifa)
             senblk_free(sptr,ifa->q);
             continue;
         }
-            
+
         if (ifc->usereturn == 0) {
             sptr->data[sptr->len-2] = '\n';
-            sptr->data[sptr->len-1] = '\0';
+            sptr->len--;
         }
-
 
         if (ifa->tagflags)
             if ((n = gettag(ifa,tbuf)) == 0) {
@@ -107,7 +106,7 @@ void write_file(iface_t *ifa)
                 free(tbuf);
             }
 
-        if ((ifa->tagflags && (fwrite(tbuf,1,n,ifc->fp) == EOF )) || fputs(sptr->data,ifc->fp) == EOF) {
+        if ((ifa->tagflags && (fwrite(tbuf,1,n,ifc->fp) == EOF )) || fwrite(sptr->data,1,sptr->len,ifc->fp) == EOF) {
             if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) )
                 break;
             if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
@@ -203,7 +202,7 @@ void read_file(iface_t *ifa)
 
         if ((*ptr++=ch) == '\n') {
             if (ifc->usereturn) {
-                if (*(ptr-1) != '\r') {
+                if (*(ptr-2) != '\r') {
                     senstate=SEN_NODATA;
                     continue;
                 }
