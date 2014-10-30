@@ -1032,7 +1032,7 @@ int calcsum(char *buf, size_t len)
 
 /* Add tag data
  * Args: Interface pointer, buffer for tags
- * Returns: Address of tag buffer on success, NULL on failure
+ * Returns: Length of tag data
  */
 size_t gettag(iface_t *ifa, char *buf)
 {

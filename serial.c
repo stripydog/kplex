@@ -155,7 +155,8 @@ int ttysetup(int dev,struct termios *otermios_p, int baud, int st)
     ntermios.c_cflag |= (CLOCAL | CREAD);
 
     /* set baud rate */
-    cfsetspeed(&ntermios,baud);
+    cfsetispeed(&ntermios,baud);
+    cfsetospeed(&ntermios,baud);
 
     ntermios.c_cc[VMIN]=1;
     ntermios.c_cc[VTIME]=0;
@@ -236,7 +237,7 @@ void write_serial(struct iface *ifa)
             }
             ptr=tbuf;
             while(tlen) {
-                if ((n=write(fd,ptr,senblk_p->len)) < 0)
+                if ((n=write(fd,ptr,tlen)) < 0)
                     break;
                 tlen-=n;
                 ptr+=n;
