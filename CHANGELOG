@@ -2,6 +2,10 @@ v1.1.1: October 22nd 2014
 * Fixed serial ports in OS X
 * Fixed processing of file interfaces with "eol=rn"
 * Fixed specification of multicast interface
+* Fixed bug with outbound serial interface TAG processing
+* Added fromstart value for persist option
+* Minor comment corrections
+* Minor changes for greater POSIX compatibility
 
 v1.1: June 5th 2014
 * Parsing algorithm changed to strip TAG blocks
