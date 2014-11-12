@@ -1,8 +1,10 @@
-v1.1.1: October 22nd 2014
+v1.1.1: November 12th 2014
+* Added presist=fromstart option
 * Fixed serial ports in OS X
 * Fixed processing of file interfaces with "eol=rn"
 * Fixed specification of multicast interface
 * Fixed bug with outbound serial interface TAG processing
+* Fixed bug with TAG timestamps
 * Added fromstart value for persist option
 * Minor comment corrections
 * Minor changes for greater POSIX compatibility
