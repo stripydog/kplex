@@ -1,3 +1,8 @@
+v1.2:
+* Re-worked input parsing
+* eol=n now optional on other interface types
+* corrected bug in tcp server src TAGs
+
 v1.1.1: November 12th 2014
 * Added presist=fromstart option
 * Fixed serial ports in OS X

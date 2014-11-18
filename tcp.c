@@ -390,7 +390,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
     newifa->type=TCP;
-    newifa->name=NULL;
+    newifa->name=ifa->name;
     newifa->info=newift;
     newifa->cleanup=cleanup_tcp;
     newifa->write=write_tcp;
