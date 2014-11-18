@@ -1032,7 +1032,7 @@ int calcsum(char *buf, size_t len)
 
 /* Add tag data
  * Args: Interface pointer, buffer for tags
- * Returns: Length of tag data
+ * Returns: Length of tag buffer on success
  */
 size_t gettag(iface_t *ifa, char *buf)
 {
@@ -1080,6 +1080,7 @@ void do_read(iface_t *ifa)
     char *bptr,*eptr,*ptr;
     int nread,countmax,count=0;
     enum sstate senstate;
+    int nocr=flag_test(ifa,F_NOCR)?1:0;
 
     sblk.src=ifa->id;
     senstate=SEN_NODATA;
@@ -1089,38 +1090,38 @@ void do_read(iface_t *ifa)
             switch (*bptr) {
             case '$':
             case '!':
-                if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
-                    ptr=sblk.data;
-                    countmax=SENMAX;
-                    count=1;
-                    *ptr++=*bptr;
-                    senstate=SEN_SENPROC;
-                } else
-                    senstate = SEN_ERR;
+                ptr=sblk.data;
+                countmax=SENMAX-nocr;
+                count=1;
+                *ptr++=*bptr;
+                senstate=SEN_SENPROC;
                 continue;
             case '\\':
                 if (senstate==SEN_TAGPROC) {
                     *ptr++=*bptr;
                     senstate=SEN_TAGSEEN;
-                } else if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
+                } else {
                     senstate=SEN_TAGPROC;
                     ptr=tbuf;
                     countmax=TAGMAX-1;
                     *ptr++=*bptr;
                     count=1;
-                } else
-                    senstate=SEN_ERR;
+                }
                 continue;
             case '\r':
                 if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
                     senstate = SEN_CR;
                     *ptr++=*bptr;
                     ++count;
-                } else if (senstate != SEN_NODATA && senstate != SEN_ERR)
-                    senstate = SEN_ERR;
+                } else
+                    senstate = SEN_NODATA;
                 continue;
             case '\n':
-                if (senstate == SEN_CR) {
+                if (senstate == SEN_CR || nocr) {
+                    if (nocr && (*(ptr-1)  != '\r')) {
+                        *ptr++='\r';
+                        ++count;
+                    }
                     *ptr=*bptr;
                     sblk.len = ++count;
                     if (!(ifa->checksum && checkcksum(&sblk) &&
@@ -1135,13 +1136,13 @@ void do_read(iface_t *ifa)
             }
 
             if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
-                if (senstate != SEN_NODATA && senstate != SEN_ERR)
-                    senstate=SEN_ERR;
+                if (senstate != SEN_NODATA )
+                    senstate=SEN_NODATA;
                 continue;
             }
 
             if (count++ > countmax) {
-                senstate=SEN_ERR;
+                senstate=SEN_NODATA;
                 continue;
             }
 

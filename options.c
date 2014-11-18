@@ -383,6 +383,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             flag_clear(ifp,F_OPTIONAL);
         } else
             return(-2);
+    } else if (!strcmp(var,"eol")) {
+        if (!strcasecmp(val,"n")) {
+            flag_set(ifp,F_NOCR);
+        } else if (!strcasecmp(val,"rn")) {
+            flag_clear(ifp,F_NOCR);
+        } else
+            return(-2);
     } else if (!strcasecmp(var,"name")) {
         if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
             return(-1);
@@ -407,7 +414,7 @@ void free_options(struct kopts *options)
     }
 }
 
-iface_t *get_config(FILE *fp, unsigned int *line)
+iface_t *get_config(FILE *fp, unsigned int *line, enum itype type)
 {
     char *var,*val;
     struct kopts **opt;
@@ -422,6 +429,16 @@ iface_t *get_config(FILE *fp, unsigned int *line)
 
     ifp->direction = BOTH;
     ifp->checksum=-1;
+    ifp->type=type;
+
+    /* Set defaults */
+    switch (type) {
+    case FILEIO:
+        flag_set(ifp,F_NOCR);
+        break;
+    default:
+        break;
+    }
 
     for(opt = &ifp->options;next_config(fp,line,&var,&val) == 0;) {
         if (!var)
@@ -467,8 +484,8 @@ iface_t *parse_file(char *fname)
             fprintf(stderr,"Error: duplicate global section in config file line %d\n",line);
             exit(1);
         }
-        
-        if ((ifp = get_config(fp,&line)) == NULL) {
+
+        if ((ifp = get_config(fp,&line,type)) == NULL) {
             if (line == 0) {
                 perror("Error creating interface");
                 exit(1);
@@ -477,7 +494,7 @@ iface_t *parse_file(char *fname)
             }
         }
 
-        if ((ifp->type=type) == GLOBAL) {
+        if ((ifp->type) == GLOBAL) {
             if ((ifg = (struct if_engine *)malloc(sizeof(struct if_engine)))
                     == NULL) {
                 free(ifp);
@@ -528,9 +545,10 @@ iface_t *parse_arg(char *arg)
     } else
         *ptr++='\0';
 
-    if (!strcasecmp(arg,"file"))
+    if (!strcasecmp(arg,"file")) {
         ifp->type = FILEIO;
-    else if (!strcasecmp(arg,"serial"))
+        ifp->flags |= F_NOCR;
+    } else if (!strcasecmp(arg,"serial"))
         ifp->type = SERIAL;
     else if (!strcasecmp(arg,"tcp"))
         ifp->type = TCP;

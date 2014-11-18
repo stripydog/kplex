@@ -33,7 +33,7 @@ unsigned int namelookup(char *name)
         } else {
             return(nptr->id);
         }
-}
+    }
     return(-1);
 }
 

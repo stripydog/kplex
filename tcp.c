@@ -302,6 +302,9 @@ void write_tcp(struct iface *ifa)
         senblk_free(sptr,ifa->q);
     }
 
+    if (cnt == 2)
+        free(iov[0].iov_base);
+
     iface_thread_exit(errno);
 }
 

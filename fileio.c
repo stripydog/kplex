@@ -10,14 +10,14 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 
 #define DEFFILEQSIZE 128
 
 struct if_file {
-    FILE *fp;
+    int fd;
     char *filename;
     size_t qsize;
-    int usereturn;
 };
 
 /*
@@ -37,8 +37,6 @@ void *ifdup_file(void *iff)
     
     oldif = (struct if_file *) iff;
 
-    newif->usereturn = oldif->usereturn;
-
     /* Read/Write only supported for stdin/stdout so don't allocate fp
      * And don't bother to duplicate filename
      */
@@ -49,23 +47,26 @@ void cleanup_file(iface_t *ifa)
 {
     struct if_file *iff = (struct if_file *) ifa->info;
 
-    if (iff->fp)
-        fclose(iff->fp);
+    if (iff->fd >= 0)
+        close(iff->fd);
     if (iff->filename)
         free(iff->filename);
 }
 
 void write_file(iface_t *ifa)
 {
-    int n;
+    int err;
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t *sptr;
-    char *tbuf;
+    int usereturn=flag_test(ifa,F_NOCR)?0:1;
+    int data=0;
+    int cnt=1;
+    struct iovec iov[2];
 
-    /* ifc->fp will only be NULL if we're opening a FIFO.
+    /* ifc->fd will only be < 0 if we're opening a FIFO.
      */
-    if (ifc->fp == NULL) {
-        if ((ifc->fp=fopen(ifc->filename,"w")) == NULL) {
+    if (ifc->fd < 0) {
+        if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0) {
             logerr(errno,"Failed to open FIFO %s for writing\n",ifc->filename);
             iface_thread_exit(errno);
         }
@@ -73,15 +74,19 @@ void write_file(iface_t *ifa)
             logerr(errno,"Could not create queue for FIFO %s",ifc->filename);
             iface_thread_exit(errno);
         }
-        if (setvbuf(ifc->fp,NULL,_IOLBF,0) !=0)
-            iface_thread_exit(errno);
     }
 
-    if ((tbuf=(char *)malloc(TAGMAX)) == NULL) {
-        logerr(errno,"Disabing tag output on interface id %u (%s)",
-                ifa->id,(ifa->name)?ifa->name:"unlabelled");
-        ifa->tagflags=0;
+    if (ifa->tagflags) {
+        if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
+                logerr(errno,"Disabing tag output on interface id %u (%s)",
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                ifa->tagflags=0;
+        } else {
+            cnt=2;
+            data=1;
+        }
     }
+
 
     for(;;)  {
         if ((sptr = next_senblk(ifa->q)) == NULL) {
@@ -93,134 +98,73 @@ void write_file(iface_t *ifa)
             continue;
         }
 
-        if (ifc->usereturn == 0) {
+        if (!usereturn) {
             sptr->data[sptr->len-2] = '\n';
             sptr->len--;
         }
 
         if (ifa->tagflags)
-            if ((n = gettag(ifa,tbuf)) == 0) {
+            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base)) == 0) {
                 logerr(errno,"Disabing tag output on interface id %u (%s)",
-                    ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
                 ifa->tagflags=0;
-                free(tbuf);
+                cnt=1;
+                data=0;
+                free(iov[0].iov_base);
             }
 
-        if ((ifa->tagflags && (fwrite(tbuf,1,n,ifc->fp) == EOF )) || fwrite(sptr->data,1,sptr->len,ifc->fp) == EOF) {
+        iov[data].iov_base=sptr->data;
+        iov[data].iov_len=sptr->len;
+        if (writev(ifc->fd,iov,cnt) <0) {
+            err=errno;
             if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) )
                 break;
-            if (((ifc->fp=freopen(ifc->filename,"w",ifc->fp)) == NULL) ||
-                    (setvbuf(ifc->fp,NULL,_IOLBF,0) !=0))
+            if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0)
                 break;
         }
         senblk_free(sptr,ifa->q);
     }
 
-    if (ifa->tagflags)
-        free(tbuf);
+    if (cnt == 2)
+        free(iov[0].iov_base);
 
     iface_thread_exit(errno);
 }
 
-void read_file(iface_t *ifa)
+void file_read_wrapper(iface_t *ifa)
 {
     struct if_file *ifc = (struct if_file *) ifa->info;
-    senblk_t sblk;
-    char tbuf[TAGMAX];
-    int ch,countmax,count;
-    char *ptr;
-    enum sstate senstate=SEN_NODATA;
 
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
-    if (ifc->fp == NULL)
-        if ((ifc->fp = fopen(ifc->filename,"r")) == NULL) {
+    if (ifc->fd == -1)
+        if ((ifc->fd = open(ifc->filename,O_RDONLY)) < 0) {
             logerr(errno,"Failed to open FIFO %s for reading\n",ifc->filename);
             iface_thread_exit(errno);
         }
 
-    sblk.src=ifa->id;
+    do_read(ifa);
+}
+
+ssize_t read_file(iface_t *ifa, char *buf)
+{
+    struct if_file *ifc = (struct if_file *) ifa->info;
+    ssize_t nread;
 
     for(;;) {
-        if ((ch = fgetc(ifc->fp)) == EOF) {
-            if (errno) {
-                if (errno == EINTR)
-                    errno=0;
+        if ((nread=read(ifc->fd,buf,BUFSIZ)) <=0) {
+            if (!flag_test(ifa,F_PERSIST))
+                break;
+            close(ifc->fd);
+            if ((ifc->fd=open(ifc->filename,O_RDONLY)) < 0) {
+                logerr(errno,"Failed to re-open FIFO %s for reading\n",
+                            ifc->filename);
                 break;
             }
-            if (feof(ifc->fp) && (flag_test(ifa,F_PERSIST))) {
-                if ((ifc->fp = freopen(ifc->filename,"r",ifc->fp)) == NULL) {
-                    logerr(errno,"Failed to re-open FIFO %s for reading\n",
-                            ifc->filename);
-                    break;
-                }
-                continue;
-            }
+            continue;
+        } else
             break;
-        }
-        switch (ch) {
-        case '$':
-        case '!':
-            if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
-                ptr=sblk.data;
-                countmax=SENMAX+1+ifc->usereturn;
-                count=1;
-                *ptr++=ch;
-                senstate=SEN_SENPROC;
-            } else {
-                senstate = SEN_ERR;
-            }
-            continue;
-        case '\\':
-            if (senstate==SEN_TAGPROC) {
-                *ptr++=ch;
-                /* Here we would do some actual work, but for this first
-                 * cut we're just going to discard the tagblock */
-                senstate=SEN_TAGSEEN;
-            } else if (senstate == SEN_NODATA || senstate == SEN_TAGSEEN) {
-                    senstate=SEN_TAGPROC;
-                ptr=tbuf;
-                countmax=TAGMAX-1;
-                *ptr++=ch;
-                count=1;
-            } else
-                senstate=SEN_ERR;
-            continue;
-        default:
-            break;
-        }
-
-        if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
-                if (senstate != SEN_NODATA && senstate != SEN_ERR)
-                    senstate=SEN_ERR;
-                continue;
-        }
-
-        if (count++ > countmax) {
-            senstate=SEN_ERR;
-            continue;
-        }
-
-        if ((*ptr++=ch) == '\n') {
-            if (ifc->usereturn) {
-                if (*(ptr-2) != '\r') {
-                    senstate=SEN_NODATA;
-                    continue;
-                }
-            } else {
-                *(ptr-1)='\r';
-                *ptr='\n';
-                ++count;
-            }
-            sblk.len=count;
-            if (!(ifa->checksum && checkcksum(&sblk) &&
-                    (sblk.len > 0)) &&
-                    senfilter(&sblk,ifa->ifilter) == 0) {
-                push_senblk(&sblk,ifa->q);
-            }
-            senstate=SEN_NODATA;
-        }
     }
-    iface_thread_exit(errno);
+    return nread;
 }
 
 iface_t *init_file (iface_t *ifa)
@@ -239,6 +183,7 @@ iface_t *init_file (iface_t *ifa)
     memset ((void *)ifc,0,sizeof(struct if_file));
 
     ifc->qsize=DEFFILEQSIZE;
+    ifc->fd=-1;
     ifa->info = (void *) ifc;
 
     for(opt=ifa->options;opt;opt=opt->next) {
@@ -260,16 +205,6 @@ iface_t *init_file (iface_t *ifa)
                 append = 0;
             } else {
                 logerr(0,"Invalid option \"append=%s\"",opt->val);
-                return(NULL);
-            }
-        } else if (!strcasecmp(opt->var,"eol")) {
-            if (!strcasecmp(opt->val,"rn"))
-                ifc->usereturn=1;
-            else if (!strcasecmp(opt->val,"n")) {
-                ifc->usereturn=0;
-            } else {
-                logerr(0,"Invalid option \"eol=%s\": Must be \"n\" or \"rn\"",
-                        opt->val);
                 return(NULL);
             }
         } else {
@@ -296,7 +231,7 @@ iface_t *init_file (iface_t *ifa)
             logerr(0,"Can't use terminal stdin/stdout in background mode");
             return(NULL);
         }
-        ifc->fp = (ifa->direction == IN)?stdin:stdout;
+        ifc->fd = (ifa->direction == IN)?STDIN_FILENO:STDOUT_FILENO;
     } else {
         if (ifa->direction == BOTH) {
             logerr(0,"Bi-directional file I/O only supported for stdin/stdout");
@@ -325,24 +260,22 @@ iface_t *init_file (iface_t *ifa)
                         ifc->filename);
                 return(NULL);
             }
-            if ((ifc->fp=fopen(ifc->filename,(ifa->direction==IN)?"r":
-                    (append)?"a":"w")) == NULL) {
+            if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
+                    (O_WRONLY|O_CREAT|(append)?O_APPEND:0))) < 0) {
                 logerr(errno,"Failed to open %s",ifc->filename);
                 return(NULL);
             }
-            if (ifa->direction == OUT)
-                /* Make output line buffered */
-                setlinebuf(ifc->fp);
         }
     }
 
     free_options(ifa->options);
 
     ifa->write=write_file;
-    ifa->read=read_file;
+    ifa->read=file_read_wrapper;
+    ifa->readbuf=read_file;
     ifa->cleanup=cleanup_file;
 
-    if (ifa->direction != IN && ifc->fp != NULL)
+    if (ifa->direction != IN && ifc->fd >= 0)
         if ((ifa->q =init_q(ifc->qsize)) == NULL) {
             logerr(0,"Could not create queue");
             cleanup_file(ifa);
@@ -358,7 +291,7 @@ iface_t *init_file (iface_t *ifa)
         ifa->direction=OUT;
         ifa->pair->direction=IN;
         ifc = (struct if_file *) ifa->pair->info;
-        ifc->fp=stdin;
+        ifc->fd=STDIN_FILENO;
     }
     return(ifa);
 }
