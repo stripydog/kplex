@@ -104,7 +104,7 @@ void write_file(iface_t *ifa)
         }
 
         if (ifa->tagflags)
-            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base)) == 0) {
+            if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
                 logerr(errno,"Disabing tag output on interface id %u (%s)",
                         ifa->id,(ifa->name)?ifa->name:"unlabelled");
                 ifa->tagflags=0;

@@ -61,6 +61,7 @@
 #define TAG_TS 1
 #define TAG_MS 2
 #define TAG_SRC 4
+#define TAG_ISRC 8
 
 extern int debuglevel;
 #define DEBUG(level,...) if (debuglevel >= level) logdebug(__VA_ARGS__)
@@ -273,10 +274,11 @@ sfilter_t *addfilter(sfilter_t *);
 int senfilter(senblk_t *,sfilter_t *);
 int checkcksum(senblk_t *);
 unsigned int namelookup(char *);
+char *idlookup(unsigned int);
 int insertname(char *, unsigned int);
 void freenames(void);
 int cmdlineopt(struct kopts **, char *);
 void do_read(iface_t *);
-size_t gettag(iface_t *, char *);
+size_t gettag(iface_t *, char *, senblk_t *);
 
 extern struct iftypedef iftypes[];

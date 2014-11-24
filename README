@@ -132,6 +132,10 @@ where:
         \s:kplex*7F\
         If "srctag=no" is specified, no source identifier is prepended.  This is
         the default.
+        If "srctag=input" is specified, the src identification string is the
+        name of the interface on which the sentence arrived truncated to 15
+        characters or the string "kplex" if no "name" is specified for the input
+        interface.
         "timestamp": Specifies that an NMEA-0183v4 TAG block containing UNIX
         time (for example "\c:1387191186*0E\" should be prepended to sentences
         output on the interface.  The timestamp is in seconds if the value is

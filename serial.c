@@ -229,7 +229,7 @@ void write_serial(struct iface *ifa)
         }
 
         if (ifa->tagflags) {
-            if ((tlen = gettag(ifa,tbuf)) == 0) {
+            if ((tlen = gettag(ifa,tbuf,senblk_p)) == 0) {
                 logerr(errno,"Disabing tag output on interface id %u (%s)",
                     ifa->id,(ifa->name)?ifa->name:"unlabelled");
                 ifa->tagflags=0;

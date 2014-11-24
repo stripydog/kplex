@@ -355,6 +355,9 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             ifp->tagflags |= TAG_SRC;
         } else if (!strcasecmp(val,"no")) {
             ifp->tagflags &= ~TAG_SRC;
+        } else if (!strcasecmp(val,"input")) {
+            ifp->tagflags |= TAG_SRC;
+            ifp->tagflags |= TAG_ISRC;
         } else
             return(-2);
     } else if (!strcmp(var,"persist")) {

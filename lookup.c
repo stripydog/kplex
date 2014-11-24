@@ -21,6 +21,19 @@ struct nameid {
 /* This is used before we start multiple threads */
 static struct nameid *idlist;
 
+char * idlookup(unsigned int id)
+{
+    struct nameid *nptr;
+    id&=~((unsigned int) IDMINORMASK);
+
+    for (nptr=idlist;nptr;nptr=nptr->next) {
+        if (nptr->id == id)
+            return(nptr->name);
+    }
+
+    return(NULL);
+}
+
 unsigned int namelookup(char *name)
 {
     int ret;

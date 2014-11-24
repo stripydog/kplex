@@ -1034,7 +1034,7 @@ int calcsum(char *buf, size_t len)
  * Args: Interface pointer, buffer for tags
  * Returns: Length of tag buffer on success
  */
-size_t gettag(iface_t *ifa, char *buf)
+size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
 {
     char *ptr=buf;
     char *nameptr;
@@ -1048,7 +1048,12 @@ size_t gettag(iface_t *ifa, char *buf)
         first=0;
         memcpy(ptr,"s:",2);
         ptr+=2;
-        nameptr=(ifa->name)?ifa->name:DEFSRCNAME;
+        if (ifa->tagflags & TAG_ISRC) {
+            if ((nameptr=idlookup(sptr->src))==NULL)
+                nameptr=DEFSRCNAME;
+        } else
+            nameptr=(ifa->name)?ifa->name:DEFSRCNAME;
+
         for (len=0;*nameptr && len < 15; len++)
             *ptr++=*nameptr++;
     }
