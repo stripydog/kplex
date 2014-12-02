@@ -27,15 +27,13 @@ struct if_file {
  */
 void *ifdup_file(void *iff)
 {
-    struct if_file  *newif,*oldif;
+    struct if_file  *newif;
 
     if ((newif = (struct if_file *) malloc(sizeof(struct if_file)))
         == (struct if_file *) NULL)
         return(NULL);
 
     memset ((void *)newif,0,sizeof(struct if_file));
-    
-    oldif = (struct if_file *) iff;
 
     /* Read/Write only supported for stdin/stdout so don't allocate fp
      * And don't bother to duplicate filename
@@ -55,7 +53,6 @@ void cleanup_file(iface_t *ifa)
 
 void write_file(iface_t *ifa)
 {
-    int err;
     struct if_file *ifc = (struct if_file *) ifa->info;
     senblk_t *sptr;
     int usereturn=flag_test(ifa,F_NOCR)?0:1;
@@ -116,7 +113,6 @@ void write_file(iface_t *ifa)
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
         if (writev(ifc->fd,iov,cnt) <0) {
-            err=errno;
             if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) )
                 break;
             if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0)
