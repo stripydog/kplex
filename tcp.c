@@ -109,6 +109,7 @@ int establish_keepalive(struct if_tcp *ift)
 int reconnect(iface_t *ifa, int err)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    struct if_tcp *iftp;
     int retval=0;
     int on=1;
 
@@ -153,6 +154,10 @@ int reconnect(iface_t *ifa, int err)
     }
 
     if (retval == 0) {
+        if (ifa->pair) {
+                iftp = (struct if_tcp *) ifa->pair->info;
+                iftp->fd = ift->fd;
+            }
         if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
             logerr(errno,"Could not disable Nagle on new tcp connection");
         (void) establish_keepalive(ift);
@@ -167,9 +172,12 @@ int reconnect(iface_t *ifa, int err)
 ssize_t reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    struct if_tcp *iftp;
     ssize_t nread;
     int fflags;
     int on=1;
+
+    pthread_mutex_lock(&ift->shared->t_mutex);
 
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
@@ -183,7 +191,6 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
         return(-1);
     }
 
-    pthread_mutex_lock(&ift->shared->t_mutex);
     if ((nread=read(ift->fd,buf,bsize)) <= 0) {
         if (nread == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
             /* An actual error as opposed to success but would block */
@@ -203,6 +210,11 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
         } else {
             nread=0;
         }
+    }
+
+    if (ifa->pair) {
+        iftp = (struct if_tcp *) ifa->pair->info;
+        iftp->fd = ift->fd;
     }
 
     if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
@@ -340,8 +352,13 @@ void delayed_connect(iface_t *ifa)
             close(ift->fd);
         }
         if (aptr) {
+            ift->shared->sa_len=aptr->ai_addrlen;
+            (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
+            ift->shared->protocol=aptr->ai_protocol;
             freeaddrinfo(abase);
-            ift->shared->host=NULL;
+            free(ift->shared->host);
+            free(ift->shared->port);
+            ift->shared->host=ift->shared->port=NULL;
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
                 logerr(errno,"Could not disable Nagle on new tcp connection");
 
