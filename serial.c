@@ -22,11 +22,13 @@
 #else
 #include <pty.h>
 #endif
+#include <grp.h>
 
 #define DEFSERIALQSIZE 128
 
 struct if_serial {
     int fd;
+    char *slavename;            /* link to pty slave (if it exists) */
     int saved;                  /* Are stored terminal settins valid? */
     struct termios otermios;    /* To restore previous interface settings
                                  *  on exit */
@@ -53,6 +55,7 @@ void *ifdup_serial(void *ifs)
         return(NULL);
     }
 
+    newif->slavename=oldif->slavename;
     newif->saved=oldif->saved;
     memcpy(&newif->otermios,&oldif->otermios,sizeof(struct termios));
     return((void *)newif);
@@ -67,10 +70,17 @@ void cleanup_serial(iface_t *ifa)
 {
     struct if_serial *ifs = (struct if_serial *)ifa->info;
 
-    if (!ifa->pair && ifs->saved) {
-        if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
-            if (ifa->type != PTY || errno != EIO)
-                logwarn("Failed to restore serial line: %s",strerror(errno));
+    if (!ifa->pair) {
+        if (ifs->saved) {
+            if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
+                if (ifa->type != PTY || errno != EIO)
+                    logwarn("Failed to restore serial line: %s",strerror(errno));
+            }
+        }
+        if (ifs->slavename) {
+            if (unlink(ifs->slavename) < 0)
+                logerr(errno,"Failed to remove link %s",ifs->slavename);
+            free(ifs->slavename);
         }
     }
     close(ifs->fd);
@@ -336,6 +346,7 @@ struct iface *init_serial (struct iface *ifa)
         return(NULL);
     }
     ifs->saved=1;
+    ifs->slavename=NULL;
 
     /* Assign pointers to read, write and cleanup routines */
     ifa->read=do_read;
@@ -380,6 +391,12 @@ struct iface *init_pty (struct iface *ifa)
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
     char *master="s";
+    char *cp;
+    mode_t perm = 0;
+    struct passwd *owner;
+    struct group *group;
+    uid_t uid=-1;
+    gid_t gid=-1;
     struct stat statbuf;
     char slave[PATH_MAX];
 
@@ -393,7 +410,35 @@ struct iface *init_pty (struct iface *ifa)
         }
         else if (!strcasecmp(opt->var,"filename"))
             devname=opt->val;
-        else if (!strcasecmp(opt->var,"baud")) {
+        else if (!strcasecmp(opt->var,"owner")) {
+            if ((owner=getpwnam(opt->val)) == NULL) {
+                logerr(0,"No such user '%s'",opt->val);
+                return(NULL);
+            }
+            uid=owner->pw_uid;
+        } else if (!strcasecmp(opt->var,"group")) {
+            if ((group=getgrnam(opt->val)) == NULL) {
+                logerr(0,"No such group '%s'",opt->val);
+                return(NULL);
+            }
+            gid=group->gr_gid;
+        }
+        else if (!strcasecmp(opt->var,"perm")) {
+            for (cp=opt->val;*cp;cp++) {
+                if (*cp >= '0' && *cp < '8') {
+                    perm <<=3;
+                    perm += (*cp-'0');
+                } else {
+                    perm = 0;
+                    break;
+                }
+            }
+            if (perm == 0) {
+                logerr(0,"Invalid permissions for tty device \'%s\'",opt->val);
+                return 0;
+            }
+            perm &= ACCESSPERMS;
+        } else if (!strcasecmp(opt->var,"baud")) {
             if (!strcmp(opt->val,"38400"))
                 baud=B38400;
             else if (!strcmp(opt->val,"9600"))
@@ -427,23 +472,35 @@ struct iface *init_pty (struct iface *ifa)
     }
 
     ifs->saved=0;
+    ifs->slavename=NULL;
 
     if (*master != 's') {
         if (openpty(&ifs->fd,&slavefd,slave,NULL,NULL) < 0) {
             logerr(errno,"Error opening pty");
             return(NULL);
         }
-
+        if (gid != -1 || uid != -1) {
+            if (chown(slave,uid,gid) < 0) {
+                logerr(errno,"Failed to set ownership or group for slave pty");
+                return(NULL);
+            }
+        }
+        if (perm != 0) {
+            if (chmod(slave,perm) < 0) {
+                logerr(errno,"Failed to set permissions for slave pty");
+                return(NULL);
+            }
+        }
         if (devname) {
         /* Device name has been specified: Create symlink to slave */
             if (lstat(devname,&statbuf) == 0) {
-                /* file exists */
+            /* file exists */
                 if (!S_ISLNK(statbuf.st_mode)) {
-        /* If it's not a symlink already, don't replace it */
+            /* If it's not a symlink already, don't replace it */
                     logerr(0,"%s: File exists and is not a symbolic link",devname);
                     return(NULL);
                 }
-        /* It's a symlink. remove it */
+            /* It's a symlink. remove it */
                 if (unlink(devname)) {
                     logerr(errno,"Could not unlink %s",devname);
                     return(NULL);
@@ -453,6 +510,10 @@ struct iface *init_pty (struct iface *ifa)
             if (symlink(slave,devname)) {
                 logerr(errno,"Could not create symbolic link %s for %s",devname,slave);
                 return(NULL);
+            }
+            /* Save the name to unlink it on exit */
+            if ((ifs->slavename=strdup(devname)) == NULL) {
+                logerr(errno,"Failed to save device name. Link will not be removed on exit");
             }
         } else
     /* No device name was given: Just print the pty name */
