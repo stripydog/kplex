@@ -23,6 +23,7 @@
 #include <pty.h>
 #endif
 #include <grp.h>
+#include <pwd.h>
 
 #define DEFSERIALQSIZE 128
 
