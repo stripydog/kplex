@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
+#include <pwd.h>
+#include <grp.h>
 
 #define DEFFILEQSIZE 128
 
@@ -170,6 +172,12 @@ iface_t *init_file (iface_t *ifa)
     struct stat statbuf;
     int ret;
     int append=0;
+    uid_t uid=-1;
+    gid_t gid=-1;
+    struct passwd *owner;
+    struct group *group;
+    mode_t tperm,perm=0;
+    char *cp;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -202,6 +210,34 @@ iface_t *init_file (iface_t *ifa)
             } else {
                 logerr(0,"Invalid option \"append=%s\"",opt->val);
                 return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"owner")) {
+            if ((owner=getpwnam(opt->val)) == NULL) {
+                logerr(0,"No such user '%s'",opt->val);
+                return(NULL);
+            }
+            uid=owner->pw_uid;
+        } else if (!strcasecmp(opt->var,"group")) {
+            if ((group=getgrnam(opt->val)) == NULL) {
+                logerr(0,"No such group '%s'",opt->val);
+                return(NULL);
+            }
+            gid=group->gr_gid;
+        }
+        else if (!strcasecmp(opt->var,"perm")) {
+            for (cp=opt->val;*cp;cp++) {
+                if (*cp >= '0' && *cp < '8') {
+                    perm <<=3;
+                    perm += (*cp-'0');
+                } else {
+                    perm = 0;
+                    break;
+                }
+            }
+            perm &= ACCESSPERMS;
+            if (perm == 0) {
+                logerr(0,"Invalid permissions for tty device \'%s\'",opt->val);
+                return 0;
             }
         } else {
             logerr(0,"Unknown interface option %s\n",opt->var);
@@ -256,11 +292,33 @@ iface_t *init_file (iface_t *ifa)
                         ifc->filename);
                 return(NULL);
             }
-            if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
-                    (O_WRONLY|O_CREAT|(append)?O_APPEND:0))) < 0) {
-                logerr(errno,"Failed to open %s",ifc->filename);
-                return(NULL);
+            if (perm)
+                tperm=umask(0);
+
+            errno=0;
+            if (ifa->direction != IN && (ifc->fd=open(ifc->filename,
+                        O_WRONLY|O_CREAT|O_EXCL|((append)?O_APPEND:0),
+                        (perm)?perm:0664) >= 0)) {
+                if (gid != 0 || uid != -1) {
+                    if (chown(ifc->filename,uid,gid) < 0) {
+                        logerr(errno, "Failed to set ownership or group on output file %s",ifc->filename);
+                        return(NULL);
+                    }
+                }
+            } else {
+                if (errno && errno != EEXIST) {
+                    logerr(errno,"Failed to create file %s",ifc->filename);
+                    return(NULL);
+                }
+                if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
+                        (O_WRONLY|((append)?O_APPEND:0)))) < 0) {
+                    logerr(errno,"Failed to open file %s",ifc->filename);
+                    return(NULL);
+                }
             }
+            /* reset umask: not really necessary */
+            if (perm)
+                (void) umask(tperm);
         }
     }
 

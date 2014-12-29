@@ -398,7 +398,7 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             return(-1);
         /* Normalize to lower case */
         for (ptr=ifp->name;*val;)
-                *ptr++=tolower(*val++);
+                *ptr++=tolower((int) *val++);
     } else
         return(1);
 

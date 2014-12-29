@@ -193,12 +193,18 @@ standard input and standard output.
         persist=[yes|no]
         append=[yes|no]
         eol=[rn|n]
-        timestamp=[n|l|u]
+        owner=<user>
+        group=<group>
+        perm=<permissions>
         Where
             <file> is either the file name to read from or write to or "-".
                 In the latter case, standard input is used for inputs, standard
                 out for outputs, and standard in and standard out for "BOTH".
                 If not specified deafults to "-".
+            <user> is the user to set ownership of a created output file to.
+            <group> is the group to set a created output file to.
+            <permissions> are the file access permissions, in octal form, to set
+                a created output file to.
 
 "File" interfaces are slightly different from other interfaces in that
 by default sentences are terminated by <LF> rather than <CR><LF>. Because this
@@ -220,15 +226,6 @@ If no "filename" option is given, standard in/out are used.  Standard input and
 output may not be used in "background" mode (ie when kplex is run as a daemon)
 unless they are redirected to a file or a pipe.
 
-If "timestamp=u" is specified, a UTC timestamp in the format
-"yyyy-mm-dd hh:mm:ss: " will be prepended to each line output. If "timestamp=l"
-is specified, the timestamp will be local time. If "timestamp=n" (the default)
-is specified, no timestamp will be prepended to output lines.
-
-The "timestamp" option may be useful for data log files, although date
-information may be carried in some NMEA sentences rendering this option
-redundant.
-
 If "append=yes" is specified for an interface outputting to a regular file,
 output is appended to the file.  If "append=no" (the default) is specified, the
 file will be truncated before output is written.  This option may not be
@@ -246,6 +243,26 @@ hanging kplex's initialization thread, opening of FIFOs is delayed until
 individual reader and writer threads have been created.
 
 Output to file interfaces is line buffered.
+
+For output to regular files, if the specified filename does not exist it will be
+created if permissions allow.  If kplex creates an output file, it will be
+owned by the user of the kplex process unless the "owner=" option is specified,
+in which case the file's ownership will be set to the specified username.  On
+most systems, kplex can only set username to something other than the owner of
+the kplex process when run as root.  The group of an output file created by
+kplex will be set to the kplex process's primary group unless the "group="
+option is specified in which case the file's group will be set to the specified
+group.  The group must exist and the kplex process must have permission to
+set a file to that group. Normally this requires the kplex process's owner to
+be a member of the specified group.  An output file created by kplex is normally
+readable and writable by user and group and readable by "other", modified by the
+user's umask.  If "perm=" is specified, the permissions on a file created by
+kplex are set to the option's argument in octal *unmodified* by the processes's
+umask.  Thus "perm=0666" will make the file readable and writable by user, group
+and other regardless of the kplex process's umask.
+
+For output files which pre-exist and for all input files, the user,group and
+perm options are ignored.
 
 TCP Interfaces
 --------------

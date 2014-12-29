@@ -2,10 +2,11 @@ v1.2: current beta
 * Re-worked input parsing
 * eol=n now optional on other interface types
 * srctag=input option
-* owner=,group= and perm= options for pty interfaces
+* owner=,group= and perm= options for pty and output file interfaces
 * Fixed bug in tcp server src TAGs
 * Fixed multiple tcp persist bugs
 * Remove pty symlinks on exit
+* Updates for NetBSD portability
 
 v1.1.1: November 12th 2014
 * Added presist=fromstart option

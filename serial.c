@@ -7,15 +7,13 @@
  * comprises:
  *     nmea 0183 serial interfaces
  *     pseudo ttys
- * Note that nmea 0183 will normally need  converting from rs422 to something 
- * a serial interface can handle.
  */
 
 #include "kplex.h"
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <limits.h>
-#ifdef __APPLE__
+#if defined  __APPLE__ || defined __NetBSD__ || defined __OpenBSD__
 #include <util.h>
 #elif defined __FreeBSD__
 #include <libutil.h>
@@ -434,11 +432,11 @@ struct iface *init_pty (struct iface *ifa)
                     break;
                 }
             }
+            perm &= ACCESSPERMS;
             if (perm == 0) {
                 logerr(0,"Invalid permissions for tty device \'%s\'",opt->val);
                 return 0;
             }
-            perm &= ACCESSPERMS;
         } else if (!strcasecmp(opt->var,"baud")) {
             if (!strcmp(opt->val,"38400"))
                 baud=B38400;
