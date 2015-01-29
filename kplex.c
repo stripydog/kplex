@@ -1068,7 +1068,8 @@ size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
         if (ifa->tagflags & TAG_MS)
             ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec+500)/1000);
     }
-    cksum=calcsum(buf,len=ptr-buf);
+    /* Don't include initial '/' */
+    cksum=calcsum(buf+1,(len=ptr-buf)-1);
     len+=sprintf(ptr,"*%02X\\",cksum);
     return(len);
 }

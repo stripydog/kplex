@@ -500,7 +500,7 @@ struct iface *init_pty (struct iface *ifa)
                     return(NULL);
                 }
             /* It's a symlink. remove it */
-                if (unlink(devname)) {
+                if (unlink(devname) && errno != ENOENT) {
                     logerr(errno,"Could not unlink %s",devname);
                     return(NULL);
                 }
