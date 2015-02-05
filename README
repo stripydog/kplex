@@ -1,5 +1,5 @@
 kplex: A multiplexer for various nmea 0183 interfaces
-Copyright Keith Young 2012-2014 <stripydog7@gmail.com>
+Copyright Keith Young 2012-2015 <stripydog7@gmail.com>
 Blurb:
 Details of the GPLv3 under which this software is distributed can be found in
 the file COPYING in this directory.
@@ -125,11 +125,11 @@ where:
         another "serial".
         "srctag": Specifies that an NMEA-0183v4 TAG block containing a source
         identifier be prepended to sentences output on the interface if the
-        value is "yes".  The src identification string is the interface name
-        (see the "name" option above) truncated to 15 characters or the string
-        "kplex" if no "name" is specified for the interface. A TAG block
-        prepended by the "srctag=yes" option looks like:
-        \s:kplex*7F\
+        value is "yes" or "input".  The src identification string is the
+        interface name (see the "name" option above) truncated to 15 characters
+        or the string "kplex" if no "name" is specified for the interface. A TAG
+        block prepended by the "srctag=yes" option looks like:
+        \s:kplex*23\
         If "srctag=no" is specified, no source identifier is prepended.  This is
         the default.
         If "srctag=input" is specified, the src identification string is the
@@ -137,7 +137,7 @@ where:
         characters or the string "kplex" if no "name" is specified for the input
         interface.
         "timestamp": Specifies that an NMEA-0183v4 TAG block containing UNIX
-        time (for example "\c:1387191186*0E\" should be prepended to sentences
+        time (for example "\c:1423133110*5C\" should be prepended to sentences
         output on the interface.  The timestamp is in seconds if the value is
         "s" or milliseconds if the value is "ms".  Note that NMEA-0183v4
         timestamps do not take account of leap seconds.
@@ -149,7 +149,7 @@ where:
 
 If source identifier and timestamps are both requested for an interface, they
 are combined into a single TAG block, source identifier first, e.g.:
-\s:kplex,c:1387191537*0F\
+\s:kplex,c:1423133048*5F\
 
 The -V flag instructs kplex to print its version number and exit. It should not
 be used with any other options.
