@@ -1,6 +1,6 @@
 /* tcp.h
  * This file is part of kplex
- * Copyright Keith Young 2013-2014
+ * Copyright Keith Young 2013-2015
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -11,10 +11,16 @@
 #define DEFKEEPINTVL 10
 #define DEFKEEPCNT 3
 
+struct tcp_preamble {
+    unsigned char * string;
+    size_t len;
+};
+
 struct if_tcp {
     int fd;
     size_t qsize;
     struct if_tcp_shared *shared;
+    struct tcp_preamble *preamble;
 };
 
 struct if_tcp_shared {

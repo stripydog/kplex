@@ -290,6 +290,7 @@ The exact number will be system dependent but it will certainly be "enough".
     port=<port>
     persist=[yes|no|fromstart]
     retry=<seconds>
+    preamble=<preamble>
     timeout=<timeout>
     sndbuf=<bufsize>
     keepalive=[yes|no]
@@ -322,6 +323,8 @@ The exact number will be system dependent but it will certainly be "enough".
             <seconds> is the number of seconds to wait before each attempt at
             reconnecting a lost tcp connection.  The "retry" option is only
             valid in conjunction with "persist=yes" or "persist=fromstart"
+            <preamble> is a string of characters to send after connecting to a
+            remote server and before sending data, as described below.
             <timeout> is the number of seconds to wait for an output operation
             to complete before assuming a connection has died, abandoning the
             data send operation and attempting to reconnect the interface.  Only
@@ -393,6 +396,23 @@ otherwise, the following values will be set:
 keepidle=30
 keepintvl=10 (Not Mac OS X prior to 10.9)
 keepcnt=3 (Not Mac OS X prior to 10.9)
+
+The "preamble" option is used to send a set of characters to a remote server to
+identify a sending station before transmitting data.  It is not part of the
+NMEA-0183 specification (for standards-compliant source identification, use
+sourc TAGs instead) but is used by some AIS aggregation sites as an alternative
+to per-station dedicated TCP ports.  With the "persist" option, the preamble
+string will be sent after each reconnection following connection loss.  Non-
+ASCII characters may be specified either by a backslash followed by the
+(exactly) 3-digit octal representation of the character or the sequence "\x"
+followed by the (exactly) 2-digit hexadecimal representation of the character.
+The NULL character must be specified as "\000" or "\x00" and may not be
+abreviated to "\0" or "\x0".  Standard escape sequences (\a,\b,\f,\r,\n,\t,\v)
+are recognised.  Other escaped characters are sent literally without the leading
+backslash.  Any string termination must be explicitly stated, so a NULL-
+terminated string must end with "\000" or "\x00".  Care must be taken when using
+this option on the command line due to shell interpretation of escape
+characters.
 
 Broadcast Interfaces
 --------------------
@@ -588,7 +608,7 @@ only root or a member of the specified group is able to make this change.
 If "perm=<permissions>" is specified where <permissions> are the desired
 permissions of the slave side of a master pty in octal format, permissions are
 set accordingly.  Only file access bits are settable.  Attempts to set
-setuid/setgid/sticky bits will be ignored.  A leading "0" is allowed ut not
+setuid/setgid/sticky bits will be ignored.  A leading "0" is allowed but not
 required for permissions.  Note that "000" is neither a useful nor, in this
 case, permitted access mode.
 

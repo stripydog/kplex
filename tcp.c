@@ -1,6 +1,6 @@
 /* tcp.c
  * This file is part of kplex
- * Copyright Keith Young 2012-2014
+ * Copyright Keith Young 2012-2015
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -31,9 +31,17 @@ void *ifdup_tcp(void *ift)
     if (newif->shared)
         newif->shared->donewith=0;
 
+    newif->preamble=NULL;
+
     return ((void *) newif);
 }
 
+/*
+ * Clean up a tcp interface on exit
+ * Args: iface_t *
+ * Returns: Nothing
+ * Side effects: de-allocates memory and performs other cleanup tasks
+ */
 void cleanup_tcp(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *)ifa->info;
@@ -52,9 +60,38 @@ void cleanup_tcp(iface_t *ifa)
         pthread_mutex_destroy(&ift->shared->t_mutex);
         free(ift->shared);
     }
+    if (ift->preamble) {
+        free((void *) ift->preamble->string);
+        free((void *) ift->preamble);
+    }
+
     close(ift->fd);
 }
 
+/*
+ * Send a preamble string (if defined)
+ * Args: Pointer to an if_tcp structure
+ * Returns: 0 on success, -1 on error
+ * Side effects: Preamble string written to the interface's file descriptor
+ */
+int do_preamble(struct if_tcp *ift)
+{
+    size_t towrite;
+    ssize_t n;
+
+    for (towrite=ift->preamble->len;towrite;towrite-=n) {
+        if ((n=write(ift->fd,ift->preamble->string,towrite)) < 0)
+            return(-1);
+    }
+    return(0);
+}
+
+/*
+ * Set socket options to enable keepalives as required
+ * Args: Pointer to an if_tcp structure
+ * Returns: 0 on successi, -1 if any errors occur
+ * Side effects: Sets keepalive options on interface socket
+ */
 int establish_keepalive(struct if_tcp *ift)
 {
     int on=1;
@@ -102,10 +139,17 @@ int establish_keepalive(struct if_tcp *ift)
                     SOL_SOCKET,SO_SNDBUF,&ift->shared->sndbuf,
                     sizeof(ift->shared->sndbuf)) <0))
             logerr(errno,"Could not set tcp send timeout");
+                err=-1;
     }
     return(err);
 }
 
+/*
+ * Reconnect a lost connection in persist mode
+ * Args: Pointer to interface and error raised by onnection failure
+ * Returns: 0 on successi, -1 in the case of an unrecoverable error
+ * Side effects: Connection should be re-established on exit
+ */
 int reconnect(iface_t *ifa, int err)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
@@ -113,6 +157,8 @@ int reconnect(iface_t *ifa, int err)
     int retval=0;
     int on=1;
 
+    /* Ensure two threads in a bi-directional connection are not simultaneously
+     * trying to reconnect */
     pthread_mutex_lock(&ift->shared->t_mutex);
 
     /* If the write timed out, we don't need to sleep before retrying */
@@ -152,7 +198,6 @@ int reconnect(iface_t *ifa, int err)
             retval = -1;
         }
     }
-
     if (retval == 0) {
         if (ifa->pair) {
                 iftp = (struct if_tcp *) ifa->pair->info;
@@ -161,6 +206,9 @@ int reconnect(iface_t *ifa, int err)
         if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
             logerr(errno,"Could not disable Nagle on new tcp connection");
         (void) establish_keepalive(ift);
+        if (ift->preamble){
+            do_preamble(ift);
+        }
     }
 
     flush_queue(ifa->q);
@@ -169,6 +217,14 @@ int reconnect(iface_t *ifa, int err)
     return(retval);
 }
 
+/*
+ * Reconnect a lost read connection in persist mode
+ * Args: Pointer to interface
+ *       Pointer to a buffer for newly read data
+ *       Buffer size
+ * Returns: Amount of data newly read on success, -1 on error
+ * Side effects: Connection should be re-established on exit
+ */
 ssize_t reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
@@ -178,7 +234,6 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     int on=1;
 
     pthread_mutex_lock(&ift->shared->t_mutex);
-
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
     if ((fflags=fcntl(ift->fd,F_GETFL)) < 0) {
@@ -212,20 +267,29 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
         }
     }
 
-    if (ifa->pair) {
-        iftp = (struct if_tcp *) ifa->pair->info;
-        iftp->fd = ift->fd;
-    }
 
     if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
         logerr(errno,"Failed to make tcp socket blocking");
         nread=-1;
     }
-    if (ifa->direction != IN)
-        if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
-            logerr(errno,"Could not disable Nagle on new tcp connection");
 
     (void) establish_keepalive(ift);
+
+    if (ifa->direction == IN) {
+        if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
+            logerr(errno,
+                "No pair information found for bi-directional tcp connection!");
+            nread=-1;
+        } else {
+            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+                logerr(errno,"Could not disable Nagle on new tcp connection");
+
+            iftp->fd = ift->fd;
+            if (iftp->preamble)
+                do_preamble(iftp);
+        }
+    }
+
     pthread_mutex_unlock(&ift->shared->t_mutex);
     return(nread);
 }
@@ -376,7 +440,13 @@ void delayed_connect(iface_t *ifa)
 
     if (ifa->direction == IN)
         do_read(ifa);
-    write_tcp(ifa);
+    else {
+        /* do preamble */
+        if (ift->preamble)
+            do_preamble(ift);
+
+        write_tcp(ifa);
+    }
 }
 
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
@@ -403,6 +473,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         return(NULL);
     }
     newift->fd=fd;
+    newift->preamble=NULL;
     newift->shared=NULL;
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
@@ -470,6 +541,107 @@ void tcp_server(iface_t *ifa)
     iface_thread_exit(errno);
 }
 
+struct tcp_preamble *parse_preamble(const char * val)
+{
+    const unsigned char *optr = (unsigned char *) val;
+    unsigned char *ptr;
+    unsigned char prebuf[1024];
+    int count,tval,i;
+    struct tcp_preamble *preamble;
+
+    for (count=0,ptr=prebuf;*optr;count++,optr++) {
+        if (*optr == '\\') {
+            switch (*(++optr)) {
+            case 'a':
+                *ptr++ = '\a';
+                break;
+            case 'b':
+                *ptr++ = '\b';
+                break;
+            case 'f':
+                *ptr++ = '\f';
+                break;
+            case 'n':
+                *ptr++ = '\n';
+                break;
+            case 'r':
+                *ptr++ = '\r';
+                break;
+            case 't':
+                *ptr++ ='\t';
+                break;
+            case 'v':
+                *ptr++ = '\v';
+                break;
+            case '\'':
+                *ptr++ =  '\'';
+                break;
+            case '\"':
+                *ptr++ =  '\"';
+                break;
+            case '?':
+                *ptr++ =  '?';
+                break;
+            case 'x':
+                for (i=0,tval=0;i<2;i++) {
+                    if (*++optr == '\0')
+                        return(NULL);
+                    tval<<=4;
+                    if (*optr >= '0' && *optr <= '9')
+                        tval += *ptr - '0';
+                    else if (*optr >= 'a' && *optr <= 'f')
+                        tval += (*optr - 'a' + 10);
+                    else if (*optr >= 'A' && *optr <= 'F')
+                        tval += (*optr - 'A' + 10);
+                    else
+                        return(NULL);
+                }
+                *ptr++=(unsigned char) tval;
+                break;
+            case '\0':
+                return(NULL);
+            default:
+                for (i=0,tval=0;i<3;i++) {
+                    tval <<=3;
+                    ++optr;
+                    if (*optr >= '0' && *optr <= '7')
+                        tval += (*optr - '0');
+                    else if (i == 0) {
+                        *ptr++ = *optr;
+                        break;
+                    } else
+                        return(NULL);
+                }
+                if (i == 3) {
+                    if (tval < 256)
+                        *ptr++ = (unsigned char) tval;
+                    else
+                        return(NULL);
+                } else
+                    *ptr++ = *optr++;
+                break;
+            }
+        } else
+            *ptr++=*optr;
+    }
+    if ((preamble = (struct tcp_preamble *)
+            malloc(sizeof(struct tcp_preamble))) == NULL) {
+        logerr(errno,"Failed to allocate memory for preamble");
+        return(NULL);
+    }
+    if ((preamble->string=(unsigned char *) malloc(count)) == NULL) {
+        logerr(errno,"Failed to allocate memory for preamble string");
+        if (preamble)
+            free(preamble);
+        return(NULL);
+    }
+    memcpy(preamble->string,prebuf,count);
+    preamble->len=(size_t) count;
+    return(preamble);
+}
+
+                
+
 iface_t *init_tcp(iface_t *ifa)
 {
     struct if_tcp *ift;
@@ -499,6 +671,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     ift->qsize=DEFTCPQSIZE;
     ift->shared=NULL;
+    ift->preamble=NULL;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
@@ -583,6 +756,11 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"Invalid sndbuf size value specified: %s",opt->val);
                 return(NULL);
             }
+        } else if (!strcasecmp(opt->var,"preamble")) {
+            if ((ift->preamble=parse_preamble(opt->val)) == NULL) {
+                logerr(0,"Could not parse preamble %s",opt->val);
+                return(NULL);
+            }
         } else  {
             logerr(0,"unknown interface option %s\n",opt->var);
             return(NULL);
@@ -610,9 +788,16 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,"Must specify address for tcp client mode\n");
             return(NULL);
         }
-    } else if (flag_test(ifa,F_PERSIST)) {
-        logerr(0,"persist option not valid for tcp servers");
-        return(NULL);
+    } else {
+        if (flag_test(ifa,F_PERSIST)) {
+            logerr(0,"persist option not valid for tcp servers");
+            return(NULL);
+        }
+
+        if (ift->preamble) {
+            logerr(0,"preamble option not valid for servers");
+            return(NULL);
+        }
     }
 
     if (!port) {
@@ -706,6 +891,10 @@ iface_t *init_tcp(iface_t *ifa)
 
     freeaddrinfo(abase);
 
+    if (flag_test(ifa,F_PERSIST) && (connection)) {
+        (void) establish_keepalive(ift);    
+    }
+
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
         if ((ifa->q =init_q(ift->qsize)) == NULL) {
@@ -713,13 +902,14 @@ iface_t *init_tcp(iface_t *ifa)
             return(NULL);
         }
         /* Disable Nagle. Not fatal if we fail for any reason */
-        if (connection)
+        if (connection) {
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
                 logerr(errno,"Could not disable Nagle algorithm for tcp socket");
-    }
-
-    if (flag_test(ifa,F_PERSIST) && (connection)) {
-        (void) establish_keepalive(ift);    
+            /* do preamble */
+            if (ift->preamble)
+                do_preamble(ift);
+sleep(1);
+        }
     }
 
     ifa->cleanup=cleanup_tcp;
