@@ -396,9 +396,8 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
     } else if (!strcasecmp(var,"name")) {
         if ((ifp->name=(char *)malloc(strlen(val)+1)) == NULL)
             return(-1);
-        /* Normalize to lower case */
         for (ptr=ifp->name;*val;)
-                *ptr++=tolower((int) *val++);
+                *ptr++= *val++;
     } else
         return(1);
 

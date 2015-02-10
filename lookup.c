@@ -1,6 +1,6 @@
 /* lookup.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2013
+ * Copyright Keith Young 2012 - 2015
  * For copying information see the file COPYING distributed with this software
  *
  * functions for associating names with interfaces
@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <string.h>
 
+/* Structures holding the name to id mappings in a linked list */
 struct nameid {
     unsigned int id;
     char * name;
@@ -21,6 +22,11 @@ struct nameid {
 /* This is used before we start multiple threads */
 static struct nameid *idlist;
 
+/*
+ * Return an interface name given an ID
+ * Args: interface id
+ * Returns: pointer to interface name if found, NULL otherwise
+ */
 char * idlookup(unsigned int id)
 {
     struct nameid *nptr;
@@ -34,29 +40,40 @@ char * idlookup(unsigned int id)
     return(NULL);
 }
 
+/*
+ * Return an interface ID given a name
+ * Args: Pointer to a name
+ * Returns: Interface id on success, 0 otherwise
+ */
 unsigned int namelookup(char *name)
 {
     int ret;
     struct nameid *nptr;
 
     for (nptr=idlist;nptr;nptr=nptr->next) {
-        if((ret=strcmp(name,nptr->name))) {
+        if((ret=strcasecmp(name,nptr->name))) {
             if (ret<0)
-                return(-1);
+                return(0);
         } else {
             return(nptr->id);
         }
     }
-    return(-1);
+    return(0);
 }
 
+/*
+ * Insert a name-ID mapping into the list
+ * Args: Pointer to a name, associated interface ID
+ * Returns: 0 on success, -1 otherwise
+ * Side Effects: structure is created and linked into the list of mappings
+ */
 int insertname(char *name, unsigned int id)
 {
     struct nameid *nptr,**nptrp;
     int ret;
 
     for (nptrp=&idlist;(*nptrp);nptrp=&(*nptrp)->next)
-        if ((ret=strcmp(name,(*nptrp)->name)) == 0) {
+        if ((ret=strcasecmp(name,(*nptrp)->name)) == 0) {
             logwarn("%s used as name for more than one interface",name);
             return(-1);
         } else if (ret < 0 )
@@ -72,6 +89,12 @@ int insertname(char *name, unsigned int id)
     return(0);
 }
 
+/*
+ * Free a name/ID mapping list
+ * Args: none
+ * Returns: nothing
+ * Side Effects: All name/ID mapping strings are freed
+ */
 void freenames()
 {
     struct nameid *nptr,*nptr2;
