@@ -908,7 +908,6 @@ iface_t *init_tcp(iface_t *ifa)
             /* do preamble */
             if (ift->preamble)
                 do_preamble(ift);
-sleep(1);
         }
     }
 
