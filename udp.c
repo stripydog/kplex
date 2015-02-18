@@ -18,8 +18,11 @@
  * this is our clunky way of ignoring our own broadcasts */
 
 static struct ignore_addr {
-    struct sockaddr_in iaddr;
+    struct in_addr iaddr;
+    unsigned short port;
+    int refcnt;
     struct ignore_addr *next;
+    struct ignore_addr *next_port;
 } *ignore;
 
 struct if_udp {
@@ -31,6 +34,7 @@ struct if_udp {
         struct ip_mreq ipmr;
         struct ipv6_mreq ip6mr;
     } mr;
+    struct ignore_addr *ignore;
 };
 
 /*
@@ -147,8 +151,25 @@ ssize_t read_udp(iface_t *ifa, char *buf)
     struct if_udp *ifu = (struct if_udp *) ifa->info;
     struct sockaddr_storage src;
     socklen_t sz = (socklen_t) sizeof(src);
+    socklen_t insz = sizeof(struct sockaddr_in);
+    ssize_t nread;
+    struct ignore_addr *igp;
 
-    return recvfrom(ifu->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
+    do {
+        nread = recvfrom(ifu->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
+        if (ifu->ignore) {
+            if (sz != insz) {
+                sz=sizeof(src);
+                continue;
+            }
+            for (igp=ifu->ignore;igp;igp=igp->next)
+                if (igp->iaddr.s_addr == ((struct sockaddr_in *)&src)->sin_addr.s_addr)
+                    break;
+            if (igp)
+                continue;
+        }
+        return (nread);
+    } while(1);
 }
 
 /* Check whether an address is multicast
@@ -199,6 +220,7 @@ struct iface *init_udp(struct iface *ifa)
     int err;
     struct sockaddr_storage laddr;
     struct sockaddr *sa;
+    struct ignore_addr *igp,**igpp;
     
     if ((ifu=malloc(sizeof(struct if_udp))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -213,7 +235,8 @@ struct iface *init_udp(struct iface *ifa)
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"device"))
             ifname=opt->val;
-        else if (!strcasecmp(opt->var,"address"))
+        else if (!strcasecmp(opt->var,"address") ||
+                !strcasecmp(opt->var,"group"))
             address=opt->val;
         else if (!strcasecmp(opt->var,"port"))
             service=opt->val;
@@ -415,38 +438,60 @@ struct iface *init_udp(struct iface *ifa)
             else
                 ifu->asize=sizeof(struct sockaddr_in6);
 
-            if (ifa->direction == IN) {
-                memcpy(&ifu->addr,ifp->ifa_addr,ifu->asize);
+            if (ifa->direction == IN && ifu->type != UDP_BROADCAST) {
+                if ((sa->sa_family = ifp->ifa_addr->sa_family) == AF_INET)
+                    ((struct sockaddr_in *)sa)->sin_addr.s_addr =
+                            ((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
+                else
+                    ((struct sockaddr_in6 *)sa)->sin6_addr =
+                            ((struct sockaddr_in6 *)ifp->ifa_addr)->sin6_addr;
             } else {
-                if (ifp->ifa_dstaddr) {
-                    if (ifu->type == UDP_UNSPEC)
-                        ifu->type = (ifp->ifa_flags & IFF_BROADCAST)?
-                                UDP_BROADCAST:UDP_UNICAST;
-                    else if (ifu->type == UDP_BROADCAST) {
-                        if (!(ifp->ifa_flags & IFF_BROADCAST)) {
-                            logerr(0,"Interface %s is not broadcast capable",
-                                    ifname);
-                            freeifaddrs(ifap);
-                            return(NULL);
-                        }
-                    } else {
-                        if (ifp->ifa_flags & IFF_BROADCAST) {
-                            logerr(0,"Interface %s is not point to point and no address specified",ifname);
-                            freeifaddrs(ifap);
-                            return(NULL);
-                        }
-                    }
-                    memcpy(&ifu->addr,ifp->ifa_addr,ifu->asize);
-                } else {
+                if (!(ifp->ifa_dstaddr)) {
                     logerr(0,"No output address specified for interface %s",
                             ifname);
                     freeifaddrs(ifap);
                     return(NULL);
                 }
-                if (ifa->direction == BOTH)
-                    memcpy(&laddr,ifp->ifa_addr,ifu->asize);
-            }
+                if (ifu->type == UDP_UNSPEC)
+                    ifu->type = (ifp->ifa_flags & IFF_BROADCAST)?
+                            UDP_BROADCAST:UDP_UNICAST;
+                else if (ifu->type == UDP_BROADCAST) {
+                    if (!(ifp->ifa_flags & IFF_BROADCAST)) {
+                        logerr(0,"Interface %s is not broadcast capable",
+                                ifname);
+                        freeifaddrs(ifap);
+                        return(NULL);
+                    }
+                } else {
+                    if (ifp->ifa_flags & IFF_BROADCAST) {
+                        logerr(0,"Interface %s is not point to point and no address specified",ifname);
+                        freeifaddrs(ifap);
+                        return(NULL);
+                    }
+                }
+                if ((sa->sa_family=ifp->ifa_dstaddr->sa_family) == AF_INET) {
+                    ((struct sockaddr_in *)sa)->sin_addr.s_addr = 
+                        ((struct sockaddr_in *)ifp->ifa_dstaddr)->sin_addr.s_addr;
+                } else {
+                    ((struct sockaddr_in6 *)sa)->sin6_addr = 
+                        ((struct sockaddr_in6 *)ifp->ifa_dstaddr)->sin6_addr;
+                }
 
+                if (ifa->direction == BOTH && ifu->type == UDP_UNICAST) {
+                    if ((laddr.ss_family=ifp->ifa_dstaddr->sa_family) ==
+                            AF_INET) {
+                        ((struct sockaddr_in *)&laddr)->sin_addr.s_addr = 
+                            ((struct sockaddr_in *)ifp->ifa_dstaddr)->sin_addr.s_addr;
+                    } else {
+                        ((struct sockaddr_in6 *)&laddr)->sin6_addr = 
+                            ((struct sockaddr_in6 *)ifp->ifa_dstaddr)->sin6_addr;
+                    }
+                } else if (ifu->type == UDP_BROADCAST && ifa->direction != IN) {
+                    laddr.ss_family=ifp->ifa_dstaddr->sa_family;
+                    ((struct sockaddr_in *)&laddr)->sin_addr.s_addr =
+                        ((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
+                }
+            }
         }
 
         freeifaddrs(ifap);
@@ -504,10 +549,39 @@ struct iface *init_udp(struct iface *ifa)
     }
 
     if (ifa->direction != IN) {
-        if (ifu->type == UDP_BROADCAST && 
-                setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
-            logerr(errno,"Setsockopt failed");
-            return(NULL);
+        if (ifu->type == UDP_BROADCAST) {
+            if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
+                logerr(errno,"Setsockopt failed");
+                return(NULL);
+            }
+            for (igp=ignore,igpp=&ignore;igp;igpp=&igp->next_port,igp=igp->next_port)
+                if (igp->port == ((struct sockaddr_in *)&ifu->addr)->sin_port)
+                    break;
+
+            if (igp) {
+                ifu->ignore = igp;
+                for (;igp;igpp=&igp->next,igp=igp->next)
+                    if (igp->iaddr.s_addr ==
+                            ((struct sockaddr_in *)&laddr)->sin_addr.s_addr)
+                        break;
+            }
+
+            if (igp)
+                igp->refcnt++;
+            else {
+                if ((*igpp=(struct ignore_addr *)
+                        malloc(sizeof(struct ignore_addr))) == NULL) {
+                    logerr(errno,"Could not allocate memory");
+                    return(NULL);
+                }
+                (*igpp)->port=((struct sockaddr_in *)&ifu->addr)->sin_port;
+                (*igpp)->iaddr.s_addr=
+                        ((struct sockaddr_in *)&laddr)->sin_addr.s_addr;
+                (*igpp)->next=NULL;
+                (*igpp)->next_port=NULL;
+                if (ifu->ignore == NULL)
+                    ifu->ignore = *igpp;
+            }
         }
 
         /* write queue initialization */
