@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012-2014
+ * Copyright Keith Young 2012-2015
  * For copying information see the file COPYING distributed with this software
  */
 #include <sys/types.h>
@@ -80,12 +80,13 @@ enum itype {
     GLOBAL,
     FILEIO,
     SERIAL,
-    BCAST,
-    TCP,
     PTY,
+    TCP,
+    UDP,
+    GOFREE,
+    BCAST,
     MCAST,
     ST,
-    GOFREE,
     END
 };
 
@@ -105,6 +106,13 @@ enum iotype {
     IN,
     OUT,
     BOTH
+};
+
+enum udptype {
+    UDP_UNSPEC,
+    UDP_UNICAST,
+    UDP_BROADCAST,
+    UDP_MULTICAST
 };
 
 struct senblk {
@@ -228,20 +236,22 @@ int mysleep(time_t);
 
 iface_t *init_file( iface_t *);
 iface_t *init_serial(iface_t *);
-iface_t *init_bcast(iface_t *);
-iface_t *init_tcp(iface_t *);
 iface_t *init_pty(iface_t *);
+iface_t *init_udp(iface_t *);
+iface_t *init_tcp(iface_t *);
+iface_t *init_gofree(iface_t *);
+iface_t *init_bcast(iface_t *);
 iface_t *init_mcast(iface_t *);
 iface_t *init_seatalk(iface_t *);
-iface_t *init_gofree(iface_t *);
 
 void *ifdup_serial(void *);
 void *ifdup_file(void *);
-void *ifdup_bcast(void *);
+void *ifdup_udp(void *);
 void *ifdup_tcp(void *);
+void *ifdup_gofree(void *);
+void *ifdup_bcast(void *);
 void *ifdup_mcast(void *);
 void *ifdup_seatalk(void *);
-void *ifdup_gofree(void *);
 
 ioqueue_t *init_q(size_t);
 

@@ -12,7 +12,7 @@ LFLAGS=-lpthread -lutil
 endif
 endif
 
-objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o
+objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o
 
 kplex: $(objects)
 	$(CC) -o kplex $(objects) $(LFLAGS)

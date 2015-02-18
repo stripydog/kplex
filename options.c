@@ -1,6 +1,6 @@
 /* options.c.
  * This flie is part of kplex.
- * Copyright Keith Young 2012-2014
+ * Copyright Keith Young 2012-2015
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command
@@ -554,6 +554,8 @@ iface_t *parse_arg(char *arg)
         ifp->type = SERIAL;
     else if (!strcasecmp(arg,"tcp"))
         ifp->type = TCP;
+    else if (!strcasecmp(arg,"udp"))
+        ifp->type = UDP;
     else if (!strcasecmp(arg,"broadcast"))
         ifp->type = BCAST;
     else if (!strcasecmp(arg,"bcast"))
