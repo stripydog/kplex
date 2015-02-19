@@ -609,7 +609,7 @@ struct iface *init_udp(struct iface *ifa)
     struct ifreq ifr;
 
     if (ifname) {
-        strncpy(ifr.ifr_ifrn.ifrn_name,&ifname,IF_NAMESIZE);
+        strncpy(ifr.ifr_ifrn.ifrn_name,ifname,IF_NAMESIZE);
         setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
     }
 #endif
