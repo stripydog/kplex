@@ -14,9 +14,6 @@
 
 #define DEFUDPQSIZE 64
 
-/* structures for list of (local outbound) addresses to ignore when receiving
- * this is our clunky way of ignoring our own broadcasts */
-
 static struct ignore_addr {
     struct sockaddr_in iaddr;
     unsigned short port;
@@ -170,13 +167,14 @@ ssize_t read_udp(iface_t *ifa, char *buf)
 
     do {
         nread = recvfrom(ifu->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
-        if (ifu->ignore) {
+        if (ifu->ignore && ifu->ignore->writers) {
         /* Broadcast Interface: IPv4 */
             if (sz != insz) {
                 sz=sizeof(src);
                 continue;
             }
-            if (ifu->ignore->writers)
+            if (memcmp((void *)&src,(void *)&ifu->ignore->iaddr,(size_t) sz)
+                    == 0) 
                 continue;
         }
         return (nread);
@@ -563,7 +561,7 @@ struct iface *init_udp(struct iface *ifa)
                 break;
 
         if (igp == NULL) {
-            if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr *)))
+            if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr)))
                     < 0) {
                 logerr(errno,"Could not allocate memory");
                 return(NULL);
@@ -603,6 +601,19 @@ struct iface *init_udp(struct iface *ifa)
         }
     }
 
+    /* Set interface.  This is platform specific and is generally a privileged
+     * operation so we'll silently ignore failures and if it works bonus!
+     */
+#ifdef SO_BINDTODEVICE
+    /* Linux: requires root privileges */
+    struct ifreq ifr;
+
+    if (ifname) {
+        strncpy(ifr.ifr_ifrn.ifrn_name,&ifname,IF_NAMESIZE);
+        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
+    }
+#endif
+
     ifa->write=write_udp;
     ifa->read=do_read;
     ifa->readbuf=read_udp;
@@ -639,6 +650,12 @@ struct iface *init_udp(struct iface *ifa)
             }
             sa=(struct sockaddr *)&laddr;
         }
+        /* Platform-specific interface binding for read side */
+#ifdef SO_BINDTODEVICE
+        /* Linux */
+        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
+#endif
+
     }
 
     if (ifa->direction == IN || (ifa->pair != NULL)) {
