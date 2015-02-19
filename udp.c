@@ -18,11 +18,11 @@
  * this is our clunky way of ignoring our own broadcasts */
 
 static struct ignore_addr {
-    struct in_addr iaddr;
+    struct sockaddr_in iaddr;
     unsigned short port;
     int refcnt;
+    int writers;
     struct ignore_addr *next;
-    struct ignore_addr *next_port;
 } *ignore;
 
 struct if_udp {
@@ -71,6 +71,7 @@ void *ifdup_udp(void *ifa)
 void cleanup_udp(iface_t *ifa)
 {
     struct if_udp *ifu = (struct if_udp *) ifa->info;
+    struct ignore_addr *igp;
 
     if (ifu->type == UDP_MULTICAST && ifa->direction == IN) {
         if (ifu->addr.ss_family == AF_INET) {
@@ -81,6 +82,19 @@ void cleanup_udp(iface_t *ifa)
                     &ifu->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
                 logerr(errno,"IPV6_LEAVE_GROUP failed");
         }
+    } else if (ifu->ignore) {
+        /* Broadcast Interface: OK to do this stuff with iomutex locked */
+        if (--ifu->ignore->refcnt == 0) {
+            if (ifu->ignore == ignore)
+                ignore=ifu->ignore->next;
+            else
+                for (igp=ignore;igp;igp=igp->next)
+                    if (igp == ifu->ignore)
+                        if (igp->next == ifu->ignore)
+                            igp->next = ifu->ignore->next;
+            free(ifu->ignore);
+        } else if (ifa->direction == OUT)
+            ifu->ignore->writers--;
     }
 
     /* iomutex should be locked in the cleanup routine */
@@ -153,19 +167,16 @@ ssize_t read_udp(iface_t *ifa, char *buf)
     socklen_t sz = (socklen_t) sizeof(src);
     socklen_t insz = sizeof(struct sockaddr_in);
     ssize_t nread;
-    struct ignore_addr *igp;
 
     do {
         nread = recvfrom(ifu->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
         if (ifu->ignore) {
+        /* Broadcast Interface: IPv4 */
             if (sz != insz) {
                 sz=sizeof(src);
                 continue;
             }
-            for (igp=ifu->ignore;igp;igp=igp->next)
-                if (igp->iaddr.s_addr == ((struct sockaddr_in *)&src)->sin_addr.s_addr)
-                    break;
-            if (igp)
+            if (ifu->ignore->writers)
                 continue;
         }
         return (nread);
@@ -220,12 +231,13 @@ struct iface *init_udp(struct iface *ifa)
     int err;
     struct sockaddr_storage laddr;
     struct sockaddr *sa;
-    struct ignore_addr *igp,**igpp;
+    struct ignore_addr *igp;
     
     if ((ifu=malloc(sizeof(struct if_udp))) == NULL) {
         logerr(errno,"Could not allocate memory");
         return(NULL);
     }
+
     memset(ifu,0,sizeof(struct if_udp));
     memset(&laddr,0,sizeof(struct sockaddr_storage));
     sa=(struct sockaddr *)&ifu->addr;
@@ -245,7 +257,7 @@ struct iface *init_udp(struct iface *ifa)
                 logerr(0,"Invalid queue size specified: %s",opt->val);
                 return(NULL);
             }
-        } else if (!strcasecmp(opt->var,"mode")) {
+        } else if (!strcasecmp(opt->var,"type")) {
             if (!strcasecmp(opt->val,"unicast"))
                 ifu->type = UDP_UNICAST;
             else if (!strcasecmp(opt->val,"multicast"))
@@ -326,6 +338,8 @@ struct iface *init_udp(struct iface *ifa)
             if (((struct sockaddr_in *)sa)->sin_addr.s_addr ==
                     INADDR_BROADCAST) {
                 ifu->type = UDP_BROADCAST;
+                laddr.ss_family=AF_INET;
+                ((struct sockaddr_in *)&laddr)->sin_addr.s_addr = INADDR_ANY;
             } else {
                 /* check if address belongs to a broadcast address */
                 if (getifaddrs(&ifap) < 0) {
@@ -476,20 +490,15 @@ struct iface *init_udp(struct iface *ifa)
                     ((struct sockaddr_in6 *)sa)->sin6_addr = 
                         ((struct sockaddr_in6 *)ifp->ifa_dstaddr)->sin6_addr;
                 }
-
-                if (ifa->direction == BOTH && ifu->type == UDP_UNICAST) {
+                if (ifu->type == UDP_BROADCAST || ifa->direction == BOTH) {
                     if ((laddr.ss_family=ifp->ifa_dstaddr->sa_family) ==
                             AF_INET) {
                         ((struct sockaddr_in *)&laddr)->sin_addr.s_addr = 
-                            ((struct sockaddr_in *)ifp->ifa_dstaddr)->sin_addr.s_addr;
+                            ((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
                     } else {
                         ((struct sockaddr_in6 *)&laddr)->sin6_addr = 
-                            ((struct sockaddr_in6 *)ifp->ifa_dstaddr)->sin6_addr;
+                            ((struct sockaddr_in6 *)ifp->ifa_addr)->sin6_addr;
                     }
-                } else if (ifu->type == UDP_BROADCAST && ifa->direction != IN) {
-                    laddr.ss_family=ifp->ifa_dstaddr->sa_family;
-                    ((struct sockaddr_in *)&laddr)->sin_addr.s_addr =
-                        ((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
                 }
             }
         }
@@ -546,6 +555,37 @@ struct iface *init_udp(struct iface *ifa)
                 }
             }
         }
+    } else if (ifu->type == UDP_BROADCAST) {
+        for (igp=ignore;igp;igp=igp->next)
+            if (igp->iaddr.sin_port == ((struct sockaddr_in *)sa)->sin_port &&
+                    igp->iaddr.sin_addr.s_addr ==
+                    ((struct sockaddr_in *)sa)->sin_addr.s_addr)
+                break;
+
+        if (igp == NULL) {
+            if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr *)))
+                    < 0) {
+                logerr(errno,"Could not allocate memory");
+                return(NULL);
+            }
+            igp->iaddr.sin_port = ((struct sockaddr_in *)sa)->sin_port;
+            igp->iaddr.sin_addr.s_addr =
+                    ((struct sockaddr_in *)sa)->sin_addr.s_addr;
+            igp->refcnt=igp->writers=0;
+            igp->next=(ignore)?ignore->next:NULL;
+
+            ignore=igp;
+        }
+
+        if ((igp->refcnt+=(ifa->direction == BOTH)?2:1)<0) {
+            logerr(0,"Max broadcast interfaces exceeded");
+            return(NULL);
+        }
+
+        if (ifa->direction != IN)
+            igp->writers++;
+
+        ifu->ignore=igp;
     }
 
     if (ifa->direction != IN) {
@@ -553,34 +593,6 @@ struct iface *init_udp(struct iface *ifa)
             if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
                 logerr(errno,"Setsockopt failed");
                 return(NULL);
-            }
-            for (igp=ignore,igpp=&ignore;igp;igpp=&igp->next_port,igp=igp->next_port)
-                if (igp->port == ((struct sockaddr_in *)&ifu->addr)->sin_port)
-                    break;
-
-            if (igp) {
-                ifu->ignore = igp;
-                for (;igp;igpp=&igp->next,igp=igp->next)
-                    if (igp->iaddr.s_addr ==
-                            ((struct sockaddr_in *)&laddr)->sin_addr.s_addr)
-                        break;
-            }
-
-            if (igp)
-                igp->refcnt++;
-            else {
-                if ((*igpp=(struct ignore_addr *)
-                        malloc(sizeof(struct ignore_addr))) == NULL) {
-                    logerr(errno,"Could not allocate memory");
-                    return(NULL);
-                }
-                (*igpp)->port=((struct sockaddr_in *)&ifu->addr)->sin_port;
-                (*igpp)->iaddr.s_addr=
-                        ((struct sockaddr_in *)&laddr)->sin_addr.s_addr;
-                (*igpp)->next=NULL;
-                (*igpp)->next_port=NULL;
-                if (ifu->ignore == NULL)
-                    ifu->ignore = *igpp;
             }
         }
 
@@ -657,7 +669,6 @@ struct iface *init_udp(struct iface *ifa)
                 }
             }
         }
-
         if (bind(ifu->fd,sa,ifu->asize) < 0) {
             logerr(errno,"Duplicate bind failed");
             return(NULL);

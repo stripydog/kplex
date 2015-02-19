@@ -87,10 +87,11 @@ where:
         "serial": serial nmea 0183 data
         "file": file (or standard in/out)
         "tcp": nmea over TCP
-        "broadcast": nmea over UDP broadcast
-        "bcast": synonym for "broadcast"
-        "multicast": nmea over UDP multicast
-        "mcast": synonym for "multicast"
+        "udp": nmea over UDP (unicast/broadcast/multicast)
+        "broadcast": nmea over UDP broadcast (DEPRECATED)
+        "bcast": synonym for "broadcast" (DEPRECATED)
+        "multicast": nmea over UDP multicast (DEPRECATED)
+        "mcast": synonym for "multicast" (DEPRECATED)
         "pty": serial nmea data over a pseudo terminal
         "gofree": nmea over TCP announced by Navico's "GoFree" protocol
     <option> is one or more options of the form <var>=<val>. Some options are
@@ -414,8 +415,79 @@ terminated string must end with "\000" or "\x00".  Care must be taken when using
 this option on the command line due to shell interpretation of escape
 characters.
 
+UDP Interfaces
+--------------
+This method encapsulates nmea sentences within UDP datagrams which are sent via
+unicast, multicast or broadcast.
+    Interface-specific options:
+    address=<address>
+    port=<port>
+    device=<interface>
+    type=[unicast|broadcast|multicast]
+        Where:
+            <address> is the interface address to bind to for inbound kplex
+            interfaces or the address to send to for outbound interfaces. If
+            not specified for an input interface, kplex will receive broadcast
+            and unicast traffic sent to the desired port on a given interface if
+            one is specified, or all interfaces if non is specified.  If no
+            address is specified for an output or bi-directional interface, a
+            system interface must be specified, in which case the broadcast or
+            point-to-point destination address is assumed for outbound datagrams
+            with inbound datagrams received for the address of the specified
+            interface in the case of point-to-point system interfaces or the
+            interface's broadcast address where the system interface is
+            broadcast-capable.  For sending and receiving of multicast datagrams
+            an address must be specified.  kplex should work out whether any
+            provided address is unicast, multicast or broadcast and act
+            accordingly. "group=" is a synonym for "address=" for backwards
+            compatibility with deprecated mcast interfaces.
+            <device> specifies the system interface (e.g. "wlan1", "eth0")
+            to use.  If the kplex interface is inbound and an interface is
+            specified, kplex will attempt to bind to an address if one is
+            specified which belongs to that system interface, or the first
+            address found associated with that system interface if no address
+            is specified. For bi-directional and outbound multicast and
+            broadcast interfaces all traffic is sent and received using a
+            specified system interface.  For bi-directional and outbound unicast
+            interfaces any received traffic will be on the interface specified.
+            For outbound datagrams the source address will be set to an address
+            associated with the specified interface.  If no device is specified
+            for inbound or outbound multicast interfaces, the routing table is
+            used to determine which system interface to use.
+            For broadcast and unicast interfaces inbound traffic will be
+            received on the system interface corresponding to a specified
+            broadcast or unicast address where no system interface is specified
+            or any system address if no device or address is specified.
+            <port> if specified is the udp port or service name. If not
+            specified defaults to the udp port returned by a lookup of the
+            service "nmea-0183" and if that fails the IANA assigned port for
+            nmea-0183 10110 is used.
+
+Note that broadcast is inherently IPv4 (it does not exist in IPv6) and
+inefficient, forcing all nodes on a network to process data which they are
+potentially uninterested in.  Multicast is the superior technique but not
+as widely supported by other marine applications.
+
+Bi-directional unicast interfaces do not necessarily mean what you think they
+mean.  Outbound packets will be sent from an ephemeral port and will be
+received from *any* sender of UDP packets containing valid NMEA-0183 data on
+that port. This is invariably not what you want and it is normally better to use
+separate send and receive interfaces for bi-directional communication over UDP
+between two instances of kplex.
+
+Generally kplex can work out whether an interface should use unicast, multicast
+or broadcast traffic from the supplied <address> so the "type" option should not
+normally be given and doing so to force an mode not consistent with the supplied
+address will result in an error.  One use for the "type" option is when
+supplying a "device" but no "address" option to an inbound interface. In this
+case the receiving interface will expect unicast traffic unless "type=broadcast"
+is explicitly requested.
+
 Broadcast Interfaces
 --------------------
+Broadcast interfaces are now deprecated and will be removed from a future
+version of kplex. Use udp interfaces instead.
+
 This method involves nmea sentences encapsulated within UDP datagrams sent to a
 broadcast address.
     Interface-specific options:
@@ -468,6 +540,8 @@ supported by many (if any) marine navigation applications at present.
 
 Multicast Interfaces
 --------------------
+Multicast interfaces are now deprecated and will be removed in a future version
+of kplex. Use udp interfaces instead.
 
 Multicast interfaces are similar to broadcast interfaces, but available with
 IPv6 as well as IPv4 and more efficient.  In an ethernet network, a broadcast
