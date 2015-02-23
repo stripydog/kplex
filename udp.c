@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 
 #define DEFUDPQSIZE 64
+#define CBUFSIZ 128
 
 static struct ignore_addr {
     struct sockaddr_in iaddr;
@@ -21,6 +22,12 @@ static struct ignore_addr {
     int writers;
     struct ignore_addr *next;
 } *ignore;
+
+struct coalesce {
+    size_t offset;
+    size_t seqid;
+    char buf[CBUFSIZ];
+};
 
 struct if_udp {
     int fd;
@@ -32,6 +39,7 @@ struct if_udp {
         struct ipv6_mreq ip6mr;
     } mr;
     struct ignore_addr *ignore;
+    struct coalesce *coalesce;
 };
 
 /*
@@ -94,9 +102,94 @@ void cleanup_udp(iface_t *ifa)
             ifu->ignore->writers--;
     }
 
+    if (ifu->coalesce)
+        free(ifu->coalesce);
+
     /* iomutex should be locked in the cleanup routine */
     close(ifu->fd);
 }
+
+int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
+{
+    int i;
+
+    if (len < 13)
+        return(0);
+
+    if (!(sptr[3] == 'V' && sptr[4] == 'D' &&
+            (sptr[5] == 'M' || sptr[5] == 'O')))
+        return(0);
+    sptr+=6;
+
+    if ((*sptr++) != ',')
+        return(0);
+
+    for (i=7,*nfrag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
+        *nfrag = *nfrag*10+*sptr-'0';
+
+    if (*sptr++ != ',' || i > len)
+        return(0);
+
+    for (*frag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
+        *frag = *frag*10+*sptr-'0';
+
+    if (*sptr++ != ',' || i > len)
+        return(0);
+
+    for (*seq=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
+        *seq = *seq*10+*sptr-'0';
+
+    if (*sptr != ',' || i > len)
+        return(0);
+
+    return(1);
+}
+
+int coalesce(struct if_udp *ifu, struct msghdr * mh)
+{
+    size_t nfrags,frag;
+    unsigned int seqid;
+    struct iovec *ioptr = mh->msg_iov;
+    int data = mh->msg_iovlen-1;
+    size_t len;
+    int i;
+    struct coalesce *cp = ifu->coalesce;
+
+    if (!(is_ais(ioptr[data].iov_base,ioptr[data].iov_len,
+            &nfrags,&frag,&seqid)))
+        return(0);
+
+    if (nfrags == 1 && cp->offset == 0)
+        return(0);
+
+    for (i=0;i<mh->msg_iovlen;i++)
+        len=ioptr[i].iov_len;
+
+    if ((cp->offset + len) > CBUFSIZ || ((cp->offset) && (cp->seqid != seqid) &&
+            frag < nfrags)) {
+        sendto(ifu->fd,cp->buf,cp->offset,0,
+               (struct sockaddr *)&ifu->addr,ifu->asize);
+        cp->offset=0;
+    }
+
+    if (data) {
+        memcpy(cp->buf+cp->offset,mh->msg_iov->iov_base,mh->msg_iov->iov_len);
+        cp->offset += mh->msg_iov->iov_len;
+    }
+    memcpy(ifu->coalesce->buf+ifu->coalesce->offset,
+        mh->msg_iov[data].iov_base,mh->msg_iov[data].iov_len);
+    cp->offset += mh->msg_iov[data].iov_len;
+
+    if (frag == nfrags) {
+        sendto(ifu->fd,cp->buf,cp->offset,0,
+                (struct sockaddr *)&ifu->addr,ifu->asize);
+        cp->offset=0;
+    } else
+        cp->seqid=seqid;
+
+    return (1);;
+}
+
 
 void write_udp(struct iface *ifa)
 {
@@ -146,6 +239,13 @@ void write_udp(struct iface *ifa)
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
 
+        if (ifu->coalesce) {
+            if (coalesce(ifu,&msgh)) {
+                senblk_free(sptr,ifa->q);
+                continue;
+            }
+        }
+
         if (sendmsg(ifu->fd,&msgh,0) < 0)
             break;
         senblk_free(sptr,ifa->q);
@@ -161,19 +261,25 @@ ssize_t read_udp(iface_t *ifa, char *buf)
 {
     struct if_udp *ifu = (struct if_udp *) ifa->info;
     struct sockaddr_storage src;
-    socklen_t sz = (socklen_t) sizeof(src);
-    socklen_t insz = sizeof(struct sockaddr_in);
     ssize_t nread;
+    struct iovec iov;
+    struct msghdr mh;
+
+    iov.iov_base = buf;
+    iov.iov_len = BUFSIZ;
+
+    mh.msg_name = &src;
+    mh.msg_namelen = (socklen_t) sizeof(src);
+    mh.msg_iov = &iov;
+    mh.msg_iovlen = 1;
+    mh.msg_control = NULL;
 
     do {
-        nread = recvfrom(ifu->fd,(void *)buf,BUFSIZ,0,(struct sockaddr *) &src,&sz);
+        nread = recvmsg(ifu->fd,&mh,0);
+
         if (ifu->ignore && ifu->ignore->writers) {
         /* Broadcast Interface: IPv4 */
-            if (sz != insz) {
-                sz=sizeof(src);
-                continue;
-            }
-            if (memcmp((void *)&src,(void *)&ifu->ignore->iaddr,(size_t) sz)
+            if (memcmp((void *)&src,(void *)&ifu->ignore->iaddr,(size_t) mh.msg_namelen)
                     == 0) 
                 continue;
         }
@@ -223,6 +329,7 @@ struct iface *init_udp(struct iface *ifa)
     struct servent *svent;
     size_t qsize = DEFUDPQSIZE;
     struct kopts *opt;
+    int coalesce=0;
     int ifindex,iffound=0;
     int linklocal=0;
     int on=1,off=0;
@@ -250,7 +357,14 @@ struct iface *init_udp(struct iface *ifa)
             address=opt->val;
         else if (!strcasecmp(opt->var,"port"))
             service=opt->val;
-        else if (!strcasecmp(opt->var,"qsize")) {
+        else if (!strcasecmp(opt->var,"coalesce")) {
+            if (!strcasecmp(opt->val,"ais") || !strcasecmp(opt->val,"yes"))
+                coalesce=1;
+            else if (!strcasecmp(opt->val,"no"))
+                coalesce=0;
+            else
+                logerr(0,"Unrecognized value for coalesce: %s",opt->val);
+        } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
                 logerr(0,"Invalid queue size specified: %s",opt->val);
                 return(NULL);
@@ -278,6 +392,7 @@ struct iface *init_udp(struct iface *ifa)
         else
             service=DEFPORTSTRING;
     }
+
     memset((void *)&hints,0,sizeof(hints));
 
     hints.ai_flags=(ifa->direction==IN)?AI_PASSIVE:0;
@@ -598,6 +713,14 @@ struct iface *init_udp(struct iface *ifa)
         if ((ifa->q = init_q(qsize)) == NULL) {
             logerr(errno,"Could not create queue");
             return(NULL);
+        }
+        if (coalesce) {
+            if ((ifu->coalesce=
+                    (struct coalesce *)malloc(sizeof(struct coalesce))) == NULL) {
+                logerr(errno,"Could not allocate memory");
+                return(NULL);
+            }
+            ifu->coalesce->offset=ifu->coalesce->seqid=0;
         }
     }
 
