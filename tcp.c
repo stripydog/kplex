@@ -356,7 +356,6 @@ void write_tcp(struct iface *ifa)
                 data=0;
                 free(iov[0].iov_base);
             }
-
         /* SIGPIPE is blocked here so we can avoid using the (non-portable)
          * MSG_NOSIGNAL
          */
@@ -484,11 +483,13 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->write=write_tcp;
     newifa->read=do_read;
     newifa->tagflags=ifa->tagflags;
+    newifa->flags=ifa->flags;
     newifa->readbuf=read_tcp;
     newifa->lists=ifa->lists;
     newifa->ifilter=addfilter(ifa->ifilter);
     newifa->ofilter=addfilter(ifa->ofilter);
     newifa->checksum=ifa->checksum;
+    newifa->strict=ifa->strict;
     if (ifa->direction == IN)
         newifa->q=ifa->lists->engine->q;
     else {

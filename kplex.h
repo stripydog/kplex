@@ -201,6 +201,7 @@ struct iface {
     struct iface *next;
     struct iolists *lists;
     int checksum;
+    int strict;
     unsigned int flags;
     unsigned int tagflags;
     sfilter_t *ifilter;

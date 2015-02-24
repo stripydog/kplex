@@ -553,6 +553,8 @@ iface_t *get_default_global()
     }
     ifg->flags=0;
     ifg->logto=LOG_DAEMON;
+    ifp->checksum=0;
+    ifp->strict=1;
     ifp->info = (void *)ifg;
 
     return(ifp);
@@ -853,6 +855,7 @@ iface_t *ifdup (iface_t *ifa)
     newif->ifilter=addfilter(ifa->ifilter);
     newif->ofilter=addfilter(ifa->ofilter);
     newif->checksum=ifa->checksum;
+    newif->strict=ifa->strict;
     return(newif);
 }
 
@@ -1002,6 +1005,15 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
                 fprintf(stderr,"Checksum option must be either \'yes\' or \'no\'\n");
                 exit(1);
             }
+        } else if (!strcasecmp(optr->var,"strict")) {
+            if (!strcasecmp(optr->val,"yes"))
+                e_info->strict=1;
+            else if (!strcasecmp(optr->val,"no"))
+                e_info->strict=0;
+            else {
+                fprintf(stderr,"Strict option must be either \'yes\' or \'no\'\n");
+                exit(1);
+            }
         } else if (!strcasecmp(optr->var,"failover")) {
             if (addfailover(&e_info->ofilter,optr->val) != 0) {
                 fprintf(stderr,"Failed to add failover %s\n",optr->val);
@@ -1087,7 +1099,7 @@ void do_read(iface_t *ifa)
     int nread,countmax,count=0;
     enum sstate senstate;
     int nocr=flag_test(ifa,F_NOCR)?1:0;
-
+    int loose = (ifa->strict)?0:1;
     sblk.src=ifa->id;
     senstate=SEN_NODATA;
 
@@ -1097,7 +1109,7 @@ void do_read(iface_t *ifa)
             case '$':
             case '!':
                 ptr=sblk.data;
-                countmax=SENMAX-nocr;
+                countmax=SENMAX-(nocr|loose);
                 count=1;
                 *ptr++=*bptr;
                 senstate=SEN_SENPROC;
@@ -1115,25 +1127,36 @@ void do_read(iface_t *ifa)
                 }
                 continue;
             case '\r':
-                if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
-                    senstate = SEN_CR;
-                    *ptr++=*bptr;
-                    ++count;
-                } else
-                    senstate = SEN_NODATA;
-                continue;
             case '\n':
-                if (senstate == SEN_CR || nocr) {
-                    if (nocr && (*(ptr-1)  != '\r')) {
+                if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
+                    if (loose || nocr) {
                         *ptr++='\r';
-                        ++count;
+                        *ptr='\n';
+                        sblk.len = count+2;
+                    } else {
+                        if (*bptr == '\r') {
+                            senstate = SEN_CR;
+                            *ptr++=*bptr;
+                            ++count;
+                        } else {
+                            senstate = SEN_NODATA;
+                        }
+                        continue;
+                    }
+                } else if (senstate == SEN_CR) {
+                    if (*bptr == '\r') {
+                        senstate = SEN_NODATA;
+                        continue;
                     }
                     *ptr=*bptr;
                     sblk.len = ++count;
-                    if (!(ifa->checksum && checkcksum(&sblk) &&
-                            (sblk.len > 0 )) &&
-                            senfilter(&sblk,ifa->ifilter) == 0)
-                        push_senblk(&sblk,ifa->q);
+                } else {
+                    senstate = SEN_NODATA;
+                    continue;
+                }
+                if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
+                        senfilter(&sblk,ifa->ifilter) == 0) {
+                    push_senblk(&sblk,ifa->q);
                 }
                 senstate=SEN_NODATA;
                 continue;
@@ -1361,6 +1384,8 @@ int main(int argc, char ** argv)
 
             if (ifptr->checksum <0)
                 ifptr->checksum = engine->checksum;
+            if (ifptr->strict <0)
+                ifptr->strict = engine->strict;
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;
             if (ifptr->next==ifptr2)

@@ -109,6 +109,9 @@ where:
         "checksum": May be "yes" to enable checksumming of incoming sentences on
             an interface or "no" to disable it. This option overrides the global
             checksum option.
+        "strict": May be "yes" to enable strict parsing of incoming sentences on
+            an interface or "no" to disable it. This option overrides the global
+            strict parsing option.
         "loopback": May be "yes" to enable sentences read from an interface to
             be written back to it when communication is bi-directional or "no"
             (the default) to ensure sentences are not looped back to the
@@ -424,6 +427,7 @@ unicast, multicast or broadcast.
     port=<port>
     device=<interface>
     type=[unicast|broadcast|multicast]
+    coalesce=[yes|no]
         Where:
             <address> is the interface address to bind to for inbound kplex
             interfaces or the address to send to for outbound interfaces. If
@@ -482,6 +486,18 @@ address will result in an error.  One use for the "type" option is when
 supplying a "device" but no "address" option to an inbound interface. In this
 case the receiving interface will expect unicast traffic unless "type=broadcast"
 is explicitly requested.
+
+By default or if "coalesce=no" is specified, input sentences are always
+transmitted one per packet as soon as they can be.  If "coalesce=yes" is
+specified, kplex will buffer parts of a multi-part AIS message so long as
+enough space is available (512 bytes, a minimum of 7 sentences depending ons
+size, can be buffered). Buffered data will be transmitted if the last part of
+the message is received (even if all the intervening parts have not been),
+there is insufficient space to store another sentence, or a sentence arrives
+which is not part of the buffered message. In the latter cases the newly arrived
+sentence is buffered if it is part (but not the last fragment) of a multi-part
+AIS sentence, otherwise it is transmitted immediately.  kplex does not re-order
+out of order fragments of a multi-part AIS message.
 
 Broadcast Interfaces
 --------------------
@@ -880,13 +896,22 @@ mode=<mode>
     <mode> is either "foreground" (the default) or "background", the former
     is the default. The latter tells kplex to detach form its controlling
     terminal and run as a daemon process.
-checksum=<checksum mode>
-    Where <checksum mode> is either "no" (the default) or "yes", which tells
-    kplex to checksum all incoming nmea sentences (except for interfaces where
-    per-interface configuration overrides this). Sentences which do not
-    match their calculated checksums are discarded.  The default is not to
-    calculate checksums as it is assumed that this will be done by end consumer
-    applications.
+checksum=[yes|no]
+    "checksum=yes" tells kplex to check the checksum all incoming nmea sentences
+    (except for interfaces where per-interface configuration overrides this).
+    Sentences which do not match their calculated checksums are discarded.  The
+    default is not to calculate checksums as it is assumed that this will be
+    done by end consumer applications.
+strict=[yes|no]
+    If this option is not specified or "strict=yes" is given as an option, kplex
+    will require all interfaces to be correctly terminated with a <CR><LF>
+    sequence unless overridden on a per-interface "strict" option or a per-
+    interface "eol=n".  If "strict=no" is specified all interfaces will default
+    to a looser parsing strategy which will allow input sentences to be
+    terminated by a <CR> or <LF>.  This option applies to input sentences only
+    and has no effect on interface output.  However terminated on input when
+    loose parsing ("strict=no") is in effect, sentences output from interfaces
+    other than file interfaces will be <CR><LF> terminated.
 logto=<facility>
     Where <facility> is the syslog facility to use for logging.  The default is
     "daemon", telling kplex to use the LOG_DAEMON syslog facility. <facility> is

@@ -335,6 +335,13 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             free_filter(ifp->ofilter);
         if ((ifp->ofilter=getfilter(val)) == NULL)
         return(-2);
+    } else if (!strcmp(var,"strict")) {
+        if (!strcasecmp(val,"yes")) {
+            ifp->strict=1;
+        } else if (!strcasecmp(val,"no")) {
+            ifp->strict=0;
+        } else
+            return(-2);
     } else if (!strcmp(var,"checksum")) {
         if (!strcasecmp(val,"yes")) {
             ifp->checksum=1;
@@ -428,9 +435,10 @@ iface_t *get_config(FILE *fp, unsigned int *line, enum itype type)
         return(NULL);
     }
     memset((void *) ifp,0,sizeof(iface_t));
-
+printf("here\n");
     ifp->direction = BOTH;
     ifp->checksum=-1;
+    ifp->strict=-1;
     ifp->type=type;
 
     /* Set defaults */
@@ -506,6 +514,8 @@ iface_t *parse_file(char *fname)
             ifg->flags=0;
             ifg->logto=LOG_DAEMON;
             ifp->info = (void *)ifg;
+            if (ifp->strict <0)
+                ifp->strict = 1;
             if (ifp->checksum <0)
                 ifp->checksum = 0;
 
@@ -539,6 +549,7 @@ iface_t *parse_arg(char *arg)
 
     ifp->direction = BOTH;
     ifp->checksum=-1;
+    ifp->strict=-1;
 
     for(ptr=arg;*ptr && *ptr != ':';ptr++);
     if (!*ptr) {
