@@ -435,7 +435,6 @@ iface_t *get_config(FILE *fp, unsigned int *line, enum itype type)
         return(NULL);
     }
     memset((void *) ifp,0,sizeof(iface_t));
-printf("here\n");
     ifp->direction = BOTH;
     ifp->checksum=-1;
     ifp->strict=-1;
