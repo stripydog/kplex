@@ -298,7 +298,7 @@ iface_t *init_file (iface_t *ifa)
             errno=0;
             if (ifa->direction != IN && (ifc->fd=open(ifc->filename,
                         O_WRONLY|O_CREAT|O_EXCL|((append)?O_APPEND:0),
-                        (perm)?perm:0664) >= 0)) {
+                        (perm)?perm:0664)) >= 0) {
                 if (gid != 0 || uid != -1) {
                     if (chown(ifc->filename,uid,gid) < 0) {
                         logerr(errno, "Failed to set ownership or group on output file %s",ifc->filename);
