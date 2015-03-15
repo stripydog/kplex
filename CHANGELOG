@@ -1,4 +1,4 @@
-v1.3beta1: February 26th 2015
+v1.3beta1: March 15th 2015
 * Added "preamble" option to tcp interfaces
 * Fixed bugs in failover specification parsing
 * Added udp: interface type
