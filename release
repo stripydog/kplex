@@ -9,6 +9,6 @@ cp * $VDIR
 rm $VDIR/release
 echo "/^CFLAGS=/s/^/#/
 $
--3,.d
+-6,.d
 w" | ed -s $VDIR/Makefile >/dev/null
 (cd /tmp && tar cf - ${VDIR##*/} | gzip > kplex-${VERSION}.tgz)

@@ -32,6 +32,9 @@ uninstall:
 clean:
 	rm -f kplex $(objects)
 
+version.h:
+	@echo "#define VERSION \""`git describe --abbrev=0 | sed 's/^v\(.*\)/\1-git/'`"\"" > version.h
+
 .PHONY: release
 release:
 	sudo ./release
