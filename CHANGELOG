@@ -1,9 +1,10 @@
-v1.3beta1: March 15th 2015
+v1.3: April 15th 2015
 * Added "preamble" option to tcp interfaces
 * Fixed bugs in failover specification parsing
 * Added udp: interface type
 * Added AIS coalescing
 * Added strict parsing option
+* Fixed bug in file output to new files
 
 v1.2: January 6th 2015
 * eol=n now optional on other interface types

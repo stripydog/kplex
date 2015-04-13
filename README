@@ -404,10 +404,10 @@ keepcnt=3 (Not Mac OS X prior to 10.9)
 The "preamble" option is used to send a set of characters to a remote server to
 identify a sending station before transmitting data.  It is not part of the
 NMEA-0183 specification (for standards-compliant source identification, use
-sourc TAGs instead) but is used by some AIS aggregation sites as an alternative
-to per-station dedicated TCP ports.  With the "persist" option, the preamble
-string will be sent after each reconnection following connection loss.  Non-
-ASCII characters may be specified either by a backslash followed by the
+source TAGs instead) but is used by some AIS aggregation sites as an alternative
+to per-station dedicated TCP ports.  If specified with the "persist" option, the
+preamble string will be sent after each reconnection following connection loss.
+Non-ASCII characters may be specified either by a backslash followed by the
 (exactly) 3-digit octal representation of the character or the sequence "\x"
 followed by the (exactly) 2-digit hexadecimal representation of the character.
 The NULL character must be specified as "\000" or "\x00" and may not be
@@ -420,6 +420,12 @@ characters.
 
 UDP Interfaces
 --------------
+NOTE: As of kplex 1.3 UDP interfaces are now preferred over the existing
+"broadcast" and "multicast" interface types.  However the "udp" interface is
+new in this version. If you encounter problems, please report the issue and
+consider reverting to the older "broadcast" or "multicast" interface types
+while your problem is under investigation.
+
 This method encapsulates nmea sentences within UDP datagrams which are sent via
 unicast, multicast or broadcast.
     Interface-specific options:
@@ -502,7 +508,7 @@ out of order fragments of a multi-part AIS message.
 Broadcast Interfaces
 --------------------
 Broadcast interfaces are now deprecated and will be removed from a future
-version of kplex. Use udp interfaces instead.
+version of kplex. Use udp interfaces instead if possible.
 
 This method involves nmea sentences encapsulated within UDP datagrams sent to a
 broadcast address.
@@ -557,7 +563,7 @@ supported by many (if any) marine navigation applications at present.
 Multicast Interfaces
 --------------------
 Multicast interfaces are now deprecated and will be removed in a future version
-of kplex. Use udp interfaces instead.
+of kplex. Use udp interfaces instead if possible.
 
 Multicast interfaces are similar to broadcast interfaces, but available with
 IPv6 as well as IPv4 and more efficient.  In an ethernet network, a broadcast
@@ -601,9 +607,8 @@ If a device is not specified in one of the above ways for multicast addresses
 other than IPv6 link and interface local groups, the routing table will be used
 to select the outgoing interface for multicast packets.
 
-GoFree Interfaces (EXPERIMENTAL)
---------------------------------
-
+GoFree Interfaces
+-----------------
 GoFree is Navico's service discovery protocol which allows applications to
 connect to a network services without knowing details of its address.  A
 kplex gofree interfaces listens on the IPv4 multicast address (239.2.1.1) and
@@ -897,14 +902,16 @@ mode=<mode>
     is the default. The latter tells kplex to detach form its controlling
     terminal and run as a daemon process.
 checksum=[yes|no]
+    Where:
     "checksum=yes" tells kplex to check the checksum all incoming nmea sentences
     (except for interfaces where per-interface configuration overrides this).
     Sentences which do not match their calculated checksums are discarded.  The
     default is not to calculate checksums as it is assumed that this will be
     done by end consumer applications.
 strict=[yes|no]
-    If this option is not specified or "strict=yes" is given as an option, kplex
-    will require all interfaces to be correctly terminated with a <CR><LF>
+    Where:
+    "strict=yes" (the default if "strict=" is not specified) tells kplex to
+    require all sentences received to be correctly terminated with a <CR><LF>
     sequence unless overridden on a per-interface "strict" option or a per-
     interface "eol=n".  If "strict=no" is specified all interfaces will default
     to a looser parsing strategy which will allow input sentences to be
@@ -983,10 +990,6 @@ direction=out
 To Do
 -----
 Possible future enhancements include:
-* Port to java.  kplex is written in C for POSIX-compliant systems because
-  that's what I know best.  Despite my railing against Object Oriented
-  Fascism, kplex is inherently OO. A java implementation would also be more
-  portable.
 * A set of commands to allow modifying kplex on the fly, for example to add,
   subtract and modify the current interface list.  The structure of kplex means
   this would be a relatively straightforward addition
