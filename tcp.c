@@ -203,7 +203,9 @@ int reconnect(iface_t *ifa, int err)
                 iftp = (struct if_tcp *) ifa->pair->info;
                 iftp->fd = ift->fd;
             }
-        if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+        if (ift->shared->nodelay &&
+                (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
+                < 0))
             logerr(errno,"Could not disable Nagle on new tcp connection");
         (void) establish_keepalive(ift);
         if (ift->preamble){
@@ -281,7 +283,9 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                 "No pair information found for bi-directional tcp connection!");
             nread=-1;
         } else {
-            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+            if (ift->shared->nodelay &&
+                    (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
+                    < 0))
                 logerr(errno,"Could not disable Nagle on new tcp connection");
 
             iftp->fd = ift->fd;
@@ -422,7 +426,9 @@ void delayed_connect(iface_t *ifa)
             free(ift->shared->host);
             free(ift->shared->port);
             ift->shared->host=ift->shared->port=NULL;
-            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+            if (ift->shared->nodelay &&
+                    (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
+                        < 0))
                 logerr(errno,"Could not disable Nagle on new tcp connection");
 
             (void) establish_keepalive(ift);
@@ -661,6 +667,7 @@ iface_t *init_tcp(iface_t *ifa)
     unsigned keepintvl=0;
     unsigned keepcnt=0;
     unsigned sndbuf=DEFSNDBUF;
+    int nodelay=1;
     long timeout=-1;
 
     host=port=NULL;
@@ -760,6 +767,15 @@ iface_t *init_tcp(iface_t *ifa)
         } else if (!strcasecmp(opt->var,"preamble")) {
             if ((ift->preamble=parse_preamble(opt->val)) == NULL) {
                 logerr(0,"Could not parse preamble %s",opt->val);
+                return(NULL);
+            }
+        } else if (!strcasecmp(opt->var,"nodelay")) {
+            if (!strcasecmp(opt->val,"no")) {
+                nodelay=0;
+            } else if (!strcasecmp(opt->val,"yes")) {
+                nodelay=1;
+            } else {
+                logerr(0,"Invalid option \"nodelay=%s\"",opt->val);
                 return(NULL);
             }
         } else  {
@@ -888,6 +904,7 @@ iface_t *init_tcp(iface_t *ifa)
         ift->shared->sndbuf=sndbuf;
         ift->shared->tv.tv_sec=timeout;
         ift->shared->tv.tv_usec=0;
+        ift->shared->nodelay=nodelay;
     }
 
     freeaddrinfo(abase);
@@ -904,7 +921,7 @@ iface_t *init_tcp(iface_t *ifa)
         }
         /* Disable Nagle. Not fatal if we fail for any reason */
         if (connection) {
-            if (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
+            if (nodelay && (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0))
                 logerr(errno,"Could not disable Nagle algorithm for tcp socket");
             /* do preamble */
             if (ift->preamble)

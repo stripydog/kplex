@@ -36,6 +36,7 @@ struct if_tcp_shared {
     unsigned keepintvl;
     unsigned keepcnt;
     unsigned sndbuf;
+    int nodelay;
     pthread_mutex_t t_mutex;
     struct timeval tv;
 };

@@ -297,6 +297,7 @@ The exact number will be system dependent but it will certainly be "enough".
     preamble=<preamble>
     timeout=<timeout>
     sndbuf=<bufsize>
+    nodelay=[yes|no]
     keepalive=[yes|no]
     keepidle=<keepidle>
     keepintvl=<keepinterval>    * Not Mac OS X < 10.9
@@ -401,6 +402,14 @@ keepidle=30
 keepintvl=10 (Not Mac OS X prior to 10.9)
 keepcnt=3 (Not Mac OS X prior to 10.9)
 
+If "nodelay=yes" is specified or the nodelay option is not used, kplex will
+disable the nagle algorithm on an outbound tcp connection. This results in
+fractionally faster delivery of data to clients at the expense of slightly more
+network traffic and is generalyl desirable on a local area network.  Where
+minimising network use is a priority (such as sending data over a mobile data
+connection with a per-megabyte charge) specifying "nodelay=no" can reduce
+network traffic at the expense of a slight increase in latency.
+ 
 The "preamble" option is used to send a set of characters to a remote server to
 identify a sending station before transmitting data.  It is not part of the
 NMEA-0183 specification (for standards-compliant source identification, use
