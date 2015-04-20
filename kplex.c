@@ -425,7 +425,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             q->qhead=q->qhead->next;
             if (q->drops < 0)
                 q->drops++;
-            DEBUG(3,"Dropped senblk q=0x%x",(int)q);
+            DEBUG(3,"Dropped senblk q=0x%x",q);
         }
     
         (void) senblk_copy(tptr,sptr);
