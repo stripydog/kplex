@@ -1,3 +1,7 @@
+v1.4:
+* "-d" flag now documented with additional debugging
+* Default queue sizes reduced and SNDBUF size reduced
+
 v1.3: April 15th 2015
 * Added "preamble" option to tcp interfaces
 * Fixed bugs in failover specification parsing

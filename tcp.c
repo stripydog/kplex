@@ -11,6 +11,7 @@
 #include <netinet/tcp.h>
 #include <signal.h>
 #include <sys/uio.h>
+#include <arpa/inet.h>
 
 /*
  * Duplicate struct if_tcp
@@ -157,8 +158,10 @@ int reconnect(iface_t *ifa, int err)
     int retval=0;
     int on=1;
 
+    DEBUG(3,"Reconnecting (write) interface %s",(ifa->name)?ifa->name:"(unnamed)");
     /* Ensure two threads in a bi-directional connection are not simultaneously
      * trying to reconnect */
+    /* FIXME: This will re-connect even if read side just fixed the problem */
     pthread_mutex_lock(&ift->shared->t_mutex);
 
     /* If the write timed out, we don't need to sleep before retrying */
@@ -198,6 +201,7 @@ int reconnect(iface_t *ifa, int err)
             retval = -1;
         }
     }
+    DEBUG(3,"Reconnected (write) interface %s",(ifa->name)?ifa->name:"(unnamed)");
     if (retval == 0) {
         if (ifa->pair) {
                 iftp = (struct if_tcp *) ifa->pair->info;
@@ -213,6 +217,7 @@ int reconnect(iface_t *ifa, int err)
         }
     }
 
+    DEBUG(7,"Flushing queue interface %s",(ifa->name)?ifa->name:"(unnamed)");
     flush_queue(ifa->q);
 
     pthread_mutex_unlock(&ift->shared->t_mutex);
@@ -235,6 +240,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     int fflags;
     int on=1;
 
+    DEBUG(3,"Reconnecting (read) interface %s",(ifa->name)?ifa->name:"(unnamed)");
     pthread_mutex_lock(&ift->shared->t_mutex);
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
@@ -261,36 +267,38 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                 }
 
                 mysleep(ift->shared->retry);
-                nread=connect(ift->fd,(const struct sockaddr *)&ift->shared->sa,
-                        ift->shared->sa_len);
+                if ((nread=connect(ift->fd,
+                        (const struct sockaddr *)&ift->shared->sa,
+                        ift->shared->sa_len)) == 0)
+                    DEBUG(3,"Reconnected (read) interface %s",(ifa->name)?ifa->name:"(unnamed)");
+
             }
         } else {
             nread=0;
         }
     }
-
-
-    if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
-        logerr(errno,"Failed to make tcp socket blocking");
-        nread=-1;
-    }
-
-    (void) establish_keepalive(ift);
-
-    if (ifa->direction == IN) {
-        if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
-            logerr(errno,
-                "No pair information found for bi-directional tcp connection!");
+    if (nread == 0) {
+        if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
+            logerr(errno,"Failed to make tcp socket blocking");
             nread=-1;
-        } else {
-            if (ift->shared->nodelay &&
-                    (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
-                    < 0))
-                logerr(errno,"Could not disable Nagle on new tcp connection");
+        }
 
-            iftp->fd = ift->fd;
-            if (iftp->preamble)
-                do_preamble(iftp);
+        (void) establish_keepalive(ift);
+
+        if (ifa->direction == IN) {
+            if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
+                logerr(errno,"No pair information found for bi-directional tcp connection!");
+                nread=-1;
+            } else {
+                if (ift->shared->nodelay && (setsockopt(ift->fd,IPPROTO_TCP,
+                        TCP_NODELAY,&on,sizeof(on)) < 0))
+                    logerr(errno,
+                            "Could not disable Nagle on new tcp connection");
+
+                iftp->fd = ift->fd;
+                if (iftp->preamble)
+                    do_preamble(iftp);
+            }
         }
     }
 
@@ -366,6 +374,8 @@ void write_tcp(struct iface *ifa)
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
         if (writev(ift->fd,iov,cnt) <0) {
+            DEBUG(3,"TCP write failed for interface %s",(ifa->name)?ifa->name:
+                    "(no name)");
             err=errno;
             if (!flag_test(ifa,F_PERSIST))
                 break;
@@ -532,15 +542,25 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
 
 void tcp_server(iface_t *ifa)
 {
-    struct if_tcp *ift=(struct if_tcp *)ifa->info;
     int afd;
+    socklen_t slen;
+    struct if_tcp *ift=(struct if_tcp *)ifa->info;
+    struct sockaddr_storage sad;
+    char addrs[INET6_ADDRSTRLEN];
 
 
     if (listen(ift->fd,5) == 0) {
         while(ifa->direction != NONE) {
-         if ((afd = accept(ift->fd,NULL,NULL)) < 0)
+            slen = sizeof(struct sockaddr_storage);
+        if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0)
              break;
     
+        DEBUG(3,"New TCP connection received by %s from %s",
+                (ifa->name)?ifa->name:"(no name)", inet_ntop(sad.ss_family,
+                (sad.ss_family == AF_INET)?
+                (const void *) &((struct sockaddr_in *)&sad)->sin_addr:
+                (const void *) &((struct sockaddr_in6 *)&sad)->sin6_addr,
+                addrs,INET6_ADDRSTRLEN));
          if (new_tcp_conn(afd,ifa) == NULL)
              close(afd);
         }

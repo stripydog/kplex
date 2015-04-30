@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2014
+ * Copyright Keith Young 2012-2013
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -322,7 +322,7 @@ int addfailover(sfilter_t **head,char *spec)
 
 /*
  * Exit function used by interface handlers.  Interface objects are cleaned
- * up by the destructor funcitons of thread local storage
+ * up by the destructor functions of thread local storage
  * Args: exit status (unused)
  * Returns: Nothing
  */
@@ -409,9 +409,12 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             q->free=q->free->next;
         } else {
             /* ...if not steal from the head of the queue, dropping previous
-               contents. Should probably keep a counter for this */
+               contents. */
             tptr=q->qhead;
             q->qhead=q->qhead->next;
+            if (q->drops < 0)
+                q->drops++;
+            DEBUG(3,"Dropped senblk q=0x%x",(int)q);
         }
     
         (void) senblk_copy(tptr,sptr);
@@ -786,6 +789,8 @@ void iface_destroy(void *ifptr)
 {
     iface_t *ifa = (iface_t *) ifptr;
 
+    DEBUG(3,"Cleaning up data for exiting interface %s",(ifa->name)?ifa->name:
+            "(no name)");
     sigset_t set,saved;
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);

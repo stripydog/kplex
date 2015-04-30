@@ -4,9 +4,9 @@
  * For copying information see the file COPYING distributed with this software
  */
 
-#define DEFTCPQSIZE 128
+#define DEFTCPQSIZE 16
 #define DEFSNDTIMEO 30
-#define DEFSNDBUF 2048
+#define DEFSNDBUF 1024
 #define DEFKEEPIDLE 30
 #define DEFKEEPINTVL 10
 #define DEFKEEPCNT 3

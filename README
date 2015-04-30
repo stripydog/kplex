@@ -63,9 +63,14 @@ connection is commented out in this example file.
 Invocation:
 -----------
 
-kplex [-V] | [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
+kplex [-V] | [-d 1..9] [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
 
 Where
+The "-d" flag, if specified, will cause kplex to print debugging information,
+the verbosity of which is controlled by the flag's argument with "1" producing
+minimal additional debugging information and "9" producing verbose debug
+information.
+
 <filename> is the path of a configuration file to use where default options and
 interfaces are defined. If not specified, kplex will look for a configuration
 file in your home directory (~/.kplex.conf on GNU/Linux,

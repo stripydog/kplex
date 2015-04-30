@@ -29,14 +29,14 @@
 
 #define DEFSRCNAME "kplex"
 
-#define DEFQUEUESZ 128
-#define SERIALQUESIZE 128
-#define BCASTQUEUESIZE 64
-#define TCPQUEUESIZE 128
+#define DEFQUEUESZ 16
+#define SERIALQUESIZE 32
+#define BCASTQUEUESIZE 16
+#define TCPQUEUESIZE 16
 
 
 #define SENMAX 80
-#define SENBUFSZ 96
+#define SENBUFSZ 84
 #define TAGMAX 80
 #define DEFPORT 10110
 #define DEFPORTSTRING "10110"
@@ -127,6 +127,7 @@ struct ioqueue {
     pthread_mutex_t    q_mutex;
     pthread_cond_t    freshmeat;
     int active;
+    int drops;
     senblk_t *free;
     senblk_t *qhead;
     senblk_t *qtail;
@@ -155,9 +156,9 @@ struct kopts {
 struct srclist {
     union {
     unsigned int  id;
-    char *        name;
+    char *name;
     } src;
-    time_t    failtime;
+    time_t failtime;
     time_t lasttime;
     struct srclist *next;
 };
