@@ -50,6 +50,11 @@ unsigned int namelookup(char *name)
     int ret;
     struct nameid *nptr;
 
+    if (name == NULL) {
+        logerr(0,"namelookup: NULL pointer passed");
+        return(0);
+    }
+
     for (nptr=idlist;nptr;nptr=nptr->next) {
         if((ret=strcasecmp(name,nptr->name))) {
             if (ret<0)

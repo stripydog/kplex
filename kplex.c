@@ -98,6 +98,7 @@ int checkcksum (senblk_t *sptr)
  */
 int senfilter(senblk_t *sptr, sfilter_t *filter)
 {
+    unsigned int mask = (unsigned int) -1 ^ IDMINORMASK;
     sf_rule_t *fptr;
     char *cptr;
     int i;
@@ -114,7 +115,7 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
         return(1);
 
     for (fptr=filter->rules;fptr;fptr=fptr->next) {
-        if ((fptr->src.id) && (fptr->src.id != sptr->src))
+        if ((fptr->src.id) && (fptr->src.id != (sptr->src&mask)))
             continue;
         for (i=0,cptr=sptr->data+1;i<5 && *cptr != '\r';i++,cptr++)
             if(fptr->match[i] && fptr->match[i] != *cptr)
@@ -966,6 +967,8 @@ int name2id(sfilter_t *filter)
 
     if (filter->type == FILTER) {
         for (rptr=filter->rules;rptr;rptr=rptr->next) {
+            if (rptr->src.name == NULL)
+                continue;
             if (!(id=namelookup(rptr->src.name))) {
                 logwarn("Unknown interface \'%s\' in filter rules",rptr->src.name);
                 return(-1);

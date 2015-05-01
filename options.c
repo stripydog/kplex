@@ -280,7 +280,6 @@ sfilter_t *getfilter(char *fstring)
                 fstring++;
             if ((tfilter->src.name = strndup(sptr,fstring-sptr)) == NULL)
                 break;
-printf("name assigned to filter %s\n",tfilter->src.name);
         }
 
         if (*fstring == FILTEROPTDELIM) {
