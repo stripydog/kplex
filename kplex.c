@@ -114,30 +114,33 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
         return(1);
 
     for (fptr=filter->rules;fptr;fptr=fptr->next) {
+        if ((fptr->src.id) && (fptr->src.id != sptr->src))
+            continue;
         for (i=0,cptr=sptr->data+1;i<5 && *cptr != '\r';i++,cptr++)
             if(fptr->match[i] && fptr->match[i] != *cptr)
                 break;
-        if (i==5) {
-            if (fptr->type == ACCEPT) {
-                return(0);
-            }
-            if (fptr->type == DENY) {
-                return(-1);
-            }
-            /* type is limit. Hopefully. */
-            (void) gettimeofday(&tv,NULL);
-            if (tv.tv_sec < fptr->info.limit->timeout)
-                return(-1);
-            if ((tsecs=(tv.tv_sec - fptr->info.limit->timeout)) <
-                    fptr->info.limit->last.tv_sec)
-                return(-1);
-            if (tsecs == fptr->info.limit->last.tv_sec &&
-                    (tv.tv_usec < fptr->info.limit->last.tv_usec ))
-                return(-1);
-            /* at least timeout since last seen: Update info and pass */
-            memcpy(&fptr->info.limit->last,&tv,sizeof(struct timeval));
+        if (i!=5)
+            continue;
+
+        if (fptr->type == ACCEPT) {
             return(0);
         }
+        if (fptr->type == DENY) {
+            return(-1);
+        }
+        /* type is limit. Hopefully. */
+        (void) gettimeofday(&tv,NULL);
+        if (tv.tv_sec < fptr->info.limit->timeout)
+            return(-1);
+        if ((tsecs=(tv.tv_sec - fptr->info.limit->timeout)) <
+                fptr->info.limit->last.tv_sec)
+            return(-1);
+        if (tsecs == fptr->info.limit->last.tv_sec &&
+                (tv.tv_usec < fptr->info.limit->last.tv_usec ))
+            return(-1);
+        /* at least timeout since last seen: Update info and pass */
+        memcpy(&fptr->info.limit->last,&tv,sizeof(struct timeval));
+        return(0);
     }
     return(0);
 }
@@ -153,6 +156,8 @@ void free_srclist(struct srclist *src)
 
     for (;src;src=tsrc) {
         tsrc=src->next;
+        if (src->src.name)
+            free(src->src.name);
         free(src);
     }
 }
@@ -255,7 +260,7 @@ int addfailover(sfilter_t **head,char *spec)
 {
     sf_rule_t *newrule;
     struct srclist *src;
-    char *cptr;
+    char *cptr,*nptr;
     int n,done;
     time_t now;
 
@@ -287,12 +292,18 @@ int addfailover(sfilter_t **head,char *spec)
         if (*cptr++ != ':')
             break;
 
-        for(src->src.name=cptr;*cptr && *cptr != ':';)
+        for(nptr=cptr;*cptr && *cptr != ':';)
             cptr++;
         if (*cptr)
             *cptr='\0';
         else
             done++;
+
+        if ((src->src.name = strdup(nptr)) == NULL) {
+            logerr(errno,"Failed to allocate memory for string duplication");
+            free(newrule);
+            return(-1);
+        }
 
         src->lasttime=now;
         link_src_to_rule(&newrule->info.source,src);
@@ -953,12 +964,25 @@ int name2id(sfilter_t *filter)
     if (!filter)
         return(0);
 
+    if (filter->type == FILTER) {
+        for (rptr=filter->rules;rptr;rptr=rptr->next) {
+            if (!(id=namelookup(rptr->src.name))) {
+                logwarn("Unknown interface \'%s\' in filter rules",rptr->src.name);
+                return(-1);
+            }
+            free(rptr->src.name);
+            rptr->src.id=id;
+        }
+        return(0);
+    }
+    
     for (rptr=filter->rules;rptr;rptr=rptr->next)
         for (sptr=rptr->info.source;sptr;sptr=sptr->next) {
             if (!(id=namelookup(sptr->src.name))) {
                logwarn("Unknown interface \'%s\' in failover rules",sptr->src.name);
                 return(-1);
             }
+            free(sptr->src.name);
             sptr->src.id=id;
         }
     return(0);
@@ -1396,6 +1420,15 @@ int main(int argc, char ** argv)
             if (ifptr->next==ifptr2)
                 ifptr->next=NULL;
         }
+    }
+
+    /* One more spin through the list now we've initialised the name to id
+     * mapping so we can update references to "name" with an id
+     */
+    for (ifptr=engine->next;ifptr;ifptr=ifptr->next) {
+        if (ifptr->ofilter)
+            if (name2id(ifptr->ofilter))
+                logterm(errno,"Name to interface translation failed");
     }
 
     /* Create the key for thread local storage: in this case for a pointer to

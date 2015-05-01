@@ -1,6 +1,7 @@
 v1.4:
 * "-d" flag now documented with additional debugging
 * Default queue sizes reduced and SNDBUF size reduced
+* Added optional interface to filter rules
 
 v1.3: April 15th 2015
 * Added "preamble" option to tcp interfaces

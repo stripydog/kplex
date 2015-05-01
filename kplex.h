@@ -174,6 +174,10 @@ struct sfilter_rule {
         struct ratelimit *limit;
         struct srclist *source;
     } info;
+    union {
+        unsigned int id;
+        char *name;
+    } src;
     char match[5];
     struct sfilter_rule *next;
 };

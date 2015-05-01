@@ -14,6 +14,7 @@
 #define ARGDELIM ','
 #define FILTERDELIM ':'
 #define FILTEROPTDELIM '/'
+#define FILTERSRCDELIM '%'
 
 /* This is used before we start multiple threads */
 static char configbuf[BUFSIZE];
@@ -265,13 +266,24 @@ sfilter_t *getfilter(char *fstring)
         } else {
             for (sptr=tfilter->match,i=0;i<5;i++,fstring++) {
                 if (*fstring == '\0' || *fstring == FILTERDELIM ||
-                        *fstring == FILTEROPTDELIM)
+                        *fstring == FILTEROPTDELIM ||
+                        *fstring == FILTERSRCDELIM)
                     break;
                 *sptr++=(*fstring == '*')?0:*fstring;
             }
         }
 
-        if(*fstring == FILTEROPTDELIM) {
+        if (*fstring == FILTERSRCDELIM) {
+            sptr=++fstring;
+            while (*fstring && *fstring != FILTERDELIM &&
+                    *fstring != FILTEROPTDELIM)
+                fstring++;
+            if ((tfilter->src.name = strndup(sptr,fstring-sptr)) == NULL)
+                break;
+printf("name assigned to filter %s\n",tfilter->src.name);
+        }
+
+        if (*fstring == FILTEROPTDELIM) {
             if (tfilter->type == LIMIT) {
                 while(*++fstring) {
                     if (*fstring >= '0' && *fstring <= '9') 

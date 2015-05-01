@@ -750,22 +750,32 @@ a tcp server will be filtered according to the server's filters.
 A filter consists of a series of filter rules. Each filter rule
 consists of a "+", "-" or "~"  (to specify an "ALLOW", "DENY" or "LIMIT" rule,
 respectively) followed by a "match string" which is either the word "all" or 5
-characters.  A "LIMIT" rule must additionally have a "/" character followed by
-a whole number (ie without a decimal point) representing the minimum number of
-seconds which must pass between successive sentences matching that rule being
-permitted to pass.  Filter rules are separated by a colon (":" character).
-Filter rules are applied in the order they are specified to a sentence being
-filtered.
+characters.  The match string may optionally be followed by the "%" character
+and the name of an interface (which must have been given to an interface using
+the "name=" option).  A "LIMIT" rule must additionally have a "/" character
+followed by a whole number (i.e. without a decimal point) representing the
+minimum number of seconds which must pass between successive sentences matching
+that rule being permitted to pass.  Filter rules are separated by a colon (":"
+character).  Filter rules are applied in the order they are specified to a
+sentence being filtered.
 
 A filter rule which specifies the word "all" matches all sentences.  If a filter
-rule specifies a 5 character match stroing, these are compared with the 5
+rule specifies a 5 character match string, these are compared with the 5
 character NMEA 0183 talker/message type of the sentence being filtered. The
 filter rule matches if each character is the same as the corresponding character
 in the sentence being filtered. A "*" in a filter matches any character.  Thus a
 filter rule specifying:
 GP***
 would match any sentences produced by a GPS talker (excluding any proprietary
-sentences not specifying talker as "GP".
+sentences not specifying talker as "GP").
+
+If a source interface has been specified for a rule, a given sentence must
+additionally have entered kplex from an interface with the specified "name" for
+the rule to "match".  Thus a filter specified as
+GP***%Serial1
+would match sentences with a talker id of "GP" *only* if received on the
+interface with the name "Serial1".
+
 When a filter rule "matches" a sentence, it "fires". If the rule was an "allow"
 rule (ie prepended by a "+", the sentence is allowed.  If the rule was a "deny"
 rule (ie prepended by a "-"), the sentence is dropped.  If the rule was a
@@ -783,6 +793,9 @@ explicitly allowed by adding "-all" to the end of the filter specification:
 ifilter=+GP***:+AI***:+SDDBT:-all
 Obviously order is important.  Putting "-all" at the beginning would simply deny
 all sentences.
+
+Specifying an interface in a rule applied to an ifilter is generally pointless.
+
 IMPORTANT NOTE:
 proprietary sentences start with "$P" followed by a three character vendor code,
 followed by a vendor-specified string which may be, and often is, more than one
