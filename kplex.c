@@ -545,6 +545,8 @@ iface_t *get_default_global()
     if ((ifp = (iface_t *) malloc(sizeof(iface_t))) == NULL)
         return(NULL);
 
+    memset((void *) ifp,0,sizeof(iface_t));
+
     ifp->type = GLOBAL;
     ifp->options = NULL;
     if ((ifg = (struct if_engine *)malloc(sizeof(struct if_engine))) == NULL) {
@@ -553,7 +555,6 @@ iface_t *get_default_global()
     }
     ifg->flags=0;
     ifg->logto=LOG_DAEMON;
-    ifp->checksum=0;
     ifp->strict=1;
     ifp->info = (void *)ifg;
 
@@ -1419,6 +1420,7 @@ int main(int argc, char ** argv)
     reaper=pthread_self();
 
     sigemptyset(&set);
+    sigemptyset(&sa.sa_mask);
     sa.sa_handler=terminate;
     sa.sa_flags=0;
     sigaction(SIGUSR1,&sa,NULL);
