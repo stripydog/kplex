@@ -23,6 +23,10 @@
 #include <grp.h>
 #include <pwd.h>
 
+#ifndef ACCESSPERMS
+#define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO) 
+#endif
+
 #define DEFSERIALQSIZE 128
 
 struct if_serial {
