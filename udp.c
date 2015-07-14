@@ -273,6 +273,8 @@ ssize_t read_udp(iface_t *ifa, char *buf)
     mh.msg_iov = &iov;
     mh.msg_iovlen = 1;
     mh.msg_control = NULL;
+    mh.msg_controllen = 0;
+    mh.msg_flags = 0;
 
     do {
         nread = recvmsg(ifu->fd,&mh,0);
