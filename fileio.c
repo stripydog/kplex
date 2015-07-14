@@ -14,6 +14,10 @@
 #include <pwd.h>
 #include <grp.h>
 
+#ifndef ACCESSPERMS
+#define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO) 
+#endif
+
 #define DEFFILEQSIZE 128
 
 struct if_file {
