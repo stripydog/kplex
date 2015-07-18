@@ -1,8 +1,8 @@
 OS=$(shell uname -s)
-CFLAGS= -g -Wall
+CFLAGS+= -g -Wall
 BINDIR=/usr/local/bin
 ifeq ($(OS),Linux)
-LFLAGS=-pthread -lutil
+LDLIBS+=-pthread -lutil
 BINDIR=/usr/bin
 INSTGROUP=root
 else
@@ -15,7 +15,7 @@ endif
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o
 
 kplex: $(objects)
-	$(CC) -o kplex $(objects) $(LFLAGS)
+	$(CC) -o kplex $(objects) $(LDFLAGS) $(LDLIBS)
 
 tcp.o: tcp.h
 gofree.o: tcp.h

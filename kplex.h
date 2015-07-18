@@ -3,6 +3,8 @@
  * Copyright Keith Young 2012-2015
  * For copying information see the file COPYING distributed with this software
  */
+#ifndef KPLEX_H
+#define KPLEX_H
 #include <sys/types.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -21,8 +23,8 @@
 #define KPLEXHOMECONF ".kplex.conf"
 #endif
 
-#ifdef linux
-#define PTHREAD_MUTEX_RECURSIVE PTHREAD_MUTEX_RECURSIVE_NP
+#ifndef ACCESSPERMS
+#define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
 #endif
 
 #define KPLEXGLOBALCONF "/etc/kplex.conf"
@@ -298,3 +300,5 @@ void do_read(iface_t *);
 size_t gettag(iface_t *, char *, senblk_t *);
 
 extern struct iftypedef iftypes[];
+
+#endif /* KPLEX_H */

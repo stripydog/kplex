@@ -7,7 +7,7 @@ make clean
 echo "#define VERSION \"$VERSION\"" > version.h
 cp * $VDIR
 rm $VDIR/release
-echo "/^CFLAGS=/s/^/#/
+echo "/^CFLAGS\+=/s/^/#/
 $
 -6,.d
 w" | ed -s $VDIR/Makefile >/dev/null
