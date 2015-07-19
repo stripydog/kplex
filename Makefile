@@ -1,5 +1,18 @@
+VERSION_DEFAULT=v1.3
+
+ifneq ("$(wildcard .git)","")
+VERSION_GIT="$(shell git describe --abbrev=4 --dirty --tags)"
+endif
+
+ifdef VERSION_GIT
+VERSION="git-$(VERSION_GIT)"
+else
+VERSION="$(VERSION_DEFAULT)"
+endif
+
+
 OS=$(shell uname -s)
-CFLAGS+= -g -Wall
+CFLAGS?= -g -Wall
 BINDIR=/usr/local/bin
 ifeq ($(OS),Linux)
 LDLIBS+=-pthread -lutil
@@ -30,10 +43,10 @@ uninstall:
 	-rm -f $(DESTDIR)/$(BINDIR)/kplex
 
 clean:
-	rm -f kplex $(objects)
+	rm -f kplex $(objects) version.h
 
 version.h:
-	@echo "#define VERSION \""`git describe --abbrev=0 | sed 's/^v\(.*\)/\1-git/'`"\"" > version.h
+	@echo "#define VERSION \""$(VERSION)"\"" > version.h
 
 .PHONY: release
 release:
