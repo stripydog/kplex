@@ -510,10 +510,10 @@ struct iface *init_udp(struct iface *ifa)
             if (ifname && strcmp(ifname,ifp->ifa_name))
                 continue;
             iffound++;
-            if ((address == NULL && ((ifp->ifa_addr->sa_family == AF_INET) ||
-                    (ifp->ifa_addr->sa_family == AF_INET6 &&
-                    ifa->direction == IN))) ||
-                    ifp->ifa_addr->sa_family == ifu->addr.ss_family)
+            if ((address == NULL && (ifp->ifa_dstaddr != NULL)) ||
+                    ((ifp->ifa_addr->sa_family == ifu->addr.ss_family)  &&
+                    (ifa->direction == IN)) || ((address != NULL) &&
+                    ifp->ifa_addr->sa_family == ifu->addr.ss_family))
                 break;
         }
 
