@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2013
+ * Copyright Keith Young 2012-2015
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -1161,13 +1161,14 @@ void do_read(iface_t *ifa)
                 continue;
             case '\r':
             case '\n':
+            case '\0':
                 if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
-                    if (loose || nocr) {
+                    if (loose || (nocr && *bptr == '\n')) {
                         *ptr++='\r';
                         *ptr='\n';
                         sblk.len = count+2;
                     } else {
-                        if (*bptr == '\r') {
+                        if ((!nocr) && *bptr == '\r') {
                             senstate = SEN_CR;
                             *ptr++=*bptr;
                             ++count;
@@ -1177,7 +1178,7 @@ void do_read(iface_t *ifa)
                         continue;
                     }
                 } else if (senstate == SEN_CR) {
-                    if (*bptr == '\r') {
+                    if (*bptr != '\n') {
                         senstate = SEN_NODATA;
                         continue;
                     }

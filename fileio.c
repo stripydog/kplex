@@ -1,6 +1,6 @@
 /* fileio.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2014
+ * Copyright Keith Young 2012 - 2015
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for i/o from files (incl stdin/stdout)
@@ -311,7 +311,7 @@ iface_t *init_file (iface_t *ifa)
                     return(NULL);
                 }
                 if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
-                        (O_WRONLY|((append)?O_APPEND:0)))) < 0) {
+                        (O_WRONLY|((append)?O_APPEND:O_TRUNC)))) < 0) {
                     logerr(errno,"Failed to open file %s",ifc->filename);
                     return(NULL);
                 }
