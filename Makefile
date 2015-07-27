@@ -1,5 +1,9 @@
 OS=$(shell uname -s)
-CFLAGS+= -g -Wall
+ifneq ("$(wildcard .git)","")
+CFLAGS?=-g -Wall
+VERSION := $(shell git describe --dirty --tags | sed 's/^v//')
+CURR_VERSION := $(shell sed 's/^\#define VERSION "\(.*\)"$$/\1/' version.h 2>/dev/null)
+endif
 BINDIR=/usr/local/bin
 ifeq ($(OS),Linux)
 LDLIBS+=-pthread -lutil
@@ -13,6 +17,14 @@ endif
 endif
 
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o
+
+all: version kplex
+
+.PHONY: version
+version:
+	@if [ "$(VERSION)" != "$(CURR_VERSION)" ]; then \
+	echo '#define VERSION "'$(VERSION)'"' > version.h; \
+	fi
 
 kplex: $(objects)
 	$(CC) -o kplex $(objects) $(LDFLAGS) $(LDLIBS)
@@ -31,9 +43,6 @@ uninstall:
 
 clean:
 	rm -f kplex $(objects)
-
-version.h:
-	@echo "#define VERSION \""`git describe --abbrev=0 | sed 's/^v\(.*\)/\1-git/'`"\"" > version.h
 
 .PHONY: release
 release:
