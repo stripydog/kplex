@@ -463,6 +463,7 @@ struct iface *init_udp(struct iface *ifa)
                 }
                 for (ifp=ifap;ifp;ifp=ifp->ifa_next)
                     if ((ifp->ifa_addr->sa_family == AF_INET) &&
+                            (ifp->ifa_dstaddr != NULL) &&
                             (((struct sockaddr_in *)sa)->sin_addr.s_addr
                             == ((struct sockaddr_in *)(ifp->ifa_dstaddr))->sin_addr.s_addr))
                         break;
