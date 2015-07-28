@@ -942,10 +942,10 @@ strict=[yes|no]
     sequence unless overridden on a per-interface "strict" option or a per-
     interface "eol=n".  If "strict=no" is specified all interfaces will default
     to a looser parsing strategy which will allow input sentences to be
-    terminated by a <CR> or <LF>.  This option applies to input sentences only
-    and has no effect on interface output.  However terminated on input when
-    loose parsing ("strict=no") is in effect, sentences output from interfaces
-    other than file interfaces will be <CR><LF> terminated.
+    terminated by a <CR>, <LF> or NULL (0x00).  This option applies to input
+    sentences only and has no effect on interface output.  However terminated on
+     input when loose parsing ("strict=no") is in effect, sentences output from
+    interfaces other than file interfaces will be <CR><LF> terminated.
 logto=<facility>
     Where <facility> is the syslog facility to use for logging.  The default is
     "daemon", telling kplex to use the LOG_DAEMON syslog facility. <facility> is
