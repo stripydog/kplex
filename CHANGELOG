@@ -1,4 +1,12 @@
-v1.4:
+v1.3.1: August 2015
+* Fixed various uninitialised pointer fixes
+* Updated Makefile for OpenWRT and github builds
+* Accept NULL as a sentence terminator with "strict=no"
+* Fixed problem with non-truncation of output files
+* Better guessing of UDP interface parameters
+* Define ACCESSPERMS, remove redundant declarations, add header guards
+* Fixed bug in source filtering
+* Added option to re-enable nagle for TCP interfaces
 * "-d" flag now documented with additional debugging
 * Default queue sizes reduced and SNDBUF size reduced
 * Added optional interface to filter rules
