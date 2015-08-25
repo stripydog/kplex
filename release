@@ -6,7 +6,7 @@ mkdir $VDIR
 make clean
 echo "#define VERSION \"$VERSION\"" > version.h
 cp * $VDIR
-rm $VDIR/release
+rm $VDIR/release $VDIR/base_version
 echo "$
 -3,.d
 w" | ed -s $VDIR/Makefile >/dev/null
