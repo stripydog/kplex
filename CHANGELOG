@@ -1,4 +1,4 @@
-v1.3.1: August 2015
+v1.3.1: September 27th 2015
 * Fixed various uninitialised pointer fixes
 * Updated Makefile for OpenWRT and github builds
 * Accept NULL as a sentence terminator with "strict=no"
