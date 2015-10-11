@@ -1103,81 +1103,88 @@ void do_read(iface_t *ifa)
     int loose = (ifa->strict)?0:1;
     sblk.src=ifa->id;
     senstate=SEN_NODATA;
+    int done = 0;
 
-    while ((nread=(*ifa->readbuf)(ifa,buf)) > 0) {
+    while (!done) {
+      while ((nread=(*ifa->readbuf)(ifa,buf)) > 0) {
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
-            switch (*bptr) {
-            case '$':
-            case '!':
-                ptr=sblk.data;
-                countmax=SENMAX-(nocr|loose);
-                count=1;
-                *ptr++=*bptr;
-                senstate=SEN_SENPROC;
-                continue;
-            case '\\':
-                if (senstate==SEN_TAGPROC) {
-                    *ptr++=*bptr;
-                    senstate=SEN_TAGSEEN;
-                } else {
-                    senstate=SEN_TAGPROC;
-                    ptr=tbuf;
-                    countmax=TAGMAX-1;
-                    *ptr++=*bptr;
-                    count=1;
-                }
-                continue;
-            case '\r':
-            case '\n':
-                if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
-                    if (loose || nocr) {
-                        *ptr++='\r';
-                        *ptr='\n';
-                        sblk.len = count+2;
-                    } else {
-                        if (*bptr == '\r') {
-                            senstate = SEN_CR;
-                            *ptr++=*bptr;
-                            ++count;
-                        } else {
-                            senstate = SEN_NODATA;
-                        }
-                        continue;
-                    }
-                } else if (senstate == SEN_CR) {
-                    if (*bptr == '\r') {
-                        senstate = SEN_NODATA;
-                        continue;
-                    }
-                    *ptr=*bptr;
-                    sblk.len = ++count;
-                } else {
-                    senstate = SEN_NODATA;
-                    continue;
-                }
-                if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
-                        senfilter(&sblk,ifa->ifilter) == 0) {
-                    push_senblk(&sblk,ifa->q);
-                }
-                senstate=SEN_NODATA;
-                continue;
-            default:
-                break;
-            }
+	  switch (*bptr) {
+	  case '$':
+	  case '!':
+	    ptr=sblk.data;
+	    countmax=SENMAX-(nocr|loose);
+	    count=1;
+	    *ptr++=*bptr;
+	    senstate=SEN_SENPROC;
+	    continue;
+	  case '\\':
+	    if (senstate==SEN_TAGPROC) {
+	      *ptr++=*bptr;
+	      senstate=SEN_TAGSEEN;
+	    } else {
+	      senstate=SEN_TAGPROC;
+	      ptr=tbuf;
+	      countmax=TAGMAX-1;
+	      *ptr++=*bptr;
+	      count=1;
+	    }
+	    continue;
+	  case '\r':
+	  case '\n':
+	    if (senstate == SEN_SENPROC || senstate == SEN_TAGSEEN) {
+	      if (loose || nocr) {
+		*ptr++='\r';
+		*ptr='\n';
+		sblk.len = count+2;
+	      } else {
+		if (*bptr == '\r') {
+		  senstate = SEN_CR;
+		  *ptr++=*bptr;
+		  ++count;
+		} else {
+		  senstate = SEN_NODATA;
+		}
+		continue;
+	      }
+	    } else if (senstate == SEN_CR) {
+	      if (*bptr == '\r') {
+		senstate = SEN_NODATA;
+		continue;
+	      }
+	      *ptr=*bptr;
+	      sblk.len = ++count;
+	    } else {
+	      senstate = SEN_NODATA;
+	      continue;
+	    }
+	    if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
+		senfilter(&sblk,ifa->ifilter) == 0) {
+	      push_senblk(&sblk,ifa->q);
+	    }
+	    senstate=SEN_NODATA;
+	    continue;
+	  default:
+	    break;
+	  }
 
-            if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
-                if (senstate != SEN_NODATA )
-                    senstate=SEN_NODATA;
-                continue;
-            }
+	  if (senstate != SEN_SENPROC && senstate != SEN_TAGPROC) {
+	    if (senstate != SEN_NODATA )
+	      senstate=SEN_NODATA;
+	    continue;
+	  }
 
-            if (count++ > countmax) {
-                senstate=SEN_NODATA;
-                continue;
-            }
+	  if (count++ > countmax) {
+	    senstate=SEN_NODATA;
+	    continue;
+	  }
 
-            *ptr++=*bptr;
+	  *ptr++=*bptr;
         }
+      }
+      if (ifa->reopen)
+	ifa->reopen(ifa);
+      else
+	done = 1;
     }
     iface_thread_exit(errno);
 }

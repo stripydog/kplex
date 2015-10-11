@@ -210,6 +210,7 @@ struct iface {
     void (*read)(struct iface *);
     void (*write)(struct iface *);
     ssize_t (*readbuf)(struct iface *,char *buf);
+    void (*reopen)(struct iface *);
 };
 
 typedef struct iface iface_t;
