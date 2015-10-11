@@ -33,6 +33,8 @@ struct if_serial {
                                  *  on exit */
 };
 
+void reopen_serial(iface_t *);
+
 /*
  * Duplicate struct if_serial
  * Args: if_serial to be duplicated
@@ -90,33 +92,35 @@ void cleanup_serial(iface_t *ifa)
  * Args: pathname and direction (input or output)
  * Returns: descriptor for opened interface or NULL on failure
  */
-int ttyopen(char *device, enum iotype direction)
+int ttyopen(char *device, enum iotype direction, int log)
 {
     int dev,flags;
     struct stat sbuf;
 
     /* Check if device exists and is a character special device */
     if (stat(device,&sbuf) < 0) {
-        logerr(errno,"Could not stat %s",device);
+        if (log) logerr(errno,"Could not stat %s",device);
         return(-1);
     }
 
     if (!S_ISCHR(sbuf.st_mode)){
-        logerr(0,"%s is not a character device",device);
+        if (log) logerr(0,"%s is not a character device",device);
         return(-1);
     }
 
     /* Open device (RW for now..let's ignore direction...) */
     if ((dev=open(device,
         ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY|O_NONBLOCK)) < 0) {
-        logerr(errno,"Failed to open %s",device);
+        if (log) logerr(errno,"Failed to open %s",device);
         return(-1);
     }
 
-    if ((flags = fcntl(dev,F_GETFL)) < 0)
-        logerr(errno,"Failed to get flags for %s",device);
-    else if (fcntl(dev,F_SETFL,flags & ~O_NONBLOCK) < 0)
-        logerr(errno,"Failed to set %s to non-blocking",device);
+    if ((flags = fcntl(dev,F_GETFL)) < 0) {
+        if (log) logerr(errno,"Failed to get flags for %s",device);
+    }
+    else if (fcntl(dev,F_SETFL,flags & ~O_NONBLOCK) < 0) {
+        if (log) logerr(errno,"Failed to set %s to non-blocking",device);
+    }
 
     return(dev);
 }
@@ -290,6 +294,7 @@ struct iface *init_serial (struct iface *ifa)
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
+    int log = 0; /* log is enabled when this is the first attempt to open the device */
     
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename"))
@@ -322,18 +327,24 @@ struct iface *init_serial (struct iface *ifa)
         }
     }
 
-    /* Allocate serial specific data storage */
-    if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
+    ifs = ifa->info;
+    if (!ifs) { /* We've not been allocated before. (ifa is zeroed when allocated) */ 
+      /* Allocate serial specific data storage */
+      if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
         logerr(errno,"Could not allocate memory");
         return(NULL);
-    }
-
+      }
+      log = 1;
+    } 
+    
     /* Open interface or die */
-    if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
+    if ((ifs->fd=ttyopen(devname,ifa->direction,log)) < 0) {
         return(NULL);
     }
 
-    free_options(ifa->options);
+    /* Do not free the options for serial. We might need them later.
+       TODO: Fix the (one time only) leak. */
+    /* free_options(ifa->options); */
 
     /* Set up interface or die */
     if ((ret = ttysetup(ifs->fd,&ifs->otermios,baud,0)) < 0) {
@@ -344,36 +355,57 @@ struct iface *init_serial (struct iface *ifa)
         }
         return(NULL);
     }
-    ifs->saved=1;
-    ifs->slavename=NULL;
 
-    /* Assign pointers to read, write and cleanup routines */
-    ifa->read=do_read;
-    ifa->readbuf=read_serial;
-    ifa->write=write_serial;
-    ifa->cleanup=cleanup_serial;
+    if (!ifa->info) {
+      ifs->saved=1;
+      ifs->slavename=NULL;
 
-    /* Allocate queue for outbound interfaces */
-    if (ifa->direction != IN)
+      /* Assign pointers to read, write and cleanup routines */
+      ifa->read=do_read;
+      ifa->readbuf=read_serial;
+      ifa->write=write_serial;
+      ifa->cleanup=cleanup_serial;
+      ifa->reopen = reopen_serial;
+
+      /* Allocate queue for outbound interfaces */
+      if (ifa->direction != IN)
         if ((ifa->q =init_q(qsize)) == NULL) {
-            logerr(errno,"Could not create queue");
-            cleanup_serial(ifa);
-            return(NULL);
+	  logerr(errno,"Could not create queue");
+	  cleanup_serial(ifa);
+	  return(NULL);
         }
 
-    /* Link in serial specific data */
-    ifa->info=(void *)ifs;
+      /* Link in serial specific data */
+      ifa->info=(void *)ifs;
 
-    if (ifa->direction == BOTH) {
+      if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
-            cleanup_serial(ifa);
-            return(NULL);
+	  logerr(0,"Interface duplication failed");
+	  cleanup_serial(ifa);
+	  return(NULL);
         }
         ifa->direction=OUT;
         ifa->pair->direction=IN;
+      }
     }
+    
     return(ifa);
+}
+
+/*
+ * Attempt to reopen a serial interface
+ */
+void reopen_serial(iface_t *ifa)
+{
+  struct timespec ts = {1, 0};
+  int done = 0;
+  
+  cleanup_serial(ifa); /* Note: does not free the if_serial struct... */
+  while (!done) {
+    nanosleep(&ts, NULL);
+    if (init_serial(ifa))
+      done = 1;
+  }
 }
 
 /*
@@ -523,7 +555,7 @@ struct iface *init_pty (struct iface *ifa)
             logerr(0,"Must Specify a filename for slave mode pty");
             return(NULL);
         }
-        if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
+        if ((ifs->fd=ttyopen(devname,ifa->direction,1)) < 0) {
             return(NULL);
         }
     }
