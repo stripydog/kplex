@@ -32,8 +32,6 @@ void *ifdup_tcp(void *ift)
     if (newif->shared)
         newif->shared->donewith=0;
 
-    newif->preamble=NULL;
-
     return ((void *) newif);
 }
 
@@ -58,12 +56,12 @@ void cleanup_tcp(iface_t *ifa)
             free(ift->shared->port);
         if (ift->shared->host)
             free(ift->shared->host);
+        if (ift->shared->preamble) {
+            free((void *) ift->shared->preamble->string);
+            free((void *) ift->shared->preamble);
+        }
         pthread_mutex_destroy(&ift->shared->t_mutex);
         free(ift->shared);
-    }
-    if (ift->preamble) {
-        free((void *) ift->preamble->string);
-        free((void *) ift->preamble);
     }
 
     close(ift->fd);
@@ -71,17 +69,23 @@ void cleanup_tcp(iface_t *ifa)
 
 /*
  * Send a preamble string (if defined)
- * Args: Pointer to an if_tcp structure
+ * Args: Pointer to an if_tcp structure, pointer to tcp_preamble structure
  * Returns: 0 on success, -1 on error
  * Side effects: Preamble string written to the interface's file descriptor
  */
-int do_preamble(struct if_tcp *ift)
+int do_preamble(struct if_tcp *ift, struct tcp_preamble *preamble)
 {
     size_t towrite;
     ssize_t n;
 
-    for (towrite=ift->preamble->len;towrite;towrite-=n) {
-        if ((n=write(ift->fd,ift->preamble->string,towrite)) < 0)
+    if (preamble == NULL) {
+        if (ift->shared == NULL || ift->shared->preamble == NULL)
+            return (-1);
+        preamble=ift->shared->preamble;
+    }
+
+    for (towrite=preamble->len;towrite;towrite-=n) {
+        if ((n=write(ift->fd,preamble->string,towrite)) < 0)
             return(-1);
     }
     return(0);
@@ -212,8 +216,8 @@ int reconnect(iface_t *ifa, int err)
                 < 0))
             logerr(errno,"Could not disable Nagle on new tcp connection");
         (void) establish_keepalive(ift);
-        if (ift->preamble){
-            do_preamble(ift);
+        if (ift->shared->preamble){
+            do_preamble(ift,NULL);
         }
     }
 
@@ -296,8 +300,8 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                             "Could not disable Nagle on new tcp connection");
 
                 iftp->fd = ift->fd;
-                if (iftp->preamble)
-                    do_preamble(iftp);
+                if (iftp->shared->preamble)
+                    do_preamble(iftp,NULL);
             }
         }
     }
@@ -446,6 +450,10 @@ void delayed_connect(iface_t *ifa)
                 iftp = (struct if_tcp *) ifa->pair->info;
                 iftp->fd = ift->fd;
             }
+            /* do preamble */
+            if (ift->shared->preamble)
+                do_preamble(ift,NULL);
+
         } else {
             mysleep(ift->shared->retry);
         }
@@ -456,10 +464,6 @@ void delayed_connect(iface_t *ifa)
     if (ifa->direction == IN)
         do_read(ifa);
     else {
-        /* do preamble */
-        if (ift->preamble)
-            do_preamble(ift);
-
         write_tcp(ifa);
     }
 }
@@ -488,7 +492,6 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         return(NULL);
     }
     newift->fd=fd;
-    newift->preamble=NULL;
     newift->shared=NULL;
     newifa->id=ifa->id+(fd&IDMINORMASK);
     newifa->direction=ifa->direction;
@@ -572,11 +575,11 @@ struct tcp_preamble *parse_preamble(const char * val)
 {
     const unsigned char *optr = (unsigned char *) val;
     unsigned char *ptr;
-    unsigned char prebuf[1024];
+    unsigned char prebuf[MAXPREAMBLE];
     int count,tval,i;
     struct tcp_preamble *preamble;
 
-    for (count=0,ptr=prebuf;*optr;count++,optr++) {
+    for (count=0,ptr=prebuf;*optr && count < MAXPREAMBLE;count++,optr++) {
         if (*optr == '\\') {
             switch (*(++optr)) {
             case 'a':
@@ -651,6 +654,11 @@ struct tcp_preamble *parse_preamble(const char * val)
         } else
             *ptr++=*optr;
     }
+    if (count == MAXPREAMBLE) {
+        logerr(0,"Specified preamble is too long: Max %d chars",MAXPREAMBLE);
+        return(0);
+    }
+
     if ((preamble = (struct tcp_preamble *)
             malloc(sizeof(struct tcp_preamble))) == NULL) {
         logerr(errno,"Failed to allocate memory for preamble");
@@ -675,6 +683,7 @@ iface_t *init_tcp(iface_t *ifa)
     char *host,*port,*eptr=NULL;
     struct addrinfo hints,*connection,*abase;
     struct servent *svent;
+    struct tcp_preamble *preamble=NULL;
     int err;
     int on=1,off=0;
     char *conntype = "c";
@@ -699,7 +708,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     ift->qsize=DEFTCPQSIZE;
     ift->shared=NULL;
-    ift->preamble=NULL;
+    preamble=NULL;
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"address"))
@@ -785,7 +794,7 @@ iface_t *init_tcp(iface_t *ifa)
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"preamble")) {
-            if ((ift->preamble=parse_preamble(opt->val)) == NULL) {
+            if ((preamble=parse_preamble(opt->val)) == NULL) {
                 logerr(0,"Could not parse preamble %s",opt->val);
                 return(NULL);
             }
@@ -831,8 +840,10 @@ iface_t *init_tcp(iface_t *ifa)
             return(NULL);
         }
 
-        if (ift->preamble) {
+        if (preamble) {
             logerr(0,"preamble option not valid for servers");
+            free(preamble->string);
+            free(preamble);
             return(NULL);
         }
     }
@@ -925,6 +936,8 @@ iface_t *init_tcp(iface_t *ifa)
         ift->shared->tv.tv_sec=timeout;
         ift->shared->tv.tv_usec=0;
         ift->shared->nodelay=nodelay;
+        if (preamble)
+            ift->shared->preamble=preamble;
     }
 
     freeaddrinfo(abase);
@@ -943,9 +956,6 @@ iface_t *init_tcp(iface_t *ifa)
         if (connection) {
             if (nodelay && (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0))
                 logerr(errno,"Could not disable Nagle algorithm for tcp socket");
-            /* do preamble */
-            if (ift->preamble)
-                do_preamble(ift);
         }
     }
 
@@ -953,6 +963,11 @@ iface_t *init_tcp(iface_t *ifa)
     ifa->info = (void *) ift;
     if (*conntype == 'c') {
         if (connection) {
+            if (preamble) {
+                do_preamble(ift,preamble);
+                free(preamble->string);
+                free(preamble);
+            }
             ifa->read=do_read;
             ifa->write=write_tcp;
         } else {
