@@ -698,6 +698,7 @@ iface_t *init_tcp(iface_t *ifa)
     unsigned sndbuf=DEFSNDBUF;
     int nodelay=1;
     long timeout=-1;
+    int gpsd=0;
 
     host=port=NULL;
 
@@ -793,7 +794,20 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"Invalid sndbuf size value specified: %s",opt->val);
                 return(NULL);
             }
+        } else if (!strcasecmp(opt->var,"gpsd")) {
+            if (!strcasecmp(opt->val,"yes")) {
+                gpsd=1;
+            } else if (!strcasecmp(opt->val,"no")) {
+                gpsd=0;
+            } else {
+                logerr(0,"Invalid option \"gpsd=%s\"",opt->val);
+                return(NULL);
+            }
         } else if (!strcasecmp(opt->var,"preamble")) {
+            if (preamble) {
+                logerr(0,"Can only specify preamble once");
+                return(NULL);
+            }
             if ((preamble=parse_preamble(opt->val)) == NULL) {
                 logerr(0,"Could not parse preamble %s",opt->val);
                 return(NULL);
@@ -834,6 +848,13 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,"Must specify address for tcp client mode\n");
             return(NULL);
         }
+        if (gpsd) {
+            if (preamble) {
+                logerr(0,"Can't specify preamble with proto=gpsd");
+                return(NULL);
+            }
+            preamble=parse_preamble("?WATCH={\"enable\":true,\"nmea\":true}");
+        }
     } else {
         if (flag_test(ifa,F_PERSIST)) {
             logerr(0,"persist option not valid for tcp servers");
@@ -844,6 +865,11 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,"preamble option not valid for servers");
             free(preamble->string);
             free(preamble);
+            return(NULL);
+        }
+
+        if (gpsd) {
+            logerr(0,"proto=gpsd not valid for servers");
             return(NULL);
         }
     }

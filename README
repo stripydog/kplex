@@ -300,6 +300,7 @@ The exact number will be system dependent but it will certainly be "enough".
     persist=[yes|no|fromstart]
     retry=<seconds>
     preamble=<preamble>
+    gpsd=[yes|no]
     timeout=<timeout>
     sndbuf=<bufsize>
     nodelay=[yes|no]
@@ -430,7 +431,14 @@ are recognised.  Other escaped characters are sent literally without the leading
 backslash.  Any string termination must be explicitly stated, so a NULL-
 terminated string must end with "\000" or "\x00".  Care must be taken when using
 this option on the command line due to shell interpretation of escape
-characters.
+characters. Only one "preamble" may be specified and this option may not be used
+with "mode=server".
+
+"gpsd=yes" is a shorthand for setting the preamble string to:
+?WATCH={"enable":true,"nmea":true}
+This will enable nmea output from an instance of gpsd connected to.  Being the
+equivalent of setting a preamble, this may not be specified with "mode=server"
+or the preamble option.
 
 UDP Interfaces
 --------------
