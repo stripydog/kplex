@@ -1,3 +1,7 @@
+v?:
+* Added gpsd support
+* Fixed various udp handling bugs
+
 v1.3.1: September 27th 2015
 * Fixed various uninitialised pointer fixes
 * Updated Makefile for OpenWRT and github builds

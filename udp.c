@@ -336,6 +336,7 @@ struct iface *init_udp(struct iface *ifa)
     int linklocal=0;
     int on=1,off=0;
     int err;
+    int port;
     struct sockaddr_storage laddr;
     struct sockaddr *sa;
     struct ignore_addr *igp;
@@ -389,39 +390,50 @@ struct iface *init_udp(struct iface *ifa)
     }
 
     if (!service) {
-        if ((svent = getservbyname("nmea-0183","udp")) != NULL)
+        if ((svent = getservbyname("nmea-0183","udp")) != NULL) {
             service=svent->s_name;
-        else
+            port=svent->s_port;
+        } else {
             service=DEFPORTSTRING;
+            port=DEFPORT;
+        }
     }
 
-    memset((void *)&hints,0,sizeof(hints));
+    if (address || ifa->direction != IN) {
+        memset((void *)&hints,0,sizeof(hints));
 
-    hints.ai_flags=(ifa->direction==IN)?AI_PASSIVE:0;
-    hints.ai_family=AF_UNSPEC;
-    hints.ai_socktype=SOCK_DGRAM;
-    hints.ai_protocol=IPPROTO_UDP;
+        hints.ai_flags=(ifa->direction==IN)?AI_PASSIVE:0;
 
-    if ((err=getaddrinfo(address,service,&hints,&abase))) {
-        logerr(0,"Lookup failed for address %s/service %s: %s",address,service,gai_strerror(err));
-        return(NULL);
-    }
-    for (aptr=abase;aptr;aptr=aptr->ai_next) {
-        if (aptr->ai_family == AF_INET || (aptr->ai_family  == AF_INET6 &&
-                ifu->type != UDP_BROADCAST))
-            break;
-    }
-    if (!aptr) {
-        logerr(0,"No Suitable address found for %s/%s",address,service);
+        if (ifu->type == UDP_BROADCAST)
+            hints.ai_family=AF_INET;
+        else
+            hints.ai_family=AF_UNSPEC;
+        hints.ai_socktype=SOCK_DGRAM;
+        hints.ai_protocol=IPPROTO_UDP;
+
+        if ((err=getaddrinfo(address,service,&hints,&abase))) {
+            logerr(0,"Lookup failed for address %s/service %s: %s",address,service,gai_strerror(err));
+            return(NULL);
+        }
+        for (aptr=abase;aptr;aptr=aptr->ai_next) {
+            if (aptr->ai_family == AF_INET || (aptr->ai_family  == AF_INET6 &&
+                    ifu->type != UDP_BROADCAST))
+                break;
+        }
+
+        if (!aptr) {
+            logerr(0,"No Suitable address found for %s/%s",address,service);
+            freeaddrinfo(abase);
+            return(NULL);
+        }
+
+        memcpy(sa,aptr->ai_addr,aptr->ai_addrlen);
+        ifu->asize=aptr->ai_addrlen;
         freeaddrinfo(abase);
-        return(NULL);
     }
-
-    memcpy(sa,aptr->ai_addr,aptr->ai_addrlen);
-    ifu->asize=aptr->ai_addrlen;
-    freeaddrinfo(abase);
 
     if (address) {
+
         if (ifu->type == UDP_UNSPEC || ifu->type == UDP_MULTICAST) {
             switch (is_multicast(sa)) {
             case 0:
@@ -511,6 +523,9 @@ struct iface *init_udp(struct iface *ifa)
             if (ifname && strcmp(ifname,ifp->ifa_name))
                 continue;
             iffound++;
+            if (ifp->ifa_addr->sa_family != AF_INET &&
+                    ifp->ifa_addr->sa_family != AF_INET6)
+                continue;
             if ((address == NULL && (ifp->ifa_dstaddr != NULL)) ||
                     ((ifp->ifa_addr->sa_family == ifu->addr.ss_family)  &&
                     (ifa->direction == IN)) || ((address != NULL) &&
@@ -563,19 +578,13 @@ struct iface *init_udp(struct iface *ifa)
         }
 
         if (!address) {
+
             if (ifp->ifa_addr->sa_family == AF_INET)
                 ifu->asize=sizeof(struct sockaddr_in);
             else
                 ifu->asize=sizeof(struct sockaddr_in6);
 
-            if (ifa->direction == IN && ifu->type != UDP_BROADCAST) {
-                if ((sa->sa_family = ifp->ifa_addr->sa_family) == AF_INET)
-                    ((struct sockaddr_in *)sa)->sin_addr.s_addr =
-                            ((struct sockaddr_in *)ifp->ifa_addr)->sin_addr.s_addr;
-                else
-                    ((struct sockaddr_in6 *)sa)->sin6_addr =
-                            ((struct sockaddr_in6 *)ifp->ifa_addr)->sin6_addr;
-            } else {
+            if (ifa->direction != IN) {
                 if (!(ifp->ifa_dstaddr)) {
                     logerr(0,"No output address specified for interface %s",
                             ifname);
@@ -602,10 +611,13 @@ struct iface *init_udp(struct iface *ifa)
                 if ((sa->sa_family=ifp->ifa_dstaddr->sa_family) == AF_INET) {
                     ((struct sockaddr_in *)sa)->sin_addr.s_addr = 
                         ((struct sockaddr_in *)ifp->ifa_dstaddr)->sin_addr.s_addr;
+                    ((struct sockaddr_in *)sa)->sin_port = htons(port);
                 } else {
                     ((struct sockaddr_in6 *)sa)->sin6_addr = 
                         ((struct sockaddr_in6 *)ifp->ifa_dstaddr)->sin6_addr;
+                    ((struct sockaddr_in6 *)sa)->sin6_port = htons(port);
                 }
+
                 if (ifu->type == UDP_BROADCAST || ifa->direction == BOTH) {
                     if ((laddr.ss_family=ifp->ifa_dstaddr->sa_family) ==
                             AF_INET) {
