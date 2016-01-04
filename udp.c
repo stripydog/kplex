@@ -327,7 +327,7 @@ struct iface *init_udp(struct iface *ifa)
     struct if_udp *ifu;
     struct addrinfo hints,*aptr,*abase;
     struct ifaddrs *ifap=NULL,*ifp;
-    char *address,*service,*ifname;
+    char *address,*service,*ifname,*eptr;
     struct servent *svent;
     size_t qsize = DEFUDPQSIZE;
     struct kopts *opt;
@@ -396,6 +396,14 @@ struct iface *init_udp(struct iface *ifa)
         } else {
             service=DEFPORTSTRING;
             port=DEFPORT;
+        }
+    } else if (!address) {
+        if ((port=strtol(service,&eptr,0)) <= 0 || port >= 65536 || errno != 0
+                || *eptr != '\0') {
+            if ((svent = getservbyname(service,"udp")) != NULL)
+                port=svent->s_port;
+            else
+                port=DEFPORT;
         }
     }
 
