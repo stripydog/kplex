@@ -271,11 +271,12 @@ void flush_queue(ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
 int link_to_initialized(iface_t *);
-void start_interface(void *ptr);
+void start_interface(void *);
 iface_t *ifdup(iface_t *);
 void iface_thread_exit(int);
 int next_config(FILE *,unsigned int *,char **,char **);
 
+int calcsum(const char *, size_t);
 iface_t *parse_file(char *);
 iface_t *parse_arg(char *);
 iface_t *get_default_global(void);

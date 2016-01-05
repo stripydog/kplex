@@ -22,6 +22,7 @@
 #include <sys/time.h>
 #include <inttypes.h>
 
+#define isprop(sptr) (sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
@@ -576,6 +577,40 @@ iface_t *get_default_global()
     return(ifp);
 }
 
+/* Process proprietary sentence.  Anything starting $PKPX
+ * Args: senblk_t * containing sentence, iface_t pointing to engine.
+ * currently unused but we may use it later for adding to the engine's queue
+ * Returns -1 if sentence is unrecognised or invalid, 0 if processing
+ * should continue with current senblk, 1 if this senblk should be dropped
+ * but sentence was valid
+ * Side effects: Swaps Query with Response where appropriate
+ */
+int process_prop(senblk_t *sptr, iface_t *eptr)
+{
+    if (sptr->data[6] != ',')
+        return(-1);
+    switch (sptr->data[5]) {
+    case 'Q':
+        /* Query Sentence */
+        if (sptr->data[7] == 'V') {
+             sptr->len=sprintf(sptr->data,"$PKPXR,%s",VERSION);
+        } else
+            return -1;
+        break;
+    case 'C':
+        /* Command: None currently defined */
+    case 'R':
+        /* Response: shouldn't get this */
+    default:
+        return -1;
+    }
+
+    sptr->len+=sprintf(sptr->data+sptr->len,"*%02X\r\n",
+            calcsum(sptr->data+1,sptr->len-1));
+    sptr->src=0;
+    return(0);
+}
+
 /*
  * This is the heart of the multiplexer.  All inputs add to the tail of the
  * Engine's queue.  The engine takes from the head of its queue and copies
@@ -594,6 +629,18 @@ void *run_engine(void *info)
 
     for (;;) {
         sptr = next_senblk(eptr->q);
+
+        if (sptr==NULL)
+            /* Queue has been marked inactive */
+            break;
+
+        if (isprop(sptr)) {
+            if (process_prop(sptr,eptr)) {
+                senblk_free(sptr,eptr->q);
+                continue;
+            }
+        }
+
         if (isactive(eptr->ofilter,sptr)) {
             pthread_mutex_lock(&eptr->lists->io_mutex);
             /* Traverse list of outputs and push a copy of senblk to each */
@@ -605,9 +652,6 @@ void *run_engine(void *info)
             }
             pthread_mutex_unlock(&eptr->lists->io_mutex);
         }
-        if (sptr==NULL)
-            /* Queue has been marked inactive */
-            break;
         senblk_free(sptr,eptr->q);
     }
     pthread_exit(&retval);
@@ -1065,7 +1109,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
     return(0);
 }
 
-int calcsum(char *buf, size_t len)
+int calcsum(const char *buf, size_t len)
 {
     int c = 0;
 
