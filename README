@@ -377,7 +377,7 @@ connection.  If the first connection attempt fails it will not be re-tried and
 initialisation of that interface will fail.  If persistent attempts to connect
 an initially failed connection are desired, "persist=fromstart" should be
 specified.  Note that this option should be used with care to avoid repeated
-attempts to conenct to a mis-typed hostname or address.
+attempts to connect to a mis-typed hostname or address.
 
 kplex will detect a dropped connection if the other end closes down "cleanly",
 i.e. the program it is connecting to shuts down or the machine it is running on

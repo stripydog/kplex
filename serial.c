@@ -1,6 +1,6 @@
 /* serial.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2014
+ * Copyright Keith Young 2012 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for serial-like interfaces. This currently
@@ -355,7 +355,7 @@ struct iface *init_serial (struct iface *ifa)
 
     /* Allocate queue for outbound interfaces */
     if (ifa->direction != IN)
-        if ((ifa->q =init_q(qsize)) == NULL) {
+        if (init_q(ifa, qsize) < 0) {
             logerr(errno,"Could not create queue");
             cleanup_serial(ifa);
             return(NULL);
@@ -546,7 +546,7 @@ struct iface *init_pty (struct iface *ifa)
     ifa->cleanup=cleanup_serial;
 
     if (ifa->direction != IN)
-        if ((ifa->q =init_q(qsize)) == NULL) {
+        if (init_q(ifa, qsize) < 0) {
             logerr(errno,"Could not create queue");
             cleanup_serial(ifa);
             return(NULL);

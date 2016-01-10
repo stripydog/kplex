@@ -1,6 +1,6 @@
 /* tcp.c
  * This file is part of kplex
- * Copyright Keith Young 2012-2015
+ * Copyright Keith Young 2012-2016
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -483,7 +483,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     memset(newifa,0,sizeof(iface_t));
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
-            ((newifa->q=init_q(oldift->qsize)) == NULL))) {
+            (init_q(newifa, oldift->qsize) < 0))) {
         if (newifa && newifa->q)
             free(newifa->q);
         if (newift)
@@ -974,7 +974,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
-        if ((ifa->q =init_q(ift->qsize)) == NULL) {
+        if (init_q(ifa, ift->qsize) < 0) {
             logerr(errno,"Interface duplication failed");
             return(NULL);
         }

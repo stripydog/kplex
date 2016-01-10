@@ -125,7 +125,10 @@ struct senblk {
 };
 typedef struct senblk senblk_t;
 
+typedef struct iface iface_t;
+
 struct ioqueue {
+    iface_t *owner;
     pthread_mutex_t    q_mutex;
     pthread_cond_t    freshmeat;
     int active;
@@ -219,8 +222,6 @@ struct iface {
     ssize_t (*readbuf)(struct iface *,char *buf);
 };
 
-typedef struct iface iface_t;
-
 struct iftypedef {
     enum itype  index;
     char *name;
@@ -261,7 +262,7 @@ void *ifdup_bcast(void *);
 void *ifdup_mcast(void *);
 void *ifdup_seatalk(void *);
 
-ioqueue_t *init_q(size_t);
+int init_q(iface_t *, size_t);
 
 senblk_t *next_senblk(ioqueue_t *);
 senblk_t *last_senblk(ioqueue_t *);

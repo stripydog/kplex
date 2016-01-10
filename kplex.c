@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2015
+ * Copyright Keith Young 2012-2016
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -22,6 +22,7 @@
 #include <sys/time.h>
 #include <inttypes.h>
 
+/* Macro to identify kplex Proprietary sentences */
 #define isprop(sptr) (sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
@@ -352,19 +353,19 @@ void iface_thread_exit(int ret)
 
 /*
  *  Initialise an ioqueue
- *  Args: size of queue (in senblk structures)
- *  Returns: pointer to new queue
+ *  Args: iface_t to add queue to, size of queue (in senblk structures)
+ *  Returns: 0 on success, -1 on failure
  */
-ioqueue_t *init_q(size_t size)
+int init_q(iface_t *ifa, size_t size)
 {
     ioqueue_t *newq;
     senblk_t *sptr;
     int    i;
     if ((newq=(ioqueue_t *)malloc(sizeof(ioqueue_t))) == NULL)
-        return(NULL);
+        return(-1);
     if ((newq->base=(senblk_t *)calloc(size,sizeof(senblk_t))) ==NULL) {
         free(newq);
-        return(NULL);
+        return(-1);
     }
 
     /* "base" always points to the allocated memory so that we can free() it.
@@ -379,12 +380,14 @@ ioqueue_t *init_q(size_t size)
     sptr->next = NULL;
 
     newq->qhead = newq->qtail = NULL;
+    newq->owner=ifa;
 
     pthread_mutex_init(&newq->q_mutex,NULL);
     pthread_cond_init(&newq->freshmeat,NULL);
 
     newq->active=1;
-    return(newq);
+    ifa->q=newq;
+    return(0);
 }
 
 /*
@@ -427,7 +430,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             q->qhead=q->qhead->next;
             if (q->drops < 0)
                 q->drops++;
-            DEBUG(3,"Dropped senblk q=0x%x",q);
+            DEBUG(4,"Dropped senblk q=0x%x",q);
         }
     
         (void) senblk_copy(tptr,sptr);
@@ -1102,7 +1105,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
         }
     }
 
-    if ((e_info->q = init_q(qsize)) == NULL) {
+    if (init_q(e_info, qsize) < 0) {
         perror("failed to initiate queue");
         exit(1);
     }
@@ -1417,6 +1420,8 @@ int main(int argc, char ** argv)
             logterm(errno,"Could not set file descriptor limit");
     }
 
+    DEBUG(1,"Kplex starting, config file %s",(config)?config:"<none>");
+
     /* our list of "real" interfaces starts after the first which is the
      * dummy "interface" specifying the multiplexing engine
      * walk the list, initialising the interfaces.  Sometimes "BOTH" interfaces
@@ -1603,6 +1608,8 @@ int main(int argc, char ** argv)
 
     /* For neatness... */
     pthread_mutex_unlock(&lists.io_mutex);
+
+    DEBUG(1,"Kplex exiting");
 
     exit(0);
 }

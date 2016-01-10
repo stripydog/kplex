@@ -1,6 +1,6 @@
 /* fileio.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2015
+ * Copyright Keith Young 2012 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for i/o from files (incl stdin/stdout)
@@ -69,7 +69,7 @@ void write_file(iface_t *ifa)
             logerr(errno,"Failed to open FIFO %s for writing\n",ifc->filename);
             iface_thread_exit(errno);
         }
-        if ((ifa->q =init_q(ifc->qsize)) == NULL) {
+        if (init_q(ifa,ifc->qsize) < 0) {
             logerr(errno,"Could not create queue for FIFO %s",ifc->filename);
             iface_thread_exit(errno);
         }
@@ -330,7 +330,7 @@ iface_t *init_file (iface_t *ifa)
     ifa->cleanup=cleanup_file;
 
     if (ifa->direction != IN && ifc->fd >= 0)
-        if ((ifa->q =init_q(ifc->qsize)) == NULL) {
+        if (init_q(ifa, ifc->qsize)< 0) {
             logerr(0,"Could not create queue");
             cleanup_file(ifa);
             return(NULL);

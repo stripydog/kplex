@@ -1,6 +1,6 @@
 /* error.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2013
+ * Copyright Keith Young 2012 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * This files contains error handling and logging functions
@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
+#include <errno.h>
 
 #define IDENT "kplex"
 
@@ -83,6 +84,7 @@ void logwarn(char *fmt, ...)
 void logerr2(int err, char *fmt, va_list args)
 {
     char *str;
+    char ebuf[128];
 
     if (facility >= 0) {
         if (err && ((str = malloc(strlen(fmt) + 5)) != NULL)) {
@@ -95,9 +97,12 @@ void logerr2(int err, char *fmt, va_list args)
             free(str);
     } else {
         vfprintf(stderr,fmt,args);
-        if (err)
-            fprintf(stderr,": %s\n",strerror(err));
-        else
+        if (err) {
+            if (strerror_r(err,ebuf,128) == 0 || errno == ERANGE)
+                fprintf(stderr,": %s",ebuf);
+            else
+                fprintf(stderr,": Unknown Error");
+        } else
             fputc('\n',stderr);
     }
     return;
