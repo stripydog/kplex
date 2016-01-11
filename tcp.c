@@ -321,6 +321,7 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
      */
     for(;;) {
         if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
+            DEBUG2(3,"Read failed for TCP interface %s",(ifa->name)?ifa->name:"(no name)");
             if (!flag_test(ifa,F_PERSIST))
                 break;
             if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
@@ -378,8 +379,7 @@ void write_tcp(struct iface *ifa)
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
         if (writev(ift->fd,iov,cnt) <0) {
-            DEBUG(3,"TCP write failed for interface %s",(ifa->name)?ifa->name:
-                    "(no name)");
+            DEBUG2(3,"TCP write failed for interface %s",(ifa->name)?ifa->name:"(no name)");
             err=errno;
             if (!flag_test(ifa,F_PERSIST))
                 break;

@@ -66,7 +66,8 @@
 #define TAG_ISRC 8
 
 extern int debuglevel;
-#define DEBUG(level,...) if (debuglevel >= level) logdebug(__VA_ARGS__)
+#define DEBUG(level,...) if (debuglevel >= level) logdebug(0, __VA_ARGS__)
+#define DEBUG2(level,...) if (debuglevel >= level) logdebug(errno, __VA_ARGS__)
 
 /* parsing states */
 enum sstate {
@@ -286,7 +287,7 @@ void free_filter(sfilter_t *);
 void logerr(int,char *,...);
 void logterm(int,char *,...);
 void logtermall(int,char *,...);
-void logdebug(char *,...);
+void logdebug(int, char *,...);
 void logwarn(char *,...);
 void loginfo(char *,...);
 void initlog(int);
