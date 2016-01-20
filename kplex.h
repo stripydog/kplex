@@ -66,7 +66,8 @@
 #define TAG_ISRC 8
 
 extern int debuglevel;
-#define DEBUG(level,...) if (debuglevel >= level) logdebug(__VA_ARGS__)
+#define DEBUG(level,...) if (debuglevel >= level) logdebug(0, __VA_ARGS__)
+#define DEBUG2(level,...) if (debuglevel >= level) logdebug(errno, __VA_ARGS__)
 
 /* parsing states */
 enum sstate {
@@ -125,7 +126,10 @@ struct senblk {
 };
 typedef struct senblk senblk_t;
 
+typedef struct iface iface_t;
+
 struct ioqueue {
+    iface_t *owner;
     pthread_mutex_t    q_mutex;
     pthread_cond_t    freshmeat;
     int active;
@@ -219,8 +223,6 @@ struct iface {
     ssize_t (*readbuf)(struct iface *,char *buf);
 };
 
-typedef struct iface iface_t;
-
 struct iftypedef {
     enum itype  index;
     char *name;
@@ -261,7 +263,7 @@ void *ifdup_bcast(void *);
 void *ifdup_mcast(void *);
 void *ifdup_seatalk(void *);
 
-ioqueue_t *init_q(size_t);
+int init_q(iface_t *, size_t);
 
 senblk_t *next_senblk(ioqueue_t *);
 senblk_t *last_senblk(ioqueue_t *);
@@ -271,11 +273,12 @@ void flush_queue(ioqueue_t *);
 int link_interface(iface_t *);
 int unlink_interface(iface_t *);
 int link_to_initialized(iface_t *);
-void start_interface(void *ptr);
+void start_interface(void *);
 iface_t *ifdup(iface_t *);
 void iface_thread_exit(int);
 int next_config(FILE *,unsigned int *,char **,char **);
 
+int calcsum(const char *, size_t);
 iface_t *parse_file(char *);
 iface_t *parse_arg(char *);
 iface_t *get_default_global(void);
@@ -284,7 +287,7 @@ void free_filter(sfilter_t *);
 void logerr(int,char *,...);
 void logterm(int,char *,...);
 void logtermall(int,char *,...);
-void logdebug(char *,...);
+void logdebug(int, char *,...);
 void logwarn(char *,...);
 void loginfo(char *,...);
 void initlog(int);

@@ -1,6 +1,6 @@
 /* bcast.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2014
+ * Copyright Keith Young 2012 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * This is hideous and proves what an abomination IPv4 broadcast is.
@@ -389,7 +389,7 @@ struct iface *init_bcast(struct iface *ifa)
 #endif
 
         /* write queue initialization */
-        if ((ifa->q = init_q(qsize)) == NULL) {
+        if (init_q(ifa,qsize) < 0) {
             logerr(errno,"Could not create queue");
             return(NULL);
         }

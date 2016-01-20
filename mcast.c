@@ -409,7 +409,7 @@ struct iface *init_mcast(struct iface *ifa)
 
     if (ifa->direction != IN) {
         /* write queue initialization */
-        if ((ifa->q = init_q(qsize)) == NULL) {
+        if (init_q(ifa, qsize) < 0) {
             logerr(errno,"Could not create queue");
             return(NULL);
         }

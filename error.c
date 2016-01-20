@@ -1,6 +1,6 @@
 /* error.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2013
+ * Copyright Keith Young 2012 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * This files contains error handling and logging functions
@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
+#include <errno.h>
 
 #define IDENT "kplex"
 
@@ -30,17 +31,33 @@ void initlog(int where)
         openlog(IDENT,LOG_NOWAIT,facility);
 }
 
-void logdebug(char *fmt, ...)
+void logdebug(int err, char *fmt, ...)
 {
+    char *str;
+    char ebuf[128];
     va_list ap;
 
     va_start(ap,fmt);
 
-    if (facility >= 0)
-        vsyslog(LOG_DEBUG,fmt,ap);
-    else {
+    if (facility >= 0) {
+        if (err && ((str = malloc(strlen(fmt) + 5)) != NULL)) {
+            strcpy(str,fmt);
+            strcat(str,": %m");
+        } else {
+            str = fmt;
+        }
+        vsyslog(LOG_DEBUG,str,ap);
+        if (str != fmt)
+            free(str);
+    } else {
         fprintf(stderr,"%s DEBUG: ",IDENT);
         vfprintf(stderr,fmt,ap);
+        if (err) {
+            if (strerror_r(err,ebuf,128) == 0 || errno == ERANGE)
+                fprintf(stderr,": %s",ebuf);
+            else
+                fprintf(stderr,": Unknown Error");
+        }
         fputc('\n',stderr);
     }
     va_end(ap);
@@ -83,6 +100,7 @@ void logwarn(char *fmt, ...)
 void logerr2(int err, char *fmt, va_list args)
 {
     char *str;
+    char ebuf[128];
 
     if (facility >= 0) {
         if (err && ((str = malloc(strlen(fmt) + 5)) != NULL)) {
@@ -95,10 +113,13 @@ void logerr2(int err, char *fmt, va_list args)
             free(str);
     } else {
         vfprintf(stderr,fmt,args);
-        if (err)
-            fprintf(stderr,": %s\n",strerror(err));
-        else
-            fputc('\n',stderr);
+        if (err) {
+            if (strerror_r(err,ebuf,128) == 0 || errno == ERANGE)
+                fprintf(stderr,": %s",ebuf);
+            else
+                fprintf(stderr,": Unknown Error");
+        }
+        fputc('\n',stderr);
     }
     return;
 }

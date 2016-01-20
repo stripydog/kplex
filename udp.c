@@ -1,6 +1,6 @@
 /* udp.c
  * This file is part of kplex
- * Copyright Keith Young 2015
+ * Copyright Keith Young 2015 - 2016
  * For copying information see the file COPYING distributed with this software
  *
  * UDP interfaces
@@ -733,7 +733,7 @@ struct iface *init_udp(struct iface *ifa)
         }
 
         /* write queue initialization */
-        if ((ifa->q = init_q(qsize)) == NULL) {
+        if (init_q(ifa, qsize) < 0) {
             logerr(errno,"Could not create queue");
             return(NULL);
         }
