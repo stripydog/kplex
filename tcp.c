@@ -289,7 +289,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
 
         (void) establish_keepalive(ift);
 
-        if (ifa->direction == IN) {
+        if (ifa->pair) {
             if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
                 logerr(errno,"No pair information found for bi-directional tcp connection!");
                 nread=-1;
