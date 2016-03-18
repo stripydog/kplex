@@ -152,7 +152,7 @@ int establish_keepalive(struct if_tcp *ift)
 /*
  * Reconnect a lost connection in persist mode
  * Args: Pointer to interface and error raised by onnection failure
- * Returns: 0 on successi, -1 in the case of an unrecoverable error
+ * Returns: 0 on success, -1 in the case of an unrecoverable error
  * Side effects: Connection should be re-established on exit
  */
 int reconnect(iface_t *ifa, int err)
@@ -454,7 +454,12 @@ void delayed_connect(iface_t *ifa)
             if (ift->shared->preamble)
                 do_preamble(ift,NULL);
 
+            DEBUG(3,"Completed delayed connect of TCP interface %s",(ifa->name)?
+                    ifa->name:"(no name)");
+
         } else {
+            DEBUG(4,"Delayed connect failed for TCP interface %s (sleeping)",
+                    (ifa->name)?ifa->name:"(no name)");
             mysleep(ift->shared->retry);
         }
     }
@@ -558,14 +563,17 @@ void tcp_server(iface_t *ifa)
         if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0)
              break;
     
-        DEBUG(3,"New TCP connection received by %s from %s",
+        if (new_tcp_conn(afd,ifa) == NULL) {
+            close(afd);
+            afd=-1;
+        }
+        DEBUG(3,"New TCP connection %successfully received by %s from %s",
+                (afd<0)?"un":"",
                 (ifa->name)?ifa->name:"(no name)", inet_ntop(sad.ss_family,
                 (sad.ss_family == AF_INET)?
                 (const void *) &((struct sockaddr_in *)&sad)->sin_addr:
                 (const void *) &((struct sockaddr_in6 *)&sad)->sin6_addr,
                 addrs,INET6_ADDRSTRLEN));
-         if (new_tcp_conn(afd,ifa) == NULL)
-             close(afd);
         }
     }
     iface_thread_exit(errno);
@@ -952,6 +960,7 @@ iface_t *init_tcp(iface_t *ifa)
         } else {
             ift->shared->host=strdup(host);
             ift->shared->port=strdup(port);
+            DEBUG(3,"Initial connection to %s port %s failed for TCP connection %s",host,port,(ifa->name)?ifa->name:"(no name)");
         }
         ift->shared->donewith=1;
         ift->shared->keepalive=keepalive;
@@ -1014,5 +1023,6 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->read=tcp_server;
     }
     free_options(ifa->options);
+    DEBUG(4,"TCP interface %d initialised",(ifa->name)?ifa->name:"(no name)");
     return(ifa);
 }

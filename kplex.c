@@ -849,8 +849,8 @@ void iface_destroy(void *ifptr)
 {
     iface_t *ifa = (iface_t *) ifptr;
 
-    DEBUG(3,"Cleaning up data for exiting interface %s",(ifa->name)?ifa->name:
-            "(no name)");
+    DEBUG(3,"Cleaning up data for exiting %s %s id %x",(ifa->id & IDMINORBITS)?
+            "connection":"interface",(ifa->name)?ifa->name:"(no name)",ifa->id);
     sigset_t set,saved;
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
