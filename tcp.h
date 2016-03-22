@@ -37,7 +37,10 @@ struct if_tcp_shared {
     unsigned keepcnt;
     unsigned sndbuf;
     int nodelay;
+    int critical;
+    int fixing;
     pthread_mutex_t t_mutex;
+    pthread_cond_t fv;
     struct timeval tv;
     struct tcp_preamble *preamble;
 };

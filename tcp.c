@@ -61,6 +61,7 @@ void cleanup_tcp(iface_t *ifa)
             free((void *) ift->shared->preamble);
         }
         pthread_mutex_destroy(&ift->shared->t_mutex);
+        pthread_cond_destroy(&ift->shared->fv);
         free(ift->shared);
     }
 
@@ -163,10 +164,8 @@ int reconnect(iface_t *ifa, int err)
     int on=1;
 
     DEBUG(3,"Reconnecting (write) interface %s",(ifa->name)?ifa->name:"(unnamed)");
-    /* Ensure two threads in a bi-directional connection are not simultaneously
-     * trying to reconnect */
-    /* FIXME: This will re-connect even if read side just fixed the problem */
-    pthread_mutex_lock(&ift->shared->t_mutex);
+
+    /* ift->shared_t_mutex shoudl be locked by the calling routine */
 
     /* If the write timed out, we don't need to sleep before retrying */
     switch (err) {
@@ -245,7 +244,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     int on=1;
 
     DEBUG(3,"Reconnecting (read) interface %s",(ifa->name)?ifa->name:"(unnamed)");
-    pthread_mutex_lock(&ift->shared->t_mutex);
+    /* ift->shared->t_mutex should be held by the calling routine */
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
     if ((fflags=fcntl(ift->fd,F_GETFL)) < 0) {
@@ -281,12 +280,13 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
             nread=0;
         }
     }
-    if (nread == 0) {
+    if (nread >= 0) {
         if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
             logerr(errno,"Failed to make tcp socket blocking");
             nread=-1;
         }
-
+    }
+    if (nread == 0) {
         (void) establish_keepalive(ift);
 
         if (ifa->pair) {
@@ -306,7 +306,6 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
         }
     }
 
-    pthread_mutex_unlock(&ift->shared->t_mutex);
     return(nread);
 }
 
@@ -314,22 +313,75 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     ssize_t nread;
+    int done=0;
 
-    /* Man pages lie!  On FreeBSD, Linux and OS X, SIGPIPE is NOT delivered
-     * to a process reading from socket which times out due to unreplied to
-     * keepalives.  Instead the read exits with ETIMEDOUT
+    /* Wow this is ugly and due a complete re-write.  In persist mode we first
+       check if a pair thread (ie writer to this thread's reader on a bi-
+       directional interface) has tried and failed to reconnect and if yes
+       then we exit.  If not we increment a counter before entering blocking
+       read. This is mainly for consistency with the write side.  If we don't
+       read something (EOF or error) we exit if persist is not set but if it
+       is set we check if there's another thread in the critical region
+       (critical == 2).  If there is we do a shutdown on the socket and wait for
+       the partner thread.  Once it catches up it waits, we fix the problem,
+       then signal to the other thread to re-start.
+
+       If there's no error on read we first check if another thread is waiting
+       for this thread to fix a problem. If it is we tell it to go ahead and
+       fix it because we're just leaving the critical region.
      */
-    for(;;) {
-        if ((nread=read(ift->fd,buf,BUFSIZ)) <=0) {
+
+    for(nread=0;nread<=0;) {
+        if (flag_test(ifa,F_PERSIST)) {
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            if (ift->fd == -1)
+                done++;
+            else
+                ift->shared->critical++;
+            pthread_mutex_unlock(&ift->shared->t_mutex);
+            if (done) {
+                nread=-1;
+                break;
+            }
+        }
+    
+        /* Man pages lie!  On FreeBSD, Linux and OS X, SIGPIPE is NOT delivered
+         * to a process reading from socket which times out due to unreplied to
+         * keepalives.  Instead the read exits with ETIMEDOUT
+         */
+        nread=read(ift->fd,buf,BUFSIZ);
+        if (nread <= 0) {
             DEBUG2(3,"Read failed for TCP interface %s",(ifa->name)?ifa->name:"(no name)");
             if (!flag_test(ifa,F_PERSIST))
                 break;
-            if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
-                logerr(errno,"failed to reconnect tcp connection");
-                break;
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            if (ift->shared->fixing) {
+                pthread_cond_signal(&ift->shared->fv);    
+                pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
+            } else {
+                if (ift->shared->critical == 2) {
+                    ift->shared->fixing++;
+                    (void) shutdown(ift->fd,SHUT_RDWR);
+                    pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
+                }
+                if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
+                    if (ifa->pair)
+                        ((struct if_tcp *)ifa->pair->info)->fd=-1;
+                    logerr(errno,"failed to reconnect tcp connection");
+                }
+                if (ift->shared->fixing) {
+                    ift->shared->fixing=0;
+                    pthread_cond_signal(&ift->shared->fv);
+                }
             }
-        } else {
-            break;
+            ift->shared->critical--;
+            pthread_mutex_unlock(&ift->shared->t_mutex);
+        } else if (flag_test(ifa,F_PERSIST)) {
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            ift->shared->critical--;
+            if (ift->shared->fixing)
+                pthread_cond_signal(&ift->shared->fv);
+            pthread_mutex_unlock(&ift->shared->t_mutex);
         }
     }
     return nread;
@@ -339,10 +391,13 @@ void write_tcp(struct iface *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     senblk_t *sptr;
-    int status,err;
+    int status=0;
+    int err=0;
     int data=0;
     int cnt=1;
+    int done = 0;
     struct iovec iov[2];
+
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
                 logerr(errno,"Disabing tag output on interface id %u (%s)",
@@ -354,7 +409,7 @@ void write_tcp(struct iface *ifa)
         }
     }
 
-    for(;;) {
+    for(;(!done);) {
 
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
@@ -378,19 +433,54 @@ void write_tcp(struct iface *ifa)
          */
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
+        if (flag_test(ifa,F_PERSIST)) {
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            if (ift->fd == -1)
+                done++;
+            else
+                ift->shared->critical++;
+            pthread_mutex_unlock(&ift->shared->t_mutex);
+            if (done) {
+                senblk_free(sptr,ifa->q);
+                break;
+            }
+        }
         if (writev(ift->fd,iov,cnt) <0) {
             DEBUG2(3,"TCP write failed for interface %s",(ifa->name)?ifa->name:"(no name)");
             err=errno;
-            if (!flag_test(ifa,F_PERSIST))
-                break;
-            senblk_free(sptr,ifa->q);
-            if ((status=reconnect(ifa,err)) == 0)
-                continue;
-            else {
-                if (status < 0)
-                    logerr(errno,"failed to reconnect tcp connection");
+            if (!flag_test(ifa,F_PERSIST)) {
+                senblk_free(sptr,ifa->q);
                 break;
             }
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            if (ift->shared->fixing) {
+                pthread_cond_signal(&ift->shared->fv);
+                pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
+            } else {
+                if (ift->shared->critical == 2) {
+                    ift->shared->fixing++;
+                    (void) shutdown(ift->fd,SHUT_RDWR);
+                    pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
+                }
+                if ((status=reconnect(ifa,err)) <  0) {
+                    if (ifa->pair)
+                        ((struct if_tcp *) ifa->pair->info)->fd=-1;
+                    logerr(errno,"failed to reconnect tcp connection");
+                    done++;
+                }
+                if (ift->shared->fixing) {
+                    ift->shared->fixing=0;
+                    pthread_cond_signal(&ift->shared->fv);
+                }
+            }
+            ift->shared->critical--;
+            pthread_mutex_unlock(&ift->shared->t_mutex);
+        } else if (flag_test(ifa,F_PERSIST)) {
+            pthread_mutex_lock(&ift->shared->t_mutex);
+            ift->shared->critical--;
+            if (ift->shared->fixing)
+                pthread_cond_signal(&ift->shared->fv);
+            pthread_mutex_unlock(&ift->shared->t_mutex);
         }
         senblk_free(sptr,ifa->q);
     }
@@ -947,6 +1037,11 @@ iface_t *init_tcp(iface_t *ifa)
             return(NULL);
         }
 
+        if (pthread_cond_init(&ift->shared->fv,NULL) != 0) {
+            logerr(errno,"tcp condition variable initialisation failed");
+            return(NULL);
+        }
+
         ift->shared->retry=retry;
         if (ift->shared->retry != retry) {
             logerr(0,"retry value out of range");
@@ -963,6 +1058,8 @@ iface_t *init_tcp(iface_t *ifa)
             DEBUG(3,"Initial connection to %s port %s failed for TCP connection %s",host,port,(ifa->name)?ifa->name:"(no name)");
         }
         ift->shared->donewith=1;
+        ift->shared->critical=0;
+        ift->shared->fixing=0;
         ift->shared->keepalive=keepalive;
         ift->shared->keepidle=keepidle;
         ift->shared->keepintvl=keepintvl;
@@ -971,8 +1068,7 @@ iface_t *init_tcp(iface_t *ifa)
         ift->shared->tv.tv_sec=timeout;
         ift->shared->tv.tv_usec=0;
         ift->shared->nodelay=nodelay;
-        if (preamble)
-            ift->shared->preamble=preamble;
+        ift->shared->preamble=preamble;
     }
 
     freeaddrinfo(abase);

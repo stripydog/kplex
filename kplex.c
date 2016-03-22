@@ -1515,7 +1515,6 @@ int main(int argc, char ** argv)
     sa.sa_handler=terminate;
     sa.sa_flags=0;
     sigaction(SIGUSR1,&sa,NULL);
-
     sigaddset(&set,SIGUSR1);
     sigaddset(&set,SIGUSR2);
     sigaddset(&set,SIGALRM);
