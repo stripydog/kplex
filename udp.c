@@ -410,7 +410,7 @@ struct iface *init_udp(struct iface *ifa)
         }
     }
 
-    if (address || ifa->direction != IN) {
+    if (address || ifa->direction == IN) {
         memset((void *)&hints,0,sizeof(hints));
 
         hints.ai_flags=(ifa->direction==IN)?AI_PASSIVE:0;
