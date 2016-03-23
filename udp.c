@@ -59,6 +59,9 @@ void *ifdup_udp(void *ifa)
 
     (void) memcpy(newif, oldif, sizeof(struct if_udp));
 
+    /* In-bound connections don't need pointer to coalesce buffer */
+    newif->coalesce = NULL;
+
     /* Whole new file descriptor to bind() to.  Not an issue for Linux but
      * for some other platforms (e.g. OS X) we can't send with a multicast /
      * broadcast source address bound and can't receive with the interface
@@ -752,11 +755,11 @@ struct iface *init_udp(struct iface *ifa)
      */
 #ifdef SO_BINDTODEVICE
     /* Linux: requires root privileges */
-    struct ifreq ifr;
-
     if (ifname) {
-        strncpy(ifr.ifr_ifrn.ifrn_name,ifname,IF_NAMESIZE);
-        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
+        /* Is it a struct ifreq?  Is it a string? is it strlen + 1?  Seems
+        the length parameter tends to be ignored so if it's null terminated
+        and starts at the address pointed to we're fine */
+        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,strlen(ifname));
     }
 #endif
 
@@ -799,7 +802,8 @@ struct iface *init_udp(struct iface *ifa)
         /* Platform-specific interface binding for read side */
 #ifdef SO_BINDTODEVICE
         /* Linux */
-        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,&ifr,sizeof(ifr));
+        if (ifname)
+            setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,strlen(ifname));
 #endif
 
     }
