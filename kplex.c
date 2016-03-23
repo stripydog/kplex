@@ -849,7 +849,8 @@ void iface_destroy(void *ifptr)
 {
     iface_t *ifa = (iface_t *) ifptr;
 
-    DEBUG(3,"Cleaning up data for exiting %s %s id %x",(ifa->id & IDMINORBITS)?
+    DEBUG(3,"Cleaning up data for exiting %s %s %s id %x",
+            (ifa->direction == IN)?"input":"output",(ifa->id & IDMINORBITS)?
             "connection":"interface",(ifa->name)?ifa->name:"(no name)",ifa->id);
     sigset_t set,saved;
     sigemptyset(&set);
@@ -1345,7 +1346,7 @@ int main(int argc, char ** argv)
     } else {
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
-        DEBUG(1,"Not using  config file");
+        DEBUG(1,"Not using config file");
         engine = get_default_global();
     }
 
@@ -1420,7 +1421,8 @@ int main(int argc, char ** argv)
             logterm(errno,"Could not set file descriptor limit");
     }
 
-    DEBUG(1,"Kplex starting, config file %s",(config)?config:"<none>");
+    DEBUG(1,"kplex starting, config file %s",
+            (config && strcmp(config,"-"))?config:"<none>");
 
     /* our list of "real" interfaces starts after the first which is the
      * dummy "interface" specifying the multiplexing engine

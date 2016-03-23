@@ -343,6 +343,7 @@ struct iface *init_udp(struct iface *ifa)
     struct sockaddr_storage laddr;
     struct sockaddr *sa;
     struct ignore_addr *igp;
+    char debugbuf[INET6_ADDRSTRLEN];
     
     if ((ifu=malloc(sizeof(struct if_udp))) == NULL) {
         logerr(errno,"Could not allocate memory");
@@ -759,9 +760,27 @@ struct iface *init_udp(struct iface *ifa)
         /* Is it a struct ifreq?  Is it a string? is it strlen + 1?  Seems
         the length parameter tends to be ignored so if it's null terminated
         and starts at the address pointed to we're fine */
-        setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,strlen(ifname));
+        if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
+                strlen(ifname)) == 0) {
+            DEBUG(4,"failed to BINDTODEVICE udp interface %s to device %s",
+                   (ifa->name)?ifa->name:"(no name)",ifname);
+        } else {
+            DEBUG(4,"BINDTODEVICE succeeded for udp interface %s to device %s",
+                    (ifa->name)?ifa->name:"(no name)",ifname);
+        }
     }
 #endif
+
+    if (ifa->direction != IN) {
+        DEBUG(4,"udp interface %s output address %s, port %d",(ifa->name)?
+            ifa->name:"(no name)",inet_ntop(ifu->addr.ss_family,
+            ((ifu->addr.ss_family == AF_INET)?
+            (void*)&((struct sockaddr_in *)&ifu->addr)->sin_addr:
+            (void*)&((struct sockaddr_in6*)&ifu->addr)->sin6_addr),debugbuf,
+            INET6_ADDRSTRLEN),ntohs((ifu->addr.ss_family == AF_INET)?
+            ((struct sockaddr_in*)&ifu->addr)->sin_port:
+            ((struct sockaddr_in6*)&ifu->addr)->sin6_port));
+    }
 
     ifa->write=write_udp;
     ifa->read=do_read;
@@ -802,8 +821,16 @@ struct iface *init_udp(struct iface *ifa)
         /* Platform-specific interface binding for read side */
 #ifdef SO_BINDTODEVICE
         /* Linux */
-        if (ifname)
-            setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,strlen(ifname));
+        if (ifname) {
+            if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
+                    strlen(ifname)) == 0) {
+                DEBUG(4,"failed to BINDTODEVICE udp read interface %s to device %s",
+                        (ifa->name)?ifa->name:"(no name)",ifname);
+            } else {
+                DEBUG(4,"BINDTODEVICE succeeded for udp read interface %s to device %s",
+                    (ifa->name)?ifa->name:"(no name)",ifname);
+            }
+        }
 #endif
 
     }
@@ -837,9 +864,18 @@ struct iface *init_udp(struct iface *ifa)
             }
         }
         if (bind(ifu->fd,sa,ifu->asize) < 0) {
-            logerr(errno,"Duplicate bind failed");
+            logerr(errno,"bind failed for udp interface %s",(ifa->name)?
+                    ifa->name:"(no name)");
             return(NULL);
         }
+        DEBUG(4,"udp interface %s listening on %s, port %d",(ifa->name)?
+            ifa->name:"(no name)",inet_ntop(sa->sa_family,
+            ((sa->sa_family == AF_INET)?
+            (void*)&((struct sockaddr_in*)sa)->sin_addr:
+            (void*)&((struct sockaddr_in6*)sa)->sin6_addr),debugbuf,
+            INET6_ADDRSTRLEN),
+            ntohs((sa->sa_family==AF_INET)?((struct sockaddr_in*)sa)->sin_port:
+            ((struct sockaddr_in6*)sa)->sin6_port));
     }
 
     free_options(ifa->options);
