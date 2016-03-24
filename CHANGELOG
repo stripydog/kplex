@@ -1,6 +1,10 @@
-v?:
+v1.?:
 * Added gpsd support
 * Fixed various udp handling bugs
+* Fixed various bugs on tcp reconnect
+* Improve reconnection handling
+* Added much more debugging
+* Give interfaces default names
 
 v1.3.1: September 27th 2015
 * Fixed various uninitialised pointer fixes

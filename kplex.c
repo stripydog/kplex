@@ -1142,10 +1142,10 @@ size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
         memcpy(ptr,"s:",2);
         ptr+=2;
         if (ifa->tagflags & TAG_ISRC) {
-            if ((nameptr=idlookup(sptr->src))==NULL)
+            if (((nameptr=idlookup(sptr->src))==NULL) || (*nameptr == '_'))
                 nameptr=DEFSRCNAME;
         } else
-            nameptr=(ifa->name)?ifa->name:DEFSRCNAME;
+            nameptr=(*ifa->name=='_')?DEFSRCNAME:ifa->name;
 
         for (len=0;*nameptr && len < 15; len++)
             *ptr++=*nameptr++;
@@ -1273,9 +1273,9 @@ char * mkname(iface_t *ifa, unsigned int i)
     char *ptr,*dst;
     char nambuf[128];
 
-    /* auto assigned names are "<type>-id<id>", e.g. "udp-id2" */
+    /* auto assigned names are "_<type>-<id>", e.g. "_udp-2" */
 
-    for (ptr=iftypes[ifa->type].name,dst=nambuf;*ptr;ptr++)
+    for (ptr=iftypes[ifa->type].name,dst=nambuf,*dst++='_';*ptr;ptr++)
         *dst++=*ptr;
 
     *dst++='-';
