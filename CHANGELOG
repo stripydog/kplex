@@ -1,4 +1,4 @@
-v1.?:
+v1.3.2:
 * Added gpsd support
 * Fixed various udp handling bugs
 * Fixed various bugs on tcp reconnect
