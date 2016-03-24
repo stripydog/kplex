@@ -212,8 +212,7 @@ void write_udp(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"%s: Disabing tag output",ifa->name);
                 ifa->tagflags=0;
         } else {
             msgh.msg_iovlen=2;
@@ -231,8 +230,7 @@ void write_udp(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"%s: Disabing tag output",ifa->name);
                 ifa->tagflags=0;
                 msgh.msg_iovlen=1;
                 data=0;
@@ -762,19 +760,18 @@ struct iface *init_udp(struct iface *ifa)
         and starts at the address pointed to we're fine */
         if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
                 strlen(ifname)) == 0) {
-            DEBUG(4,"failed to BINDTODEVICE udp interface %s to device %s",
-                   (ifa->name)?ifa->name:"(no name)",ifname);
+            DEBUG2(3,"%s: BINDTODEVICE failed on device %s",
+                   ifa->name,ifname);
         } else {
-            DEBUG(4,"BINDTODEVICE succeeded for udp interface %s to device %s",
-                    (ifa->name)?ifa->name:"(no name)",ifname);
+            DEBUG(3,"%s: BINDTODEVICE succeeded on device %s",
+                    ifa->name,ifname);
         }
     }
 #endif
 
     if (ifa->direction != IN) {
-        DEBUG(4,"udp interface %s output address %s, port %d",(ifa->name)?
-            ifa->name:"(no name)",inet_ntop(ifu->addr.ss_family,
-            ((ifu->addr.ss_family == AF_INET)?
+        DEBUG(3,"%s: output address %s, port %d",ifa->name
+            ,inet_ntop(ifu->addr.ss_family,((ifu->addr.ss_family == AF_INET)?
             (void*)&((struct sockaddr_in *)&ifu->addr)->sin_addr:
             (void*)&((struct sockaddr_in6*)&ifu->addr)->sin6_addr),debugbuf,
             INET6_ADDRSTRLEN),ntohs((ifu->addr.ss_family == AF_INET)?
@@ -824,11 +821,11 @@ struct iface *init_udp(struct iface *ifa)
         if (ifname) {
             if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
                     strlen(ifname)) == 0) {
-                DEBUG(4,"failed to BINDTODEVICE udp read interface %s to device %s",
-                        (ifa->name)?ifa->name:"(no name)",ifname);
+                DEBUG2(3,"%s: BINDTODEVICE failed (read) to device %s",
+                        ifa->name,ifname);
             } else {
-                DEBUG(4,"BINDTODEVICE succeeded for udp read interface %s to device %s",
-                    (ifa->name)?ifa->name:"(no name)",ifname);
+                DEBUG(3,"%s: BINDTODEVICE succeeded (read) to device %s",
+                    ifa->name,ifname);
             }
         }
 #endif
@@ -864,13 +861,11 @@ struct iface *init_udp(struct iface *ifa)
             }
         }
         if (bind(ifu->fd,sa,ifu->asize) < 0) {
-            logerr(errno,"bind failed for udp interface %s",(ifa->name)?
-                    ifa->name:"(no name)");
+            logerr(errno,"bind failed for udp interface %s",ifa->name);
             return(NULL);
         }
-        DEBUG(4,"udp interface %s listening on %s, port %d",(ifa->name)?
-            ifa->name:"(no name)",inet_ntop(sa->sa_family,
-            ((sa->sa_family == AF_INET)?
+        DEBUG(3,"udp interface %s listening on %s, port %d",ifa->name,
+            inet_ntop(sa->sa_family,((sa->sa_family == AF_INET)?
             (void*)&((struct sockaddr_in*)sa)->sin_addr:
             (void*)&((struct sockaddr_in6*)sa)->sin6_addr),debugbuf,
             INET6_ADDRSTRLEN),

@@ -95,7 +95,7 @@ int do_preamble(struct if_tcp *ift, struct tcp_preamble *preamble)
 /*
  * Set socket options to enable keepalives as required
  * Args: Pointer to an if_tcp structure
- * Returns: 0 on successi, -1 if any errors occur
+ * Returns: 0 on success, -1 if any errors occur
  * Side effects: Sets keepalive options on interface socket
  */
 int establish_keepalive(struct if_tcp *ift)
@@ -163,7 +163,7 @@ int reconnect(iface_t *ifa, int err)
     int retval=0;
     int on=1;
 
-    DEBUG(3,"Reconnecting (write) interface %s",(ifa->name)?ifa->name:"(unnamed)");
+    DEBUG(3,"%s: Reconnecting (write) interface",ifa->name);
 
     /* ift->shared_t_mutex shoudl be locked by the calling routine */
 
@@ -187,6 +187,7 @@ int reconnect(iface_t *ifa, int err)
             retval=-1;
             break;
         }
+        DEBUG(6,"%s: Reconnecting...",ifa->name);
         if (connect(ift->fd,(const struct sockaddr *)
                 &ift->shared->sa,ift->shared->sa_len) == 0) {
             break;
@@ -204,7 +205,7 @@ int reconnect(iface_t *ifa, int err)
             retval = -1;
         }
     }
-    DEBUG(3,"Reconnected (write) interface %s",(ifa->name)?ifa->name:"(unnamed)");
+    DEBUG(3,"%s: Reconnected (write) interface",ifa->name);
     if (retval == 0) {
         if (ifa->pair) {
                 iftp = (struct if_tcp *) ifa->pair->info;
@@ -220,7 +221,7 @@ int reconnect(iface_t *ifa, int err)
         }
     }
 
-    DEBUG(7,"Flushing queue interface %s",(ifa->name)?ifa->name:"(unnamed)");
+    DEBUG(7,"Flushing queue interface %s",ifa->name);
     flush_queue(ifa->q);
 
     pthread_mutex_unlock(&ift->shared->t_mutex);
@@ -243,7 +244,7 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     int fflags;
     int on=1;
 
-    DEBUG(3,"Reconnecting (read) interface %s",(ifa->name)?ifa->name:"(unnamed)");
+    DEBUG(3,"%s: Reconnecting (read) interface",ifa->name);
     /* ift->shared->t_mutex should be held by the calling routine */
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
@@ -270,10 +271,11 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                 }
 
                 mysleep(ift->shared->retry);
+                DEBUG(7,"%s: Retrying connection...",ifa->name);
                 if ((nread=connect(ift->fd,
                         (const struct sockaddr *)&ift->shared->sa,
                         ift->shared->sa_len)) == 0)
-                    DEBUG(3,"Reconnected (read) interface %s",(ifa->name)?ifa->name:"(unnamed)");
+                    DEBUG(3,"%s: Reconnected (read) interface",ifa->name);
 
             }
         } else {
@@ -351,7 +353,12 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
          */
         nread=read(ift->fd,buf,BUFSIZ);
         if (nread <= 0) {
-            DEBUG2(3,"Read failed for TCP interface %s",(ifa->name)?ifa->name:"(no name)");
+            if (nread) {
+                DEBUG(3,"%s: %s",ifa->name,"Read Failed");
+            } else {
+                DEBUG(3,"%s: EOF",ifa->name);
+            }
+
             if (!flag_test(ifa,F_PERSIST))
                 break;
             pthread_mutex_lock(&ift->shared->t_mutex);
@@ -400,8 +407,8 @@ void write_tcp(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"Disabing tag output on interface id %x (%s)",
+                        ifa->id,ifa->name);
                 ifa->tagflags=0;
         } else {
             cnt=2;
@@ -421,8 +428,8 @@ void write_tcp(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"Disabing tag output on interface id %x (%s)",
+                        ifa->id,ifa->name);
                 ifa->tagflags=0;
                 cnt=1;
                 data=0;
@@ -446,7 +453,7 @@ void write_tcp(struct iface *ifa)
             }
         }
         if (writev(ift->fd,iov,cnt) <0) {
-            DEBUG2(3,"TCP write failed for interface %s",(ifa->name)?ifa->name:"(no name)");
+            DEBUG2(3,"%s id %x: write failed",ifa->name,ifa->id);
             err=errno;
             if (!flag_test(ifa,F_PERSIST)) {
                 senblk_free(sptr,ifa->q);
@@ -544,12 +551,10 @@ void delayed_connect(iface_t *ifa)
             if (ift->shared->preamble)
                 do_preamble(ift,NULL);
 
-            DEBUG(3,"Completed delayed connect of TCP interface %s",(ifa->name)?
-                    ifa->name:"(no name)");
+            DEBUG(3,"%s: Completed delayed connect",ifa->name);
 
         } else {
-            DEBUG(4,"Delayed connect failed for TCP interface %s (sleeping)",
-                    (ifa->name)?ifa->name:"(no name)");
+            DEBUG(4,"%s: Delayed connect failed (sleeping)",ifa->name);
             mysleep(ift->shared->retry);
         }
     }
@@ -576,6 +581,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         return(NULL);
 
     memset(newifa,0,sizeof(iface_t));
+
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
             (init_q(newifa, oldift->qsize) < 0))) {
@@ -586,6 +592,8 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         free(newifa);
         return(NULL);
     }
+    memset(newift,0,sizeof(struct if_tcp));
+
     newift->fd=fd;
     newift->shared=NULL;
     newifa->id=ifa->id+(fd&IDMINORMASK);
@@ -643,6 +651,7 @@ void tcp_server(iface_t *ifa)
     int afd;
     socklen_t slen;
     struct if_tcp *ift=(struct if_tcp *)ifa->info;
+    iface_t * newifa;
     struct sockaddr_storage sad;
     char addrs[INET6_ADDRSTRLEN];
 
@@ -650,20 +659,19 @@ void tcp_server(iface_t *ifa)
     if (listen(ift->fd,5) == 0) {
         while(ifa->direction != NONE) {
             slen = sizeof(struct sockaddr_storage);
-        if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0)
-             break;
+            if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0)
+                break;
     
-        if (new_tcp_conn(afd,ifa) == NULL) {
-            close(afd);
-            afd=-1;
-        }
-        DEBUG(3,"New TCP connection %successfully received by %s from %s",
-                (afd<0)?"un":"",
-                (ifa->name)?ifa->name:"(no name)", inet_ntop(sad.ss_family,
-                (sad.ss_family == AF_INET)?
-                (const void *) &((struct sockaddr_in *)&sad)->sin_addr:
-                (const void *) &((struct sockaddr_in6 *)&sad)->sin6_addr,
-                addrs,INET6_ADDRSTRLEN));
+            if ((newifa = new_tcp_conn(afd,ifa)) == NULL) {
+                close(afd);
+                afd=-1;
+            }
+            DEBUG(3,"%s: New connection id %x %ssuccessfully received from %s",
+                    ifa->name,newifa->id,(afd<0)?"un":"",
+                    inet_ntop(sad.ss_family,(sad.ss_family == AF_INET)?
+                    (const void *) &((struct sockaddr_in *)&sad)->sin_addr:
+                    (const void *) &((struct sockaddr_in6 *)&sad)->sin6_addr,
+                    addrs,INET6_ADDRSTRLEN));
         }
     }
     iface_thread_exit(errno);
@@ -1055,7 +1063,8 @@ iface_t *init_tcp(iface_t *ifa)
         } else {
             ift->shared->host=strdup(host);
             ift->shared->port=strdup(port);
-            DEBUG(3,"Initial connection to %s port %s failed for TCP connection %s",host,port,(ifa->name)?ifa->name:"(no name)");
+            DEBUG(3,"%s: Initial connection to %s port %s failed",ifa->name,
+                    host,port);
         }
         ift->shared->donewith=1;
         ift->shared->critical=0;
@@ -1119,6 +1128,6 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->read=tcp_server;
     }
     free_options(ifa->options);
-    DEBUG(4,"TCP interface %d initialised",(ifa->name)?ifa->name:"(no name)");
+    DEBUG(3,"%s: initialised",ifa->name);
     return(ifa);
 }

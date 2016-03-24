@@ -1,6 +1,6 @@
 /* gofree.c
  * This file is part of kplex
- * Copyright Keith Young 2013-2014
+ * Copyright Keith Young 2013-2016
  *  For copying information see the file COPYING distributed with this softwar`
  */
 
@@ -65,6 +65,7 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     struct if_tcp *newift;
     int err;
     sigset_t set,saved;
+    char addrbuf[INET_ADDRSTRLEN];   /* for debug info */
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL)
         return(NULL);
@@ -88,7 +89,7 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     newifa->id=ifa->id+(newift->fd&IDMINORMASK);
     newifa->direction=IN;
     newifa->type=TCP;
-    newifa->name=NULL;
+    newifa->name=ifa->name;
     newifa->info=newift;
     newifa->cleanup=cleanup_tcp;
     newifa->write=write_tcp;
@@ -110,6 +111,9 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
 
     /* reset sig mask and re-enable SIGUSR1 */
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
+    DEBUG(3,"%s: connected to MFD %s at %s port %s",ifa->name,mfd->name,
+            inet_ntop(AF_INET,(const void *)&mfd->addr.sin_addr,addrbuf,
+            INET_ADDRSTRLEN),ntohs(mfd->addr.sin_port));
 
     return(newifa);
 }
@@ -491,6 +495,9 @@ iface_t *init_gofree(iface_t *ifa)
         logerr(errno,"Bind failed");
         return(NULL);
     }
+
+    DEBUG(3,"%s listening on %s for gofree to %s port %d",ifa->name,(ifname)?
+            ifname:"default",GOFREE_GROUP,GOFREE_PORT);
 
     ifa->cleanup=cleanup_gofree;
     ifa->info=(void *) ifg;

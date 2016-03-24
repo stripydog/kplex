@@ -73,12 +73,12 @@ void write_file(iface_t *ifa)
             logerr(errno,"Could not create queue for FIFO %s",ifc->filename);
             iface_thread_exit(errno);
         }
+        DEBUG(3,"%s opened FIFO %s for writing",ifa->name,ifc->filename);
     }
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"%s: Disabing tag output",ifa->name);
                 ifa->tagflags=0;
         } else {
             cnt=2;
@@ -104,8 +104,7 @@ void write_file(iface_t *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,"%s: Disabing tag output",ifa->name);
                 ifa->tagflags=0;
                 cnt=1;
                 data=0;
@@ -115,10 +114,17 @@ void write_file(iface_t *ifa)
         iov[data].iov_base=sptr->data;
         iov[data].iov_len=sptr->len;
         if (writev(ifc->fd,iov,cnt) <0) {
-            if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) )
+            if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) ) {
+                logerr(errno,"%s: write failed",ifa->name);
                 break;
-            if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0)
+            }
+
+            if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0) {
+                logerr(errno,"%s: failed to re-open %s",ifa->name,
+                        ifc->filename);
                 break;
+            }
+            DEBUG(4,"%s: reconnected to FIFO %s",ifa->name,ifc->filename);
         }
         senblk_free(sptr,ifa->q);
     }
@@ -134,12 +140,14 @@ void file_read_wrapper(iface_t *ifa)
     struct if_file *ifc = (struct if_file *) ifa->info;
 
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
-    if (ifc->fd == -1)
+    if (ifc->fd == -1) {
         if ((ifc->fd = open(ifc->filename,O_RDONLY)) < 0) {
             logerr(errno,"Failed to open FIFO %s for reading\n",ifc->filename);
             iface_thread_exit(errno);
+        } else {
+            DEBUG(3,"%s: opened %s for reading",ifa->name,ifc->filename);
         }
-
+    }
     do_read(ifa);
 }
 
@@ -158,6 +166,7 @@ ssize_t read_file(iface_t *ifa, char *buf)
                             ifc->filename);
                 break;
             }
+            DEBUG(4,"%s: re-opened %s for reading",ifa->name,ifc->filename);
             continue;
         } else
             break;
@@ -263,7 +272,14 @@ iface_t *init_file (iface_t *ifa)
             logerr(0,"Can't use terminal stdin/stdout in background mode");
             return(NULL);
         }
-        ifc->fd = (ifa->direction == IN)?STDIN_FILENO:STDOUT_FILENO;
+        if (ifa->direction == IN) {
+            ifc->fd = STDIN_FILENO;
+            DEBUG(3,"%s: using stdin",ifa->name);
+        } else {
+            ifc->fd = STDOUT_FILENO;
+            DEBUG(3,"%s: using %s",ifa->name,
+                    (ifa->direction==OUT)?"stdout":"stdin/stdout");
+        }
     } else {
         if (ifa->direction == BOTH) {
             logerr(0,"Bi-directional file I/O only supported for stdin/stdout");
@@ -285,8 +301,7 @@ iface_t *init_file (iface_t *ifa)
                 logerr(errno,"Could not access %s",ifc->filename);
                 return(NULL);
             }
-        }
-        else {
+        } else {
             if (flag_test(ifa,F_PERSIST)) {
                 logerr(0,"Can't use persist mode on %s: Not a FIFO",
                         ifc->filename);
@@ -296,6 +311,7 @@ iface_t *init_file (iface_t *ifa)
                 tperm=umask(0);
 
             errno=0;
+            /* If file is for output and doesn't currently exist...*/
             if (ifa->direction != IN && (ifc->fd=open(ifc->filename,
                         O_WRONLY|O_CREAT|O_EXCL|((append)?O_APPEND:0),
                         (perm)?perm:0664)) >= 0) {
@@ -305,16 +321,20 @@ iface_t *init_file (iface_t *ifa)
                         return(NULL);
                     }
                 }
+            DEBUG(3,"%s: created %s for output",ifa->name,ifc->filename);
             } else {
                 if (errno && errno != EEXIST) {
                     logerr(errno,"Failed to create file %s",ifc->filename);
                     return(NULL);
                 }
+                /* file is for input or already exists */
                 if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
                         (O_WRONLY|((append)?O_APPEND:O_TRUNC)))) < 0) {
                     logerr(errno,"Failed to open file %s",ifc->filename);
                     return(NULL);
                 }
+                DEBUG(3,"%s: opened %s for %s",ifa->name,ifc->filename,
+                        (ifa->direction==IN)?"input":"output");
             }
             /* reset umask: not really necessary */
             if (perm)

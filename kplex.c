@@ -851,7 +851,7 @@ void iface_destroy(void *ifptr)
 
     DEBUG(3,"Cleaning up data for exiting %s %s %s id %x",
             (ifa->direction == IN)?"input":"output",(ifa->id & IDMINORBITS)?
-            "connection":"interface",(ifa->name)?ifa->name:"(no name)",ifa->id);
+            "connection":"interface",ifa->name,ifa->id);
     sigset_t set,saved;
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
@@ -1263,6 +1263,44 @@ void do_read(iface_t *ifa)
     iface_thread_exit(errno);
 }
 
+/* Make an interface name based on file type and index
+ * Args: Pointer to interface structure and index
+ * Returns: Pointer to newly malloced string containing constructed name
+ * Side effects: None (but string will need free-ing)
+ */
+char * mkname(iface_t *ifa, unsigned int i)
+{
+    char *ptr,*dst;
+    char nambuf[128];
+
+    /* auto assigned names are "<type>-id<id>", e.g. "udp-id2" */
+
+    for (ptr=iftypes[ifa->type].name,dst=nambuf;*ptr;ptr++)
+        *dst++=*ptr;
+
+    *dst++='-';
+    *dst++='i';
+    *dst++='d';
+
+    do {
+        *dst++='0'+(i%10);
+        i/=10;
+    } while(i);
+
+    *dst=*(dst+1)='\0';
+
+    /* We *could* Append stuff until a unique name was found but that's
+     * unnecessary complexity.  Return simple error instead */
+
+    if (namelookup(nambuf)) {
+        logerr(0,"\"%s\" already specified as an interface name",nambuf);
+        return(NULL);
+    }
+
+    return(strdup(nambuf));
+}        
+
+    
 int main(int argc, char ** argv)
 {
     long templ;
@@ -1436,10 +1474,13 @@ int main(int argc, char ** argv)
         if (i == MAXINTERFACES)
             logterm(0,"Too many interfaces");
         ifptr->id=++i<<IDMINORBITS;
-        if (ifptr->name) {
-            if (insertname(ifptr->name,ifptr->id) < 0)
-                logterm(errno,"Failed to associate interface name and id");
+        if (!ifptr->name) {
+            if (!(ifptr->name=mkname(ifptr,i)))
+                logterm(errno,"Failed to make interface name");
         }
+
+        if (insertname(ifptr->name,ifptr->id) < 0)
+            logterm(errno,"Failed to associate interface name and id");
 
         ifptr->lists = &lists;
 

@@ -332,6 +332,9 @@ struct iface *init_serial (struct iface *ifa)
     if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
         return(NULL);
     }
+    DEBUG(3,"%s: opened serial device %s for %s",ifa->name,devname,
+            (ifa->direction==IN)?"input":(ifa->direction==OUT)?"output":
+            "input/output");
 
     free_options(ifa->options);
 
@@ -384,6 +387,7 @@ struct iface *init_serial (struct iface *ifa)
 struct iface *init_pty (struct iface *ifa)
 {
     char *devname=NULL;
+    char* baudstr="4800";
     struct if_serial *ifs;
     int baud=B4800,slavefd;
     int ret;
@@ -438,6 +442,7 @@ struct iface *init_pty (struct iface *ifa)
                 return 0;
             }
         } else if (!strcasecmp(opt->var,"baud")) {
+            baudstr=opt->val;
             if (!strcmp(opt->val,"38400"))
                 baud=B38400;
             else if (!strcmp(opt->val,"9600"))
@@ -510,13 +515,15 @@ struct iface *init_pty (struct iface *ifa)
                 logerr(errno,"Could not create symbolic link %s for %s",devname,slave);
                 return(NULL);
             }
+            DEBUG(3,"%s: created pty link %s to %s",ifa->name,devname,slave);
+
             /* Save the name to unlink it on exit */
             if ((ifs->slavename=strdup(devname)) == NULL) {
                 logerr(errno,"Failed to save device name. Link will not be removed on exit");
             }
         } else
     /* No device name was given: Just print the pty name */
-            loginfo("Slave pty for output at %s baud is %s",(baud==B4800)?"4800":(baud==B9600)?"9600": "38.4k",slave);
+            loginfo("Slave pty for output at %s baud is %s",baudstr,slave);
     } else {
     /* Slave mode: This is no different from a serial line */
         if (!devname) {
@@ -526,6 +533,9 @@ struct iface *init_pty (struct iface *ifa)
         if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
             return(NULL);
         }
+        DEBUG(3,"%s: opened pty slave %s for %s",ifa->name,devname,
+                (ifa->direction==IN)?"input":(ifa->direction==OUT)?"output":
+                "input/output");
     }
 
     free_options(ifa->options);
