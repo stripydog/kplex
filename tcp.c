@@ -903,6 +903,8 @@ iface_t *init_tcp(iface_t *ifa)
         } else if (!strcasecmp(opt->var,"gpsd")) {
             if (!strcasecmp(opt->val,"yes")) {
                 gpsd=1;
+                if (!port)
+                    port="2947";
             } else if (!strcasecmp(opt->val,"no")) {
                 gpsd=0;
             } else {

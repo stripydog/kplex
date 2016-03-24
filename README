@@ -438,11 +438,11 @@ this option on the command line due to shell interpretation of escape
 characters. Only one "preamble" may be specified and this option may not be used
 with "mode=server".
 
-"gpsd=yes" is a shorthand for setting the preamble string to:
+If "gpsd=yes" is specified kplex will use port 2947 as a default if the "port"
+option is not specified and will set the preamble to:
 ?WATCH={"enable":true,"nmea":true}
-This will enable nmea output from an instance of gpsd connected to.  Being the
-equivalent of setting a preamble, this may not be specified with "mode=server"
-or the preamble option.
+This will enable nmea output from an instance of gpsd connected to.  This option
+may not be used with "mode=server" or the "preamble" option.
 
 UDP Interfaces
 --------------
