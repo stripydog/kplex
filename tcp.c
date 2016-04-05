@@ -1107,8 +1107,10 @@ iface_t *init_tcp(iface_t *ifa)
         if (connection) {
             if (preamble) {
                 do_preamble(ift,preamble);
-                free(preamble->string);
-                free(preamble);
+                if (ift->shared == NULL) {
+                    free(preamble->string);
+                    free(preamble);
+                }
             }
             ifa->read=do_read;
             ifa->write=write_tcp;
