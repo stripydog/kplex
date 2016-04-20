@@ -1,4 +1,4 @@
-v1.3.2:
+v1.3.2: April 21st 2016
 * Added gpsd support
 * Fixed various udp handling bugs
 * Fixed various bugs on tcp reconnect
