@@ -244,6 +244,7 @@ sfilter_t *getfilter(char *fstring)
         ok=0;
         if ((tfilter=(sf_rule_t *)malloc(sizeof(sf_rule_t))) == NULL)
             break;
+        memset((void *)tfilter,0,sizeof(sf_rule_t));
         tfilter->next=NULL;
         if (*fstring == '+')
             tfilter->type=ACCEPT;
