@@ -484,7 +484,9 @@ struct iface *init_udp(struct iface *ifa)
                     return(NULL);
                 }
                 for (ifp=ifap;ifp;ifp=ifp->ifa_next)
-                    if ((ifp->ifa_addr->sa_family == AF_INET) &&
+                    /* Note that the definition of ifa_dstaddr varies by system
+                       but the usage below should work on all target platforms */
+                    if ((ifp->ifa_addr) && (ifp->ifa_addr->sa_family == AF_INET) &&
                             (ifp->ifa_dstaddr != NULL) &&
                             (((struct sockaddr_in *)sa)->sin_addr.s_addr
                             == ((struct sockaddr_in *)(ifp->ifa_dstaddr))->sin_addr.s_addr))
@@ -533,6 +535,8 @@ struct iface *init_udp(struct iface *ifa)
             if (ifname && strcmp(ifname,ifp->ifa_name))
                 continue;
             iffound++;
+            if (ifp->ifa_addr == NULL)
+                continue;
             if (ifp->ifa_addr->sa_family != AF_INET &&
                     ifp->ifa_addr->sa_family != AF_INET6)
                 continue;
