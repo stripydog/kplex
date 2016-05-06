@@ -1,3 +1,7 @@
+v1.3.3: May 7th 2016
+* Fixed crash in udp code with openvpn
+* Fixed broken filtering
+
 v1.3.2: April 21st 2016
 * Added gpsd support
 * Fixed various udp handling bugs
