@@ -1522,7 +1522,7 @@ int main(int argc, char ** argv)
     /* One more spin through the list now we've initialised the name to id
      * mapping so we can update references to "name" with an id
      */
-    for (ifptr=engine->next;ifptr;ifptr=ifptr->next) {
+    for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
         if (ifptr->ofilter)
             if (name2id(ifptr->ofilter))
                 logterm(errno,"Name to interface translation failed");
