@@ -1337,9 +1337,8 @@ int main(int argc, char ** argv)
     while ((opt=getopt(argc,argv,"d:f:o:V")) != -1) {
         switch (opt) {
             case 'd':
-                if ((((templ=strtol(optarg,NULL,0)) == 0) &&
-                        (errno == EINVAL || errno == ERANGE )) ||
-                        (templ < 0) || (templ > 9)) {
+                errno=0;
+                if (((templ=strtol(optarg,NULL,0)) <= 0) || templ > 9) {
                     logerr(errno,"Bad debug level %s: Must be 1-9",optarg);
                     err++;
                 } else

@@ -400,8 +400,7 @@ struct iface *init_udp(struct iface *ifa)
             port=DEFPORT;
         }
     } else if (!address) {
-        if ((port=strtol(service,&eptr,0)) <= 0 || port >= 65536 || errno != 0
-                || *eptr != '\0') {
+        if ((port=strtol(service,&eptr,0)) <= 0 || port >= 65536 || *eptr != '\0') {
             if ((svent = getservbyname(service,"udp")) != NULL)
                 port=svent->s_port;
             else

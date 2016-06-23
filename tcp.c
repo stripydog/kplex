@@ -833,7 +833,8 @@ iface_t *init_tcp(iface_t *ifa)
                 logerr(0,"retry valid only valid with persist option");
                 return(NULL);
             }
-            if ((retry=strtol(opt->val,&eptr,0)) == 0 && errno) {
+            errno=0;
+            if ((retry=strtol(opt->val,&eptr,0)) == 0 || (errno)) {
                 logerr(0,"retry value %s out of range",opt->val);
                 return(NULL);
             }
