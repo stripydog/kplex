@@ -1,3 +1,7 @@
+v1.3.4: June 26th 2016
+* Fixed bug with optional interfaces
+* Fixed udp port assignment bug
+
 v1.3.3: May 7th 2016
 * Fixed crash in udp code with openvpn
 * Fixed broken filtering
