@@ -23,7 +23,7 @@
 #include <inttypes.h>
 
 /* Macro to identify kplex Proprietary sentences */
-#define isprop(sptr) (sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
+#define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
