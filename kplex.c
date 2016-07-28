@@ -70,13 +70,11 @@ int checkcksum (senblk_t *sptr)
     int rcvdcksum=0,i,end;
     char *ptr;
 
-    for(i=0,end=sptr->len-5,ptr=sptr->data+1;; ptr++,i++)
-        if (i == end)
-            return(-1);
-        else if (*ptr == '*')
-            break;
-        else
+    for(i=0,end=sptr->len-5,ptr=sptr->data+1; i < end; ptr++,i++)
             cksm ^= *ptr;
+
+    if (*ptr != '*')
+        return -1;
 
     for (i=0,++ptr;i<2;i++,ptr++) {
         if (*ptr>47 && *ptr<58)
@@ -92,7 +90,7 @@ int checkcksum (senblk_t *sptr)
     if (cksm == rcvdcksum)
         return (0);
     else
-        return(1);
+        return(-1);
 }
 
 /*
@@ -1238,6 +1236,9 @@ void do_read(iface_t *ifa)
                     senstate = SEN_NODATA;
                     continue;
                 }
+                /* If we're not checksumming OR the checksum is correct OR
+                 * it's a zero length packet, the first clause is false which
+                 * is true when negated...*/
                 if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
                         senfilter(&sblk,ifa->ifilter) == 0) {
                     push_senblk(&sblk,ifa->q);
