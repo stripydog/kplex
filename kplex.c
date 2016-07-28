@@ -70,7 +70,7 @@ int checkcksum (senblk_t *sptr)
     int rcvdcksum=0,i,end;
     char *ptr;
 
-    for(i=0,end=sptr->len-5,ptr=sptr->data+1; i < end; ptr++,i++)
+    for(i=0,end=sptr->len-6,ptr=sptr->data+1; i < end; ptr++,i++)
             cksm ^= *ptr;
 
     if (*ptr != '*')
