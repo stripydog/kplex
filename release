@@ -7,7 +7,9 @@ make clean
 echo "#define VERSION \"$VERSION\"" > version.h
 cp * $VDIR
 rm $VDIR/release $VDIR/base_version
-echo "$
+echo "/^all:/s/version //
++1,/^kplex:/-2d
+$
 -3,.d
 w" | ed -s $VDIR/Makefile >/dev/null
 (cd /tmp && tar cf - ${VDIR##*/} | gzip > kplex-${VERSION}.tgz)
