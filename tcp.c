@@ -813,7 +813,7 @@ iface_t *init_tcp(iface_t *ifa)
         return(NULL);
     }
 
-    ift->qsize=DEFTCPQSIZE;
+    ift->qsize=DEFQSIZE;
     ift->shared=NULL;
     preamble=NULL;
 

@@ -12,7 +12,6 @@
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 
-#define DEFUDPQSIZE 64
 #define CBUFSIZ 128
 
 static struct ignore_addr {
@@ -330,7 +329,7 @@ struct iface *init_udp(struct iface *ifa)
     struct ifaddrs *ifap=NULL,*ifp;
     char *address,*service,*ifname,*eptr;
     struct servent *svent;
-    size_t qsize = DEFUDPQSIZE;
+    size_t qsize = DEFQSIZE;
     struct kopts *opt;
     int coalesce=0;
     int ifindex,iffound=0;

@@ -430,7 +430,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             q->qhead=q->qhead->next;
             if (q->drops < 0)
                 q->drops++;
-            DEBUG(4,"Dropped senblk q=0x%x",q);
+            DEBUG(4,"Dropped senblk q=%s",(q->owner->name)?q->owner->name:"(unknown)");
         }
     
         (void) senblk_copy(tptr,sptr);
@@ -1043,7 +1043,7 @@ int name2id(sfilter_t *filter)
 int proc_engine_options(iface_t *e_info,struct kopts *options)
 {
     struct kopts *optr;
-    size_t qsize=DEFQUEUESZ;
+    size_t qsize=DEFQSIZE;
     struct if_engine *ifg = (struct if_engine *) e_info->info;
 
     if (e_info->options) {

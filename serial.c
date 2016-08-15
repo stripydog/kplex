@@ -23,7 +23,7 @@
 #include <grp.h>
 #include <pwd.h>
 
-#define DEFSERIALQSIZE 128
+#define DEFSERIALQSIZE 32
 
 struct if_serial {
     int fd;

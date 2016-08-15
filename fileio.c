@@ -14,8 +14,6 @@
 #include <pwd.h>
 #include <grp.h>
 
-#define DEFFILEQSIZE 128
-
 struct if_file {
     int fd;
     char *filename;
@@ -195,7 +193,7 @@ iface_t *init_file (iface_t *ifa)
 
     memset ((void *)ifc,0,sizeof(struct if_file));
 
-    ifc->qsize=DEFFILEQSIZE;
+    ifc->qsize=DEFQSIZE;
     ifc->fd=-1;
     ifa->info = (void *) ifc;
 

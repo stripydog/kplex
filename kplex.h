@@ -31,11 +31,7 @@
 
 #define DEFSRCNAME "kplex"
 
-#define DEFQUEUESZ 16
-#define SERIALQUESIZE 32
-#define BCASTQUEUESIZE 16
-#define TCPQUEUESIZE 16
-
+#define DEFQSIZE 16
 
 #define SENMAX 80
 #define SENBUFSZ 84
