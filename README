@@ -221,9 +221,11 @@ standard input and standard output.
 
 "File" interfaces are slightly different from other interfaces in that
 by default sentences are terminated by <LF> rather than <CR><LF>. Because this
-is *nix and we don't want to muck about with redundant '\r's.  Sentences input
-with just a terminating '\n' (ie <LF>) are converted to <CR><LF> translation for
-output to other interface types (i.e. serial, tcp, broadcast etc.).
+is *nix and we don't want to muck about with redundant '\r's.  Uniquely for
+"file" interfaces "loose" termination checking is default on input.  Sentences
+input with just a terminating '\n' (ie <LF>) or NULL are converted to <CR><LF>
+for output to other interface types (i.e. serial, tcp, broadcast
+etc.).
 
 If the option "eol=rn" is specified, file interfaces will output sentences
 terminated by <CR><LF>. Input sentences will be discarded if they are terminated
@@ -949,15 +951,18 @@ checksum=[yes|no]
     done by end consumer applications.
 strict=[yes|no]
     Where:
-    "strict=yes" (the default if "strict=" is not specified) tells kplex to
-    require all sentences received to be correctly terminated with a <CR><LF>
-    sequence unless overridden on a per-interface "strict" option or a per-
-    interface "eol=n".  If "strict=no" is specified all interfaces will default
-    to a looser parsing strategy which will allow input sentences to be
-    terminated by a <CR>, <LF> or NULL (0x00).  This option applies to input
-    sentences only and has no effect on interface output.  However terminated on
-     input when loose parsing ("strict=no") is in effect, sentences output from
-    interfaces other than file interfaces will be <CR><LF> terminated.
+    "strict=yes" tells kplex to require all sentences received to be correctly
+    terminated with a <CR><LF> sequence unless overridden on a per-interface
+    "strict" option or a per-interface "eol=n".  If "strict=no" is specified all
+    interfaces will default to a looser parsing strategy which will allow input
+    sentences to be terminated by a <CR>, <LF> or NULL (0x00).  This option
+    applies to input sentences only and has no effect on interface output.
+    However terminated on input when loose parsing ("strict=no") is in effect,
+    sentences output from interfaces other than file interfaces will be <CR><LF>
+    terminated. If this value is not specified and no per-interface "strict="
+    specification is given, processing will default to "strict=yes" for all
+    interface types *except* file interfaces.  For "file" interfaces the default
+    is loose ("strict=no") processing.
 logto=<facility>
     Where <facility> is the syslog facility to use for logging.  The default is
     "daemon", telling kplex to use the LOG_DAEMON syslog facility. <facility> is

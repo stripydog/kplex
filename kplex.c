@@ -574,7 +574,8 @@ iface_t *get_default_global()
     }
     ifg->flags=0;
     ifg->logto=LOG_DAEMON;
-    ifp->strict=1;
+    ifp->strict=-1;
+    ifp->checksum=0;
     ifp->info = (void *)ifg;
 
     return(ifp);
@@ -1512,8 +1513,13 @@ int main(int argc, char ** argv)
 
             if (ifptr->checksum <0)
                 ifptr->checksum = engine->checksum;
-            if (ifptr->strict <0)
-                ifptr->strict = engine->strict;
+            if (ifptr->strict <0) {
+                if (engine->strict >= 0) {
+                    ifptr->strict = engine->strict;
+                } else {
+                    ifptr->strict = (ifptr->type == FILEIO)?0:1;
+                }
+            }
             (*tiptr)=ifptr;
             tiptr=&ifptr->next;
             if (ifptr->next==ifptr2)

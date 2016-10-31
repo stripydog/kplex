@@ -525,8 +525,6 @@ iface_t *parse_file(char *fname)
             ifg->flags=0;
             ifg->logto=LOG_DAEMON;
             ifp->info = (void *)ifg;
-            if (ifp->strict <0)
-                ifp->strict = 1;
             if (ifp->checksum <0)
                 ifp->checksum = 0;
 

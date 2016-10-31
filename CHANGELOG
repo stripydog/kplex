@@ -1,3 +1,9 @@
+v1.3.5:
+* Fixed crash with checksumming enabled
+* Various queue length changes
+* Changed default input processing to "loose" for file interfaces
+* Minor change to how default values for "strict" applied
+
 v1.3.4: June 26th 2016
 * Fixed bug with optional interfaces
 * Fixed udp port assignment bug
