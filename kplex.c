@@ -1456,7 +1456,7 @@ int main(int argc, char ** argv)
     if (getrlimit(RLIMIT_NOFILE,&lim) < 0)
             logterm(errno,"Couldn't get resource limits");
     if (lim.rlim_cur > 1<<IDMINORBITS) {
-        logwarn("Lowering NOFILE from %u to %u",lim.rlim_cur,1<<IDMINORBITS);
+        DEBUG(3,"Lowering NOFILE from %u to %u",lim.rlim_cur,1<<IDMINORBITS);
         lim.rlim_cur=1<<IDMINORBITS;
         if(setrlimit(RLIMIT_NOFILE,&lim) < 0)
             logterm(errno,"Could not set file descriptor limit");
