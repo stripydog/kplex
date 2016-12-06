@@ -116,7 +116,7 @@ enum udptype {
 
 struct senblk {
     size_t len;
-    unsigned int src;
+    unsigned long src;
     struct senblk *next;
     char data[SENBUFSZ];
 };
@@ -197,7 +197,7 @@ typedef struct sfilter sfilter_t;
 
 struct iface {
     pthread_t tid;
-    unsigned int id;
+    unsigned long id;
     char *name;
     struct iface *pair;
     enum iotype direction;

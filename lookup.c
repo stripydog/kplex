@@ -14,7 +14,7 @@
 
 /* Structures holding the name to id mappings in a linked list */
 struct nameid {
-    unsigned int id;
+    unsigned long id;
     char * name;
     struct nameid *next;
 };
@@ -27,7 +27,7 @@ static struct nameid *idlist;
  * Args: interface id
  * Returns: pointer to interface name if found, NULL otherwise
  */
-char * idlookup(unsigned int id)
+char * idlookup(unsigned long id)
 {
     struct nameid *nptr;
     id&=~((unsigned int) IDMINORMASK);
@@ -45,9 +45,9 @@ char * idlookup(unsigned int id)
  * Args: Pointer to a name
  * Returns: Interface id on success, 0 otherwise
  */
-unsigned int namelookup(char *name)
+unsigned long namelookup(char *name)
 {
-    int ret;
+    long ret;
     struct nameid *nptr;
 
     if (name == NULL) {
@@ -72,10 +72,10 @@ unsigned int namelookup(char *name)
  * Returns: 0 on success, -1 otherwise
  * Side Effects: structure is created and linked into the list of mappings
  */
-int insertname(char *name, unsigned int id)
+long insertname(char *name, unsigned long id)
 {
     struct nameid *nptr,**nptrp;
-    int ret;
+    long ret;
 
     for (nptrp=&idlist;(*nptrp);nptrp=&(*nptrp)->next)
         if ((ret=strcasecmp(name,(*nptrp)->name)) == 0) {
