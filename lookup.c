@@ -72,7 +72,7 @@ unsigned long namelookup(char *name)
  * Returns: 0 on success, -1 otherwise
  * Side Effects: structure is created and linked into the list of mappings
  */
-long insertname(char *name, unsigned long id)
+int insertname(char *name, unsigned long id)
 {
     struct nameid *nptr,**nptrp;
     long ret;
