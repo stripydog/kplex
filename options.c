@@ -1,6 +1,6 @@
 /* options.c.
  * This flie is part of kplex.
- * Copyright Keith Young 2012-2015
+ * Copyright Keith Young 2012-2017
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command
@@ -417,6 +417,7 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             return(-1);
         for (ptr=ifp->name;*val;)
                 *ptr++= *val++;
+        *ptr='\0';
     } else
         return(1);
 
