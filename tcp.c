@@ -165,7 +165,7 @@ int reconnect(iface_t *ifa, int err)
 
     DEBUG(3,"%s: Reconnecting (write) interface",ifa->name);
 
-    /* ift->shared_t_mutex shoudl be locked by the calling routine */
+    /* ift->shared_t_mutex should be locked by the calling routine */
 
     /* If the write timed out, we don't need to sleep before retrying */
     switch (err) {
@@ -224,7 +224,6 @@ int reconnect(iface_t *ifa, int err)
     DEBUG(7,"Flushing queue interface %s",ifa->name);
     flush_queue(ifa->q);
 
-    pthread_mutex_unlock(&ift->shared->t_mutex);
     return(retval);
 }
 
