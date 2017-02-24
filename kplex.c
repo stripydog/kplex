@@ -1616,6 +1616,8 @@ int main(int argc, char ** argv)
              */
             (void) sigwait(&set,&rcvdsig);
             pthread_mutex_lock(&lists.io_mutex);
+        } else {
+            rcvdsig = 0;
         }
 
         if ((timetodie > 0) || ( lists.outputs == NULL && (timetodie == 0)) ||
