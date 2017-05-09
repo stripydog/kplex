@@ -364,7 +364,9 @@ int init_q(iface_t *ifa, size_t size)
     if ((newq=(ioqueue_t *)malloc(sizeof(ioqueue_t))) == NULL)
         return(-1);
     if ((newq->base=(senblk_t *)calloc(size,sizeof(senblk_t))) ==NULL) {
+        i=errno;
         free(newq);
+        errno=i;
         return(-1);
     }
 

@@ -576,14 +576,17 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     int on=1;
     sigset_t set,saved;
 
-    if ((newifa = malloc(sizeof(iface_t))) == NULL)
+    if ((newifa = malloc(sizeof(iface_t))) == NULL) {
+        logerr(errno,"malloc failed for %s",ifa->name);
         return(NULL);
+    }
 
     memset(newifa,0,sizeof(iface_t));
 
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
             (init_q(newifa, oldift->qsize) < 0))) {
+        logerr(errno,"Failed to set up new connection");
         if (newifa && newifa->q)
             free(newifa->q);
         if (newift)
@@ -658,8 +661,11 @@ void tcp_server(iface_t *ifa)
     if (listen(ift->fd,5) == 0) {
         while(ifa->direction != NONE) {
             slen = sizeof(struct sockaddr_storage);
-            if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0)
-                break;
+            if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0) {
+                afd=errno;
+                logerr(errno,"accept failed for connection to %s",ifa->name);
+                continue;
+            }
     
             if ((newifa = new_tcp_conn(afd,ifa)) == NULL) {
                 close(afd);
