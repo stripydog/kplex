@@ -1026,6 +1026,7 @@ int name2id(sfilter_t *filter)
                 return(-1);
             }
             free(rptr->src.name);
+            rptr->src.name=NULL;
             rptr->src.id=id;
         }
         return(0);
@@ -1038,6 +1039,7 @@ int name2id(sfilter_t *filter)
                 return(-1);
             }
             free(sptr->src.name);
+            sptr->src.name=NULL;
             sptr->src.id=id;
         }
     return(0);
@@ -1533,7 +1535,7 @@ int main(int argc, char ** argv)
      * mapping so we can update references to "name" with an id
      */
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        if (ifptr->ofilter)
+        if (ifptr->direction != IN && ifptr->ofilter)
             if (name2id(ifptr->ofilter))
                 logterm(errno,"Name to interface translation failed");
     }
