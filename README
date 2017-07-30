@@ -187,7 +187,8 @@ normally want RS232 input.
         Where
             <device> is the serial device (e.g. /dev/ttyS0)
             <baud> is the baud rate.  Defaults to 4800 if unspecified
-            Supported baud rates are: 4800, 9600, 19200, 38400, 57600, 115200
+            Supported baud rates are: 4800, 9600, 19200, 38400, 57600, 115200,
+            230400 and 460800.
 
 You must minimally specify a device name for a serial interface.  usb to serial
 converters often use /dev/ttyUSB0. Check your /var/adm/messages file and/or udev

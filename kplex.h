@@ -34,7 +34,8 @@
 #define DEFQSIZE 16
 
 #define SENMAX 80
-#define SENBUFSZ 84
+/* This should be +2. Will be reduced in a future release */
+#define SENBUFSZ (SENMAX + 4)
 #define TAGMAX 80
 #define DEFPORT 10110
 #define DEFPORTSTRING "10110"
