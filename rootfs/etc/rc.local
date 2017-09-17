@@ -1,0 +1,58 @@
+#!/bin/sh -e
+#
+# rc.local
+#
+# This script is executed at the end of each multiuser runlevel.
+# Make sure that the script will "exit 0" on success or any other
+# value on error.
+#
+# In order to enable or disable this script just change the execution
+# bits.
+#
+# By default this script does nothing.
+
+# Print the IP address
+_IP=$(hostname -I) || true
+if [ "$_IP" ]; then
+  printf "My IP address is %s\n" "$_IP"
+fi
+
+
+# http://askubuntu.com/questions/117155/do-i-need-to-restore-iptable-rules-everytime-on-boot
+/sbin/iptables-restore /etc/iptables.ipv4.nat
+
+
+## 2017Sep04 - sequenced startup
+# do not run these via init.d:
+# 
+
+
+echo "seatop: Rpi rc.local - sequencing services"
+echo "seatop: ifdown wlan0"
+ifdown wlan0
+sleep 5
+
+echo "seatop: ifup wlan0"
+ifup wlan0
+sleep 5
+
+# update-rc.d isc-dhcp-server remove
+# update-rc.d hostapd remove
+# update-rc.d kplex remove
+
+echo "seatop: service isc-dhcp-server start"
+service isc-dhcp-server start
+sleep 5
+
+echo "seatop: service hostapd start"
+service hostapd start
+sleep 5
+
+echo "seatop TODO: Send nexus conversion command?"
+
+echo "seatop: service kplex start"
+service kplex start
+sleep 5
+
+
+exit 0
