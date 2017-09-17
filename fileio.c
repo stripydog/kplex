@@ -192,7 +192,6 @@ iface_t *init_file (iface_t *ifa)
         logerr(errno,"Could not allocate memory");
         return(NULL);
     }
-
     memset ((void *)ifc,0,sizeof(struct if_file));
 
     ifc->qsize=DEFFILEQSIZE;
@@ -201,6 +200,7 @@ iface_t *init_file (iface_t *ifa)
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename")) {
+            str_replace_current_time(opt->val);
             if (strcmp(opt->val,"-"))
                 if ((ifc->filename=strdup(opt->val)) == NULL) {
                     logerr(errno,"Failed to duplicate argument string");
@@ -369,4 +369,60 @@ iface_t *init_file (iface_t *ifa)
     }
     return(ifa);
 }
+
+// Credit to: The Paramagnetic Croissant, Stackoverflow answer
+void str_replace(char *target, const char *needle, const char *replacement)
+{
+  char buffer[1024] = { 0 };
+  char *insert_point = &buffer[0];
+  const char *tmp = target;
+  size_t needle_len = strlen(needle);
+  size_t repl_len = strlen(replacement);
+
+  while (1) {
+    const char *p = strstr(tmp, needle);
+
+    // walked past last occurrence of needle; copy remaining part
+    if (p == NULL) {
+      strcpy(insert_point, tmp);
+      break;
+    }
+
+    // copy part before needle
+    memcpy(insert_point, tmp, p - tmp);
+    insert_point += p - tmp;
+
+    // copy replacement string
+    memcpy(insert_point, replacement, repl_len);
+    insert_point += repl_len;
+
+    // adjust pointers, move on
+    tmp = p + needle_len;
+  }
+
+  // write altered string back to target
+  strcpy(target, buffer);
+}
+
+void str_replace_current_time(char * haystack) {
+  time_t timer;
+  char dd[3];
+  char mm[3];
+  char yyyy[5];
+  struct tm* tm_info;
+
+  time(&timer);
+  tm_info = localtime(&timer);
+
+  //strftime(dd, 3, "%Y-%m-%d %H:%M:%S", tm_info);
+  strftime(dd, 3, "%d", tm_info);
+  strftime(mm, 3, "%m", tm_info);
+  strftime(yyyy, 5, "%Y", tm_info);
+
+  str_replace(haystack, "MM", mm);
+  str_replace(haystack, "YYYY", yyyy);
+  str_replace(haystack, "DD", dd);
+
+}
+
 

@@ -214,6 +214,8 @@ standard input and standard output.
                 In the latter case, standard input is used for inputs, standard
                 out for outputs, and standard in and standard out for "BOTH".
                 If not specified deafults to "-".
+                In the former case, the substrings YYYY, MM, and DD will be replaced
+                with the current digits for the year, month of year, and day of month.
             <user> is the user to set ownership of a created output file to.
             <group> is the group to set a created output file to.
             <permissions> are the file access permissions, in octal form, to set

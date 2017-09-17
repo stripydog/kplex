@@ -302,6 +302,9 @@ int cmdlineopt(struct kopts **, char *);
 void do_read(iface_t *);
 size_t gettag(iface_t *, char *, senblk_t *);
 
+void str_replace(char *target, const char *needle, const char *replacement);
+void str_replace_current_time(char * haystack);
+
 extern struct iftypedef iftypes[];
 
 #endif /* KPLEX_H */

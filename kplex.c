@@ -320,10 +320,10 @@ int addfailover(sfilter_t **head,char *spec)
                 (*head)->rules=NULL;
             }
         }
-        if (*head) {
-            newrule->next=(*head)->rules;
-            (*head)->rules=newrule;
-            return(0);
+    if (*head) {
+        newrule->next=(*head)->rules;
+        (*head)->rules=newrule;
+        return(0);
     }
     if (src)
         free(src);
