@@ -8,6 +8,7 @@ v1.3.5:
 * Add support for B460800 and B230400 baud rates
 * Make lowering file descriptor limits debug rather than warning
 * Fix lack of null termination on interface names
+* Make ~/.kplex.conf per-user conf file on OSX deprecating previous location
 
 v1.3.4: June 26th 2016
 * Fixed bug with optional interfaces

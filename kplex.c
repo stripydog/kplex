@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2016
+ * Copyright Keith Young 2012-2017
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -953,6 +953,33 @@ char *get_def_config()
         }
         strcpy(buf,confptr);
         strcat(buf,"/");
+
+#ifdef KPLEXHOMECONFOSX
+/*
+ * Deprecate OSX specific config file.  This semed like a good idea at the time
+ * but has no apparent advantage  over ~/.kplex.conf
+ */
+        int doosxconf=1;
+        size_t baselen;
+
+        if (strlen(KPLEXHOMECONFOSX) > strlen(KPLEXHOMECONF)) {
+            if (realloc(buf,(baselen=strlen(confptr))+
+                    strlen(KPLEXHOMECONFOSX)+2) == NULL) {
+                perror("Can't query OSX config file");
+                doosxconf=0;
+            }
+        }
+
+        if (doosxconf) {
+           strcat(buf,KPLEXHOMECONFOSX);
+           if (!access(buf,F_OK)) {
+               logwarn("Use of %s is deprecated for kplex config.\nPlease move this file to ~/%s to suppress this warning",buf,KPLEXHOMECONF);
+               return(buf);
+           }
+           buf[baselen]='\0';
+        }
+#endif
+
         strcat(buf,KPLEXHOMECONF);
         if (!access(buf,F_OK))
             return(buf);

@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012-2015
+ * Copyright Keith Young 2012-2017
  * For copying information see the file COPYING distributed with this software
  */
 #ifndef KPLEX_H
@@ -18,10 +18,10 @@
 
 #ifdef __APPLE__
 #include <AvailabilityMacros.h>
-#define KPLEXHOMECONF "Library/Preferences/kplex.ini"
-#else
-#define KPLEXHOMECONF ".kplex.conf"
+#define KPLEXHOMECONFOSX "Library/Preferences/kplex.ini"
 #endif
+
+#define KPLEXHOMECONF ".kplex.conf"
 
 #ifndef ACCESSPERMS
 #define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
