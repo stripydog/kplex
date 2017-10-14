@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <inttypes.h>
+#include <fcntl.h>
 
 /* Macro to identify kplex Proprietary sentences */
 #define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
@@ -956,7 +957,7 @@ char *get_def_config()
 
 #ifdef KPLEXHOMECONFOSX
 /*
- * Deprecate OSX specific config file.  This semed like a good idea at the time
+ * Deprecate OSX specific config file.  This seemed like a good idea at the time
  * but has no apparent advantage  over ~/.kplex.conf
  */
         int doosxconf=1;
@@ -1341,7 +1342,9 @@ int main(int argc, char ** argv)
     long templ;
     pthread_t tid;
     pid_t pid;
+    int pfd;
     char *config=NULL;
+    char *pidfile=NULL;
     iface_t  *engine;
     struct if_engine *ifg;
     iface_t *ifptr,*ifptr2,*rptr;
@@ -1362,6 +1365,7 @@ int main(int argc, char ** argv)
     .dead = NULL
     };
     struct rlimit lim;
+    struct flock *fl;
     int gotinputs=0;
     int rcvdsig;
     struct sigaction sa;
@@ -1369,7 +1373,7 @@ int main(int argc, char ** argv)
     pthread_mutex_init(&lists.io_mutex,NULL);
 
     /* command line argument processing */
-    while ((opt=getopt(argc,argv,"d:f:o:V")) != -1) {
+    while ((opt=getopt(argc,argv,"d:f:o:p:V")) != -1) {
         switch (opt) {
             case 'd':
                 errno=0;
@@ -1386,6 +1390,9 @@ int main(int argc, char ** argv)
             case 'f':
                 config=optarg;
                 break;
+            case 'p':
+                pidfile=optarg;
+                break;
             case 'V':
                 printf("%s\n",VERSION);
                 if (argc == 2)
@@ -1399,9 +1406,10 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-V] | [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-V] | [ -p <pid file> ] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
+
 
     /* If a config file is specified by a commad line argument, read it.  If
      * not, look for a default config file unless told not to using "-f-" on the
@@ -1449,10 +1457,58 @@ int main(int argc, char ** argv)
          if ((pid = fork()) < 0) {
             perror("fork failed");
             exit(1);
-        } else if (pid)
-            exit(0);
+        } else if (pid) {
+            if (wait(&err) < 0) {
+                if (errno == ECHILD) {
+                    /* process successfully daemonized */
+                    exit (0);
+                }
+                perror("Wait failed");
+                exit(1);
+            }
+            if (WIFEXITED(err))
+                exit(WEXITSTATUS(err));
 
-        /* Continue here as child */
+            exit(1);
+        }
+    }
+    if (pidfile) {
+        /* Check for pidfile and lock it if not locked already */
+        if ((pfd=open(pidfile,O_RDWR|O_CREAT,0644)) < 0) {
+            fprintf(stderr,"Could not create pid file: %s",strerror(errno));
+            exit(1);
+        }
+
+        if ((fl=(struct flock *) malloc(sizeof(struct flock))) == NULL) {
+            perror("Could not allocate memory for pid lock");
+            exit(1);
+        }
+
+        fl->l_type=F_WRLCK;
+        fl->l_whence=SEEK_SET;
+        fl->l_start=0;
+        fl->l_len=0;
+
+        if ((err=fcntl(pfd,F_SETLK,fl)) < 0) {
+            if (errno == EACCES || err == EAGAIN ) {
+                fprintf(stderr,"pid file %s currently lock by pid %d\n",pidfile,
+                        (int) fl->l_pid); 
+            } else {
+                fprintf(stderr,"Could not lock pid file %s: %s\n",pidfile,
+                        strerror(err));
+            }
+            exit(1);
+        }
+        if (truncate(pidfile,0) < 0) {
+            fprintf(stderr,"Could not truncate pid file %s: %s\n",pidfile,
+                    strerror(errno));
+            exit(1);
+        }
+
+        dprintf(pfd,"%d",getpid());
+    }
+
+    if (ifg->flags & K_BACKGROUND) {
 
         /* Really should close all file descriptors. Harder to do in OS
          * independent way.  Just close the ones we know about for this cut
@@ -1691,6 +1747,10 @@ int main(int argc, char ** argv)
 
     /* For neatness... */
     pthread_mutex_unlock(&lists.io_mutex);
+
+    DEBUG(3,"Removing pid file");
+
+    unlink(pidfile);
 
     DEBUG(1,"Kplex exiting");
 

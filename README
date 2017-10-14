@@ -63,7 +63,7 @@ connection is commented out in this example file.
 Invocation:
 -----------
 
-kplex [-V] | [-d 1..9] [-f <filename>] [-o <option>] <interface> <interface> [<interface> ...]
+kplex [-V] | [-d 1..9] [-f <filename>] [-p <pidfile>] [-o <option>] <interface> <interface> [<interface> ...]
 
 Where
 The "-d" flag, if specified, will cause kplex to print debugging information,
@@ -73,7 +73,7 @@ information.
 
 <filename> is the path of a configuration file to use where default options and
 interfaces are defined. If not specified, kplex will look for a configuration
-file in your home directory ~/.kplex.confx, on Mac), then /etc/kplex.conf and
+file in your home directory name .kplex.conf, then /etc/kplex.conf and
 if nothing is found will use only command line directives.  For backwards
 compatibility with earlier releases, on OSX only kplex will check for a
 configuration file in ~/Library/Preferences/kplex.ini and if found will use this
@@ -81,6 +81,11 @@ in preference to other files but use of a file in this location is deprecated,
 will be unsupported in a future release, and current users of such a file are
 encouraged to relocate it to ~/.kplex.conf.  Specifying filename as "-" disables
 looking for the default configuration files.
+
+<pidfile> is the path of a file where kplex will write its pid for the
+convenience of mechanisms such as init files used to control system processes.
+If this option is specified and kplex finds that <pidfile> is locked by another
+process it will print a warning and exit.
 
 <option> is an option specifier for the form:
     <varable>=<value>

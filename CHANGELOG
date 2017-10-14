@@ -1,4 +1,4 @@
-v1.3.5:
+v1.4:
 * Fixed crash with checksumming enabled
 * Various queue length changes
 * Changed default input processing to "loose" for file interfaces
@@ -9,6 +9,7 @@ v1.3.5:
 * Make lowering file descriptor limits debug rather than warning
 * Fix lack of null termination on interface names
 * Make ~/.kplex.conf per-user conf file on OSX deprecating previous location
+* Add -p option for pid file
 
 v1.3.4: June 26th 2016
 * Fixed bug with optional interfaces
