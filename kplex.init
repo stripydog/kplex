@@ -15,41 +15,43 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 DAEMON=/usr/bin/kplex
 KPLEXCONF=/etc/kplex.conf
+PIDFILE=/var/run/kplex.pid
 RUN_AS_USER=root
 
 test -x $DAEMON || exit 5
 test -r $KPLEXCONF || exit 5
+test -d /var/run && test -w /var/run || exit 5
 
 case $1 in
-	start)
-		log_daemon_msg "Starting kplex multiplexer" "kplex"
-  		start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON --chuid $RUN_AS_USER -- -f $KPLEXCONF -o mode=background
-		status=$?
-		log_end_msg $status
-  		;;
-	stop)
-		log_daemon_msg "Stopping kplex multiplexer" "kplex"
-  		start-stop-daemon --stop --quiet --oknodo --exec $DAEMON
-		log_end_msg $?
-  		;;
-	restart|force-reload)
-		$0 stop && sleep 2 && $0 start
-  		;;
-	try-restart)
-		if $0 status >/dev/null; then
-			$0 restart
-		else
-			exit 0
-		fi
-		;;
-	reload)
-		exit 3
-		;;
-	status)
-		status_of_proc $DAEMON "kplex NMEA 0183 multiplexer"
-		;;
-	*)
-		echo "Usage: $0 {start|stop|restart|try-restart|force-reload|status}"
-		exit 2
-		;;
+    start)
+        log_daemon_msg "Starting kplex multiplexer" "kplex"
+          start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON --chuid $RUN_AS_USER -- -f $KPLEXCONF -r $PIDFILE -o mode=background
+        status=$?
+        log_end_msg $status
+          ;;
+    stop)
+        log_daemon_msg "Stopping kplex multiplexer" "kplex"
+          start-stop-daemon --stop --quiet --oknodo --exec $DAEMON --pidfile $PIDFILE
+        log_end_msg $?
+          ;;
+    restart|force-reload)
+        $0 stop && sleep 2 && $0 start
+          ;;
+    try-restart)
+        if $0 status >/dev/null; then
+            $0 restart
+        else
+            exit 0
+        fi
+        ;;
+    reload)
+        exit 3
+        ;;
+    status)
+        status_of_proc -p $PIDFILE $DAEMON "kplex NMEA 0183 multiplexer"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|try-restart|force-reload|status}"
+        exit 2
+        ;;
 esac

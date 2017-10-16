@@ -1,0 +1,13 @@
+[Unit]
+Description = NMEA 0183 Multiplexer
+Documentation = http://www.stripydog.com/kplex/configuration.html
+After=syslog.target network.target audit.service
+
+[Service]
+Type=forking
+PIDFILE=/var/run/kplex.pid
+ExecStart=/usr/bin/kplex -p /var/run/kplex.pid -o mode=background
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

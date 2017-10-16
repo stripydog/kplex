@@ -20,6 +20,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <inttypes.h>
 #include <fcntl.h>
 
@@ -1353,7 +1354,7 @@ int main(int argc, char ** argv)
     int opt,err=0;
     void *ret;
     struct kopts *options=NULL;
-    sigset_t set;
+    sigset_t set,oset;
     struct iolists lists = {
         /* initialize io_mutex separately below */
         .init_mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -1451,27 +1452,35 @@ int main(int argc, char ** argv)
      * Advantage: We can close all the file descriptors now rather than pulling
      * then from under erroneously specified stdin/stdout etc.
      */
-
+    sigemptyset(&set);
+    sigaddset(&set, SIGCHLD);
+    sigaddset(&set, SIGUSR1);
+    sigprocmask(SIG_BLOCK,&set,&oset);
     ifg=(struct if_engine *)engine->info;
     if (ifg->flags & K_BACKGROUND) {
          if ((pid = fork()) < 0) {
             perror("fork failed");
             exit(1);
         } else if (pid) {
-            if (wait(&err) < 0) {
-                if (errno == ECHILD) {
-                    /* process successfully daemonized */
-                    exit (0);
+            sigwait(&set,&rcvdsig);
+            if (rcvdsig == SIGCHLD) {
+                if (wait(&err) < 0) {
+                    perror("Wait failed");
+                    exit (1);
                 }
-                perror("Wait failed");
+                if (WIFEXITED(err))
+                    exit(WEXITSTATUS(err));
+
                 exit(1);
             }
-            if (WIFEXITED(err))
-                exit(WEXITSTATUS(err));
-
-            exit(1);
+            exit(0);
         }
     }
+
+    /* Continue as child */
+
+    sigprocmask(SIG_SETMASK,&oset,NULL);
+
     if (pidfile) {
         /* Check for pidfile and lock it if not locked already */
         if ((pfd=open(pidfile,O_RDWR|O_CREAT,0644)) < 0) {
@@ -1507,6 +1516,9 @@ int main(int argc, char ** argv)
 
         dprintf(pfd,"%d",getpid());
     }
+
+    /* Tell Parent it's OK to exit */
+    kill(getppid(),SIGUSR1);
 
     if (ifg->flags & K_BACKGROUND) {
 
