@@ -1407,7 +1407,7 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-V] | [ -p <pid file> ] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, "Usage: %s [-V] | [ -d <level> ] [ -p <pid file> ] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
         exit(1);
     }
 
