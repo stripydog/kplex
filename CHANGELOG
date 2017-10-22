@@ -10,6 +10,7 @@ v1.4:
 * Fix lack of null termination on interface names
 * Make ~/.kplex.conf per-user conf file on OSX deprecating previous location
 * Add -p option for pid file
+* Add man page
 
 v1.3.4: June 26th 2016
 * Fixed bug with optional interfaces

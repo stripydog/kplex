@@ -1,0 +1,90 @@
+.TH KPLEX 8
+.SH NAME
+kplex \- multiplex marine data between multiple sources
+.SH SYNOPSIS
+.B kplex
+.RB [ \-V ]
+.PP
+.B kplex
+.RB [ \-d
+.IR level ]
+.RB [ \-f
+.IR filename ]
+.RB [ \-o
+.IR option ]
+.RI [ interface-spec...
+.R ]
+.
+.SH DESCRIPTION
+kplex multiplexes data in NMEA-0183 format between multiple data
+sources and destinations.
+.PP
+Data sources and destinations may be defnied either by command line
+.I interface-specifers
+or in a configuration file. When specified on the command line, an
+.I interface-specifier
+takes the form:
+.P
+.RS
+.IB interface-type :
+.RI [ "option"
+.R [,...] ]
+.RE
+.PP
+The full range of
+.I interface-types
+and relevant options is given in the online documentation.
+.PP
+Any interfaces specified on the command line are in
+.I "addition to"
+those specified in a configuration file.
+.PP
+kplex looks in the following locations for a configuration file and will use
+the first one it finds if not overridden by the
+.B \-f
+option (see below):
+.IP  
+A Location specified by the
+.I KPLEXHOMECONF
+environment variable, if set.
+.IP  
+.B ~/Library/Preferences/kplex.ini
+(Mac OS X only, deprecated and searched for only for backwards compatibility with earlier versions).
+.IP  
+.B ~/.kplex.conf
+.IP  
+.B /etc/kplex.conf
+.SH OPTIONS
+.IP \-V
+Print the version number of kplex and exit immediately regardless of any other
+arguments specified.
+.
+.IP "\-d level"
+Show debugging information.
+.I level
+should be an integer between 1 and 9 inclusive.  Higher values of
+.I level
+show more fine grained debugging information.
+.
+.IP "\-f filename"
+Use
+.I filename
+as the configuration file instead of any of the defaults.  If
+.I filename
+is \"
+.I \-
+\" kplex does not look for a configuration file and instead uses only the
+options and interfaces specified on the command line.
+.
+.IP "\-o option"
+Pass
+.I option
+to kplex.  Options have the form
+.IR var=val .
+.R Multiple options can be specified, separated by commas.  The full list of
+possible options can be found in the online documentation.
+.
+.SH SEE ALSO
+The online copy of the documentation is available at the following address:
+.PP
+http://www.stripydog.org/kplex/configuration.html

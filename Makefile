@@ -6,17 +6,20 @@ CURR_VERSION := $(shell sed 's/^\#define VERSION "\(.*\)"$$/\1/' version.h 2>/de
 else
 BASE_VERSION := $(shell cat base_version)
 endif
-BINDIR=/usr/local/bin
 ifeq ($(OS),Linux)
+DESTDIR?=/usr
 LDLIBS?=-pthread -lutil
-BINDIR=/usr/bin
-INSTGROUP=root
+INSTGROUP?=root
 else
-INSTGROUP=wheel
+DESTDIR?=/usr/local
+MANDIR?=$(DESTDIR)/man
+INSTGROUP?=wheel
 ifneq ($(OS),Darwin)
 LDLIBS?=-lpthread -lutil
 endif
 endif
+BINDIR?=$(DESTDIR)/bin
+MANDIR?=$(DESTDIR)/share/man
 
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o
 
@@ -39,15 +42,17 @@ kplex.o: kplex_mods.h version.h
 version.h:
 	@echo '#define VERSION "'$(BASE_VERSION)'"' > version.h
 
-install:
-	test -d "$(DESTDIR)/$(BINDIR)"  || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)/$(BINDIR)
-	install -g $(INSTGROUP) -o root -m 755 kplex $(DESTDIR)/$(BINDIR)/kplex
+install: kplex
+	test -d "$(BINDIR)"  || install -d -g $(INSTGROUP) -o root -m 755 $(BINDIR)
+	install -g $(INSTGROUP) -o root -m 755 kplex $(BINDIR)/kplex
+	test -d $(MANDIR)/man1 && gzip -c kplex.1 > $(MANDIR)/man1/kplex.1.gz
 
 uninstall:
-	-rm -f $(DESTDIR)/$(BINDIR)/kplex
+	-rm -f $(BINDIR)/kplex
+	-rm -f $(MANDIR)/man1/kplex.1.gz
 
 clean:
-	rm -f kplex $(objects)
+	-rm -f kplex $(objects)
 
 .PHONY: release
 release:
