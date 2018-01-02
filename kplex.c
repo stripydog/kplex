@@ -1517,9 +1517,6 @@ int main(int argc, char ** argv)
         dprintf(pfd,"%d",getpid());
     }
 
-    /* Tell Parent it's OK to exit */
-    kill(getppid(),SIGUSR1);
-
     if (ifg->flags & K_BACKGROUND) {
 
         /* Really should close all file descriptors. Harder to do in OS
@@ -1539,6 +1536,10 @@ int main(int argc, char ** argv)
             fclose(stderr);
             ifg->flags |= K_NOSTDERR;
         }
+
+        /* Tell Parent it's OK to exit */
+        kill(getppid(),SIGUSR1);
+
         setsid();
         (void) chdir("/");
         umask(0);
