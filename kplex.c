@@ -313,7 +313,7 @@ int addfailover(sfilter_t **head,char *spec)
         src->lasttime=now;
         link_src_to_rule(&newrule->info.source,src);
     }
-    if (done)
+    if (done) {
         if (!*head) {
             if (((*head)=(sfilter_t *)malloc(sizeof(sfilter_t)))) {
                 (*head)->type=FAILOVER;
@@ -326,6 +326,7 @@ int addfailover(sfilter_t **head,char *spec)
             newrule->next=(*head)->rules;
             (*head)->rules=newrule;
             return(0);
+        }
     }
     if (src)
         free(src);
