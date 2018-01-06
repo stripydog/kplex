@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSION=`git describe --abbrev=0 | sed 's/^v//'`
+VERSION=`git describe --abbrev=0 | sed 's/^v//;s/beta/~beta/;s/\(rc[0-9]*$\)/~\1/'`
 VDIR=/tmp/kplex-$VERSION
 rm -rf $VDIR
 mkdir $VDIR
