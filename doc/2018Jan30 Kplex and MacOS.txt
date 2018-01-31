@@ -1,0 +1,47 @@
+2018Jan30 Kplex and Apple OSX - A great experience!
+
+I'm writing to share a great kplex experience from tonight!
+
+My raspberry pi zero w with 2ndary USB wifi adapter using custom compiled hostapd wasn't coming online as expected (shocker). The marine box I had cut for it was tool small to accept a mini HDMI cable. Plus, my fancy OLED rc.local boot status wasn't indicating anything out of the norm, so I decided debugging was best done back on the Vagabond bench and the toys got put away.
+
+That being said, the goal of the evening was set to demonstrate the GX2200 Standard Horizon w/ GPS and AIS receivers transmitting information visible on the owner's iPhone running iNavX at the helm.
+
+In response to my failure, I cloned my ntbrock/kplex fork on OSX high sierra 10.13, make'd, and had a linked kplex binary within 45 seconds.
+
+$ cksum kplex
+2724304390 126724 kplex
+
+Then I tweaked example configuration file by uncommenting, changing baud rate + device name.  The GX2200 radio is the only device connected to the laptop via USB. I made the GX220 connection easy for transient hosts like me by using an ebay TTL to USB cable soldered to the Serial NMEA wires from the radio and encased in carbonite heatshrink. $3 is worth the price of admission to dissect a cable to make an attractive linux compatible USB-A connection.
+
+This particular USB TTL device registers in the filesystem at /dev/tty.usbserial
+
+kplex-osx.conf
+
+[serial]
+filename=/dev/tty.usbserial
+direction=both
+baud=38400
+
+[tcp]
+mode=server
+port=10110
+direction=both
+
+
+Finally, the magic! I started Apple iPhone 5S wifi Connection Sharing / Hotspot / Bird Internet, Verizon LTE 4g. We both joined Wifi. My OSX came online at 172.20.10.3, and the boat owner's phone registered at 172.20.10.2.
+
+Started OSX kplex:   $ ./kplex -f kplex-osx.conf, 
+
+Cocoa prompted me if I wanted to accept incoming connections, I clicked Accept.
+
+Did a local test using PolarNavy PolarView NS on OSX, Under Ship -> Port Manager -> Add -> Network Client -> IP Address:Port = 172.20.10.3:10110
+
+After I forgot to disable my serial configuration in PolarView, she and kplex did a little wrestling over the serial port, then I shutdown everything and started it all back up and whalla, I could see my Position and AIS traffic in Live Ship Mode in PolarView.  Luckily, we were still located on the Ashley River.
+
+Then, for the real test on the owner's iPhone: He started iNavX, configured TCP/IP settings for host: 172.20.10.3:10110 (The OSX's kplex listening port), and we could see the position and same marine traffic rendered in hand held form.
+
+I'll be back next week to permanently install the pi zero w behind the instrument panel after I tweak my hostapd setup and try an 'official' Raspberry Pi USB wifi adapter: 
+https://www.raspberrypi.org/products/raspberry-pi-usb-wifi-dongle/
+
+
+Kudos to Keith for making this possible!
