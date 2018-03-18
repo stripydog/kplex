@@ -1194,7 +1194,7 @@ size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
         (void) gettimeofday(&tv,NULL);
         ptr+=sprintf(ptr,"%010u",(unsigned) tv.tv_sec);
         if (ifa->tagflags & TAG_MS)
-            ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec+500)/1000);
+            ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec)/1000);
     }
     /* Don't include initial '/' */
     cksum=calcsum(buf+1,(len=ptr-buf)-1);
