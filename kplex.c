@@ -1106,6 +1106,13 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
                 fprintf(stderr,"Unknown log facility \'%s\' specified\n",optr->val);
                 exit(1);
             }
+        } else if (!strcasecmp(optr->var,"debuglevel")) {
+            if ((*optr->val < '0') || (*optr->val > '9') || *(optr->val+1)) {
+                fprintf(stderr,"Bad debug level \"%s\": Must be 0-9\n",optr->val);
+                exit(0);
+            } else {
+                debuglevel = (int) (*optr->val - '0');
+            }
         } else if (!strcasecmp(optr->var,"graceperiod")) {
             if (((graceperiod=(time_t) strtoumax(optr->val,NULL,0)) == 0) &&
                     (errno)) {
@@ -1194,7 +1201,7 @@ size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
         (void) gettimeofday(&tv,NULL);
         ptr+=sprintf(ptr,"%010u",(unsigned) tv.tv_sec);
         if (ifa->tagflags & TAG_MS)
-            ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec+500)/1000);
+            ptr += sprintf(ptr,"%03u",((unsigned) tv.tv_usec)/1000);
     }
     /* Don't include initial '/' */
     cksum=calcsum(buf+1,(len=ptr-buf)-1);
@@ -1341,7 +1348,7 @@ char * mkname(iface_t *ifa, unsigned int i)
     
 int main(int argc, char ** argv)
 {
-    long templ;
+    char *tmpbuf;
     pthread_t tid;
     pid_t pid;
     int pfd;
@@ -1378,12 +1385,20 @@ int main(int argc, char ** argv)
     while ((opt=getopt(argc,argv,"d:f:o:p:V")) != -1) {
         switch (opt) {
             case 'd':
-                errno=0;
-                if (((templ=strtol(optarg,NULL,0)) <= 0) || templ > 9) {
-                    logerr(errno,"Bad debug level %s: Must be 1-9",optarg);
+                if (*(optarg+1)) {
+                    /* debuglevel is more than one character long */
+                    fprintf(stderr,"Bad debug level \"%s\": Must be 0-9\n",
+                            optarg);
                     err++;
-                } else
-                    debuglevel=templ;
+                } else if ((tmpbuf = (char *) malloc(13)) == NULL ) {
+                    logerr(errno,"failed to allocate memory");
+                    err++;
+                } else {
+                    sprintf(tmpbuf,"debuglevel=%c",*optarg);
+                    if (cmdlineopt(&options,tmpbuf) < 0)
+                        err++;
+                    free(tmpbuf);
+                }
                 break;
             case 'o':
                 if (cmdlineopt(&options,optarg) < 0)
