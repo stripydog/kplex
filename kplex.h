@@ -18,7 +18,8 @@
 
 #ifdef __APPLE__
 #include <AvailabilityMacros.h>
-#define KPLEXHOMECONFOSX "Library/Preferences/kplex.ini"
+#define KPLEXCONFDIROSX "Library/Preferences/"
+#define KPLEXHOMECONFOSX "kplex.ini"
 #endif
 
 #define KPLEXHOMECONF ".kplex.conf"
