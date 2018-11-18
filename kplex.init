@@ -25,7 +25,7 @@ test -d /var/run && test -w /var/run || exit 5
 case $1 in
     start)
         log_daemon_msg "Starting kplex multiplexer" "kplex"
-          start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON --chuid $RUN_AS_USER -- -f $KPLEXCONF -r $PIDFILE -o mode=background
+          start-stop-daemon --start --quiet --oknodo --exec $DAEMON --startas $DAEMON --chuid $RUN_AS_USER -- -f $KPLEXCONF -p $PIDFILE -o mode=background
         status=$?
         log_end_msg $status
           ;;
