@@ -1,5 +1,5 @@
 kplex: A multiplexer for various nmea 0183 interfaces
-Copyright Keith Young 2012-2016 <stripydog7@gmail.com>
+Copyright Keith Young 2012-2018 <stripydog7@gmail.com>
 Blurb:
 Details of the GPLv3 under which this software is distributed can be found in
 the file COPYING in this directory.
@@ -72,15 +72,17 @@ minimal additional debugging information and "9" producing verbose debug
 information.
 
 <filename> is the path of a configuration file to use where default options and
-interfaces are defined. If not specified, kplex will look for a configuration
-file in your home directory name .kplex.conf, then /etc/kplex.conf and
-if nothing is found will use only command line directives.  For backwards
-compatibility with earlier releases, on OSX only kplex will check for a
-configuration file in ~/Library/Preferences/kplex.ini and if found will use this
-in preference to other files but use of a file in this location is deprecated,
-will be unsupported in a future release, and current users of such a file are
-encouraged to relocate it to ~/.kplex.conf.  Specifying filename as "-" disables
-looking for the default configuration files.
+interfaces are defined. If not specified, kplex will look for its configuration
+in the following locations and use the first file found:
+* A location specified in the KPLEXCONF environment variable
+* OSX ONLY: ~/Library/Preferences/kplex.ini.  This location is for backwards
+  compatibility, will not be supported in the next major release and its use is
+  discouraged.
+* OS ONLY: ~/Library/Preferences/kplex.conf
+* ~/.kplex.con
+* /etc/kplex.conf
+
+Specifying filename as "-" disables looking for the default configuration files.
 
 <pidfile> is the path of a file where kplex will write its pid for the
 convenience of mechanisms such as init files used to control system processes.
