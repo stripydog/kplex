@@ -963,27 +963,27 @@ char *get_def_config()
  * but has no apparent advantage  over ~/.kplex.conf
  */
         int doosxconf=1;
-        size_t baselen,osxlen,cflen;
+        size_t osxlen,baselen;
 
-        if ((osxlen=strlen(KPLEXHOMECONFOSX)) > (cflen=strlen(KPLEXHOMECONF))) {
-            cflen=osxlen;
+        if ((osxlen=strlen(KPLEXHOMECONFOSX)) <
+                (baselen=strlen(KPLEXOLDHOMECONFOSX))) {
+            osxlen=baselen;
         }
 
-        if (realloc(buf,(baselen=strlen(buf))+(osxlen=strlen(KPLEXCONFDIROSX))
-                +cflen+1) == NULL) {
-            perror("Can't query OSX config file");
-            doosxconf=0;
+        if ((strlen(KPLEXHOMECONF)) < osxlen) {
+            if (realloc(buf,(baselen=strlen(buf))+osxlen+1) == NULL) {
+                perror("Can't query OSX config file");
+                doosxconf=0;
+            }
         }
 
         if (doosxconf) {
-            strcat(buf,KPLEXCONFDIROSX);
-            osxlen += baselen;
-            strcat(buf,KPLEXHOMECONFOSX);
+            strcat(buf,KPLEXOLDHOMECONFOSX);
             if (!access(buf,F_OK)) {
                 logwarn("Use of %s is deprecated for kplex config.\nPlease move this file to ~/%s to suppress this warning",buf,KPLEXHOMECONF);
                 return(buf);
             }
-            strcpy(buf+osxlen,KPLEXHOMECONF);
+            strcpy(buf+baselen,KPLEXHOMECONFOSX);
             if (!access(buf,F_OK)) {
                 return(buf);
             }
