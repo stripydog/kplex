@@ -11,6 +11,7 @@ v1.4:
 * Make ~/.kplex.conf per-user conf file on OSX deprecating previous location
 * Add -p option for pid file
 * Add man page
+* Fix errors in preamble parsing
 
 v1.3.4: June 26th 2016
 * Fixed bug with optional interfaces

@@ -729,7 +729,7 @@ struct tcp_preamble *parse_preamble(const char * val)
                         return(NULL);
                     tval<<=4;
                     if (*optr >= '0' && *optr <= '9')
-                        tval += *ptr - '0';
+                        tval += *optr - '0';
                     else if (*optr >= 'a' && *optr <= 'f')
                         tval += (*optr - 'a' + 10);
                     else if (*optr >= 'A' && *optr <= 'F')
@@ -743,8 +743,10 @@ struct tcp_preamble *parse_preamble(const char * val)
                 return(NULL);
             default:
                 for (i=0,tval=0;i<3;i++) {
-                    tval <<=3;
-                    ++optr;
+                    if (i) {
+                        ++optr;
+                        tval <<=3;
+                    }
                     if (*optr >= '0' && *optr <= '7')
                         tval += (*optr - '0');
                     else if (i == 0) {
@@ -754,12 +756,11 @@ struct tcp_preamble *parse_preamble(const char * val)
                         return(NULL);
                 }
                 if (i == 3) {
-                    if (tval < 256)
+                    if (tval < 512)
                         *ptr++ = (unsigned char) tval;
                     else
                         return(NULL);
-                } else
-                    *ptr++ = *optr++;
+                }
                 break;
             }
         } else
