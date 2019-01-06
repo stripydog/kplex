@@ -1,4 +1,4 @@
-v1.4:
+v1.4: January 6th 2019
 * Fixed crash with checksumming enabled
 * Various queue length changes
 * Changed default input processing to "loose" for file interfaces
