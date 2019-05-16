@@ -64,20 +64,24 @@ void write_file(iface_t *ifa)
      */
     if (ifc->fd < 0) {
         if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0) {
-            logerr(errno,"Failed to open FIFO %s for writing\n",ifc->filename);
+            logerr(errno,catgets(cat,4,1,
+                    "Failed to open FIFO %s for writing\n"),ifc->filename);
             iface_thread_exit(errno);
         }
         if (init_q(ifa,ifc->qsize) < 0) {
-            logerr(errno,"Could not create queue for FIFO %s",ifc->filename);
+            logerr(errno,catgets(cat,4,2,"Could not create queue for FIFO %s"),
+                    ifc->filename);
             iface_thread_exit(errno);
         }
-        DEBUG(3,"%s opened FIFO %s for writing",ifa->name,ifc->filename);
+        DEBUG(3,catgets(cat,4,3,"%s opened FIFO %s for writing"),ifa->name,
+                ifc->filename);
     }
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"%s: Disabing tag output",ifa->name);
-                ifa->tagflags=0;
+                logerr(errno,catgets(cat,4,4,"%s: Disabing tag output"),
+                ifa->name);
+            ifa->tagflags=0;
         } else {
             cnt=2;
             data=1;
@@ -102,7 +106,8 @@ void write_file(iface_t *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"%s: Disabing tag output",ifa->name);
+                logerr(errno,catgets(cat,4,4,"%s: Disabing tag output"),
+                        ifa->name);
                 ifa->tagflags=0;
                 cnt=1;
                 data=0;
@@ -113,16 +118,17 @@ void write_file(iface_t *ifa)
         iov[data].iov_len=sptr->len;
         if (writev(ifc->fd,iov,cnt) <0) {
             if (!(flag_test(ifa,F_PERSIST) && errno == EPIPE) ) {
-                logerr(errno,"%s: write failed",ifa->name);
+                logerr(errno,catgets(cat,4,5,"%s: write failed"),ifa->name);
                 break;
             }
 
             if ((ifc->fd=open(ifc->filename,O_WRONLY)) < 0) {
-                logerr(errno,"%s: failed to re-open %s",ifa->name,
-                        ifc->filename);
+                logerr(errno,catgets(cat,4,6,"%s: failed to re-open %s"),
+                        ifa->name,ifc->filename);
                 break;
             }
-            DEBUG(4,"%s: reconnected to FIFO %s",ifa->name,ifc->filename);
+            DEBUG(4,catgets(cat,4,7,"%s: reconnected to FIFO %s"),ifa->name,
+                    ifc->filename);
         }
         senblk_free(sptr,ifa->q);
     }
@@ -140,10 +146,12 @@ void file_read_wrapper(iface_t *ifa)
     /* Create FILE stream here to allow for non-blocking opening FIFOs */
     if (ifc->fd == -1) {
         if ((ifc->fd = open(ifc->filename,O_RDONLY)) < 0) {
-            logerr(errno,"Failed to open FIFO %s for reading\n",ifc->filename);
+            logerr(errno,catgets(cat,4,8,
+                    "Failed to open FIFO %s for reading\n"),ifc->filename);
             iface_thread_exit(errno);
         } else {
-            DEBUG(3,"%s: opened %s for reading",ifa->name,ifc->filename);
+            DEBUG(3,catgets(cat,4,9,"%s: opened %s for reading"),ifa->name,
+                    ifc->filename);
         }
     }
     do_read(ifa);
@@ -160,11 +168,13 @@ ssize_t read_file(iface_t *ifa, char *buf)
                 break;
             close(ifc->fd);
             if ((ifc->fd=open(ifc->filename,O_RDONLY)) < 0) {
-                logerr(errno,"Failed to re-open FIFO %s for reading\n",
-                            ifc->filename);
+                logerr(errno,catgets(cat,4,10,
+                        "Failed to re-open FIFO %s for reading\n"),
+                        ifc->filename);
                 break;
             }
-            DEBUG(4,"%s: re-opened %s for reading",ifa->name,ifc->filename);
+            DEBUG(4,catgets(cat,4,11,"%s: re-opened %s for reading"),ifa->name,
+                    ifc->filename);
             continue;
         } else
             break;
@@ -187,7 +197,7 @@ iface_t *init_file (iface_t *ifa)
     char *cp;
 
     if ((ifc = (struct if_file *)malloc(sizeof(struct if_file))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,4,12,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -201,12 +211,14 @@ iface_t *init_file (iface_t *ifa)
         if (!strcasecmp(opt->var,"filename")) {
             if (strcmp(opt->val,"-"))
                 if ((ifc->filename=strdup(opt->val)) == NULL) {
-                    logerr(errno,"Failed to duplicate argument string");
+                    logerr(errno,catgets(cat,4,13,
+                            "Failed to duplicate argument string"));
                     return(NULL);
                 }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(ifc->qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,4,14,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"append")) {
@@ -215,18 +227,19 @@ iface_t *init_file (iface_t *ifa)
             } else if (!strcasecmp(opt->val,"no")) {
                 append = 0;
             } else {
-                logerr(0,"Invalid option \"append=%s\"",opt->val);
+                logerr(0,catgets(cat,4,15,"Invalid option \"append=%s\""),
+                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"owner")) {
             if ((owner=getpwnam(opt->val)) == NULL) {
-                logerr(0,"No such user '%s'",opt->val);
+                logerr(0,catgets(cat,4,16,"No such user '%s'"),opt->val);
                 return(NULL);
             }
             uid=owner->pw_uid;
         } else if (!strcasecmp(opt->var,"group")) {
             if ((group=getgrnam(opt->val)) == NULL) {
-                logerr(0,"No such group '%s'",opt->val);
+                logerr(0,catgets(cat,4,17,"No such group '%s'"),opt->val);
                 return(NULL);
             }
             gid=group->gr_gid;
@@ -243,11 +256,13 @@ iface_t *init_file (iface_t *ifa)
             }
             perm &= ACCESSPERMS;
             if (perm == 0) {
-                logerr(0,"Invalid permissions for tty device \'%s\'",opt->val);
+                logerr(0,catgets(cat,4,18,
+                        "Invalid permissions for tty device \'%s\'"),opt->val);
                 return 0;
             }
         } else {
-            logerr(0,"Unknown interface option %s\n",opt->var);
+            logerr(0,catgets(cat,4,19,"Unknown interface option %s\n"),
+                    opt->var);
             return(NULL);
         }
     }
@@ -257,7 +272,8 @@ iface_t *init_file (iface_t *ifa)
      */
     if (ifc->filename == NULL) {
         if (flag_test(ifa,F_PERSIST)) {
-            logerr(0,"Can't use persist mode with stdin/stdout");
+            logerr(0,catgets(cat,4,20,
+                    "Can't use persist mode with stdin/stdout"));
             return(NULL);
         }
 
@@ -267,20 +283,22 @@ iface_t *init_file (iface_t *ifa)
                 ((ifa->direction != OUT) &&
                 (((struct if_engine *)ifa->lists->engine->info)->flags &
                 K_NOSTDIN))) {
-            logerr(0,"Can't use terminal stdin/stdout in background mode");
+            logerr(0,catgets(cat,4,21,
+                    "Can't use terminal stdin/stdout in background mode"));
             return(NULL);
         }
         if (ifa->direction == IN) {
             ifc->fd = STDIN_FILENO;
-            DEBUG(3,"%s: using stdin",ifa->name);
+            DEBUG(3,catgets(cat,4,22,"%s: using stdin"),ifa->name);
         } else {
             ifc->fd = STDOUT_FILENO;
-            DEBUG(3,"%s: using %s",ifa->name,
+            DEBUG(3,catgets(cat,4,23,"%s: using %s"),ifa->name,
                     (ifa->direction==OUT)?"stdout":"stdin/stdout");
         }
     } else {
         if (ifa->direction == BOTH) {
-            logerr(0,"Bi-directional file I/O only supported for stdin/stdout");
+            logerr(0,catgets(cat,4,24,
+                    "Bi-directional file I/O only supported for stdin/stdout"));
             return(NULL);
         }
 
@@ -296,12 +314,14 @@ iface_t *init_file (iface_t *ifa)
              * that would be bad
              */
             if (access(ifc->filename,(ifa->direction==IN)?R_OK:W_OK) != 0) {
-                logerr(errno,"Could not access %s",ifc->filename);
+                logerr(errno,catgets(cat,4,25,"Could not access %s"),
+                        ifc->filename);
                 return(NULL);
             }
         } else {
             if (flag_test(ifa,F_PERSIST)) {
-                logerr(0,"Can't use persist mode on %s: Not a FIFO",
+                logerr(0,catgets(cat,4,26,
+                        "Can't use persist mode on %s: Not a FIFO"),
                         ifc->filename);
                 return(NULL);
             }
@@ -315,24 +335,31 @@ iface_t *init_file (iface_t *ifa)
                         (perm)?perm:0664)) >= 0) {
                 if (gid != 0 || uid != -1) {
                     if (chown(ifc->filename,uid,gid) < 0) {
-                        logerr(errno, "Failed to set ownership or group on output file %s",ifc->filename);
+                        logerr(errno,catgets(cat,4,27,
+                                "Failed to set ownership or group on output file %s"),
+                                ifc->filename);
                         return(NULL);
                     }
                 }
-            DEBUG(3,"%s: created %s for output",ifa->name,ifc->filename);
+            DEBUG(3,catgets(cat,4,28,"%s: created %s for output"),ifa->name,
+                    ifc->filename);
             } else {
                 if (errno && errno != EEXIST) {
-                    logerr(errno,"Failed to create file %s",ifc->filename);
+                    logerr(errno,catgets(cat,4,29,"Failed to create file %s"),
+                            ifc->filename);
                     return(NULL);
                 }
                 /* file is for input or already exists */
                 if ((ifc->fd=open(ifc->filename,(ifa->direction==IN)?O_RDONLY:
                         (O_WRONLY|((append)?O_APPEND:O_TRUNC)))) < 0) {
-                    logerr(errno,"Failed to open file %s",ifc->filename);
+                    logerr(errno,catgets(cat,4,30,"Failed to open file %s"),
+                            ifc->filename);
                     return(NULL);
                 }
-                DEBUG(3,"%s: opened %s for %s",ifa->name,ifc->filename,
-                        (ifa->direction==IN)?"input":"output");
+                DEBUG(3,catgets(cat,4,31,"%s: opened %s for %s"),ifa->name,
+                        ifc->filename,
+                        (ifa->direction==IN)?catgets(cat,4,32,"input"):
+                        catgets(cat,4,33,"output"));
             }
             /* reset umask: not really necessary */
             if (perm)
@@ -349,14 +376,14 @@ iface_t *init_file (iface_t *ifa)
 
     if (ifa->direction != IN && ifc->fd >= 0)
         if (init_q(ifa, ifc->qsize)< 0) {
-            logerr(0,"Could not create queue");
+            logerr(0,catgets(cat,4,34,"Could not create queue"));
             cleanup_file(ifa);
             return(NULL);
         }
 
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,4,35,"Interface duplication failed"));
             cleanup_file(ifa);
             return(NULL);
         }
@@ -367,4 +394,3 @@ iface_t *init_file (iface_t *ifa)
     }
     return(ifa);
 }
-

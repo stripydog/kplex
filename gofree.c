@@ -1,6 +1,6 @@
 /* gofree.c
  * This file is part of kplex
- * Copyright Keith Young 2013-2016
+ * Copyright Keith Young 2013-2019
  *  For copying information see the file COPYING distributed with this softwar`
  */
 
@@ -47,7 +47,7 @@ void cleanup_gofree(iface_t *ifa)
 
     if (setsockopt(ifg->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,&ifg->ipmr,
             sizeof(struct ip_mreq)) < 0)
-        logerr(errno,"IP_DROP_MEMBERSHIP failed");
+        logerr(errno,catgets(cat,5,1,"IP_DROP_MEMBERSHIP failed"));
 
     close(ifg->fd);
 }
@@ -111,9 +111,9 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
 
     /* reset sig mask and re-enable SIGUSR1 */
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
-    DEBUG(3,"%s: connected to MFD %s at %s port %s",ifa->name,mfd->name,
-            inet_ntop(AF_INET,(const void *)&mfd->addr.sin_addr,addrbuf,
-            INET_ADDRSTRLEN),ntohs(mfd->addr.sin_port));
+    DEBUG(3,catgets(cat,5,2,"%s: connected to MFD %s at %s port %s"),ifa->name,
+            mfd->name,inet_ntop(AF_INET,(const void *)&mfd->addr.sin_addr,
+            addrbuf,INET_ADDRSTRLEN),ntohs(mfd->addr.sin_port));
 
     return(newifa);
 }
@@ -370,7 +370,7 @@ void gofree_server (iface_t *ifa)
     while (ifa->direction != NONE) {
         sl=sizeof(struct sockaddr);
         if ((len=recvfrom(ifg->fd,msgbuf,RECVBUFSZ,0,&sa,&sl)) < 0) {
-            logerr(errno,"Receive failed");
+            logerr(errno,catgets(cat,5,3,"Receive failed"));
             break;
         }
         if (parse_json(&newmfd,msgbuf,len) != 0)
@@ -413,7 +413,8 @@ iface_t *init_gofree(iface_t *ifa)
     struct kopts *opt;
 
     if (ifa->direction == OUT) {
-        logerr(0,"gofree interfaces must be \"in\" (the default) only");
+        logerr(0,catgets(cat,5,4,
+                "gofree interfaces must be \"in\" (the default) only"));
         return(NULL);
     }
 
@@ -421,7 +422,7 @@ iface_t *init_gofree(iface_t *ifa)
         ifa->direction=IN;
 
     if ((ifg = malloc(sizeof(struct if_gofree))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,5,5,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -429,14 +430,14 @@ iface_t *init_gofree(iface_t *ifa)
         if (!strcasecmp(opt->var,"device")) {
             ifname=opt->val;
         } else  {
-            logerr(0,"unknown interface option %s\n",opt->var);
+            logerr(0,catgets(cat,5,6,"unknown interface option %s\n"),opt->var);
             return(NULL);
         }
     }
 
     if (ifname) {
         if (getifaddrs(&ifap) < 0) {
-                logerr(errno,"Error getting interface info");
+                logerr(errno,catgets(cat,5,7,"Error getting interface info"));
                 return(NULL);
         }
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
@@ -449,14 +450,16 @@ iface_t *init_gofree(iface_t *ifa)
 
         if (!ifp) {
             if (iffound)
-                logerr(0,"Interface %s has no suitable local address",ifname);
+                logerr(0,catgets(cat,5,8,
+                        "Interface %s has no suitable local address"),ifname);
             else if (ifname)
-                logerr(0,"No interface %s found",ifname);
+                logerr(0,catgets(cat,5,9,"No interface %s found"),ifname);
             return(NULL);
         }
 
         if ((ifindex=if_nametoindex(ifname)) == 0) {
-            logerr(0,"Can't determine interface index for %s",ifname);
+            logerr(0,catgets(cat,5,10,"Can't determine interface index for %s"),
+                    ifname);
             return(NULL);
         }
 
@@ -470,12 +473,12 @@ iface_t *init_gofree(iface_t *ifa)
     }
 
     if ((ifg->fd = socket(PF_INET,SOCK_DGRAM,0)) < 0) {
-        logerr(errno,"Could not create UDP socket");
+        logerr(errno,catgets(cat,5,11,"Could not create UDP socket"));
         return(NULL);
      }
         
     if (setsockopt(ifg->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) < 0) {
-        logerr(errno,"Failed to set SO_REUSEADDR");
+        logerr(errno,catgets(cat,5,12,"Failed to set SO_REUSEADDR"));
         return(NULL);
     }
 
@@ -487,17 +490,19 @@ iface_t *init_gofree(iface_t *ifa)
 
     if (setsockopt(ifg->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&ifg->ipmr,
             sizeof(struct ip_mreq)) < 0) {
-        logerr(errno,"Failed to join multicast group %s",GOFREE_GROUP);
+        logerr(errno,catgets(cat,5,13,"Failed to join multicast group %s"),
+                GOFREE_GROUP);
         return(NULL);
     }
 
     if (bind(ifg->fd,(struct sockaddr *)&maddr,sizeof(struct sockaddr_in)) < 0) {
-        logerr(errno,"Bind failed");
+        logerr(errno,catgets(cat,5,14,"Bind failed"));
         return(NULL);
     }
 
-    DEBUG(3,"%s listening on %s for gofree to %s port %d",ifa->name,(ifname)?
-            ifname:"default",GOFREE_GROUP,GOFREE_PORT);
+    DEBUG(3,catgets(cat,5,15,"%s listening on %s for gofree to %s port %d"),
+            ifa->name,(ifname)?ifname:catgets(cat,5,16,"default"),GOFREE_GROUP,
+            GOFREE_PORT);
 
     ifa->cleanup=cleanup_gofree;
     ifa->info=(void *) ifg;

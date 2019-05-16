@@ -1,6 +1,6 @@
 /* serial.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2016
+ * Copyright Keith Young 2012 - 2019
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for serial-like interfaces. This currently
@@ -73,12 +73,15 @@ void cleanup_serial(iface_t *ifa)
         if (ifs->saved) {
             if (tcsetattr(ifs->fd,TCSAFLUSH,&ifs->otermios) < 0) {
                 if (ifa->type != PTY || errno != EIO)
-                    logwarn("Failed to restore serial line: %s",strerror(errno));
+                    logwarn(catgets(cat,8,1,
+                            "Failed to restore serial line: %s"),
+                            strerror(errno));
             }
         }
         if (ifs->slavename) {
             if (unlink(ifs->slavename) < 0)
-                logerr(errno,"Failed to remove link %s",ifs->slavename);
+                logerr(errno,catgets(cat,8,2,"Failed to remove link %s"),
+                        ifs->slavename);
             free(ifs->slavename);
         }
     }
@@ -97,26 +100,27 @@ int ttyopen(char *device, enum iotype direction)
 
     /* Check if device exists and is a character special device */
     if (stat(device,&sbuf) < 0) {
-        logerr(errno,"Could not stat %s",device);
+        logerr(errno,catgets(cat,8,3,"Could not stat %s"),device);
         return(-1);
     }
 
     if (!S_ISCHR(sbuf.st_mode)){
-        logerr(0,"%s is not a character device",device);
+        logerr(0,catgets(cat,8,4,"%s is not a character device"),device);
         return(-1);
     }
 
     /* Open device (RW for now..let's ignore direction...) */
     if ((dev=open(device,
         ((direction == OUT)?O_WRONLY:(direction == IN)?O_RDONLY:O_RDWR)|O_NOCTTY|O_NONBLOCK)) < 0) {
-        logerr(errno,"Failed to open %s",device);
+        logerr(errno,catgets(cat,8,5,"Failed to open %s"),device);
         return(-1);
     }
 
     if ((flags = fcntl(dev,F_GETFL)) < 0)
-        logerr(errno,"Failed to get flags for %s",device);
+        logerr(errno,catgets(cat,8,6,"Failed to get flags for %s"),device);
     else if (fcntl(dev,F_SETFL,flags & ~O_NONBLOCK) < 0)
-        logerr(errno,"Failed to set %s to non-blocking",device);
+        logerr(errno,catgets(cat,8,7,"Failed to set %s to non-blocking"),
+                device);
 
     return(dev);
 }
@@ -134,7 +138,7 @@ int ttysetup(int dev,struct termios *otermios_p, int baud, int st)
 
     /* Get existing terminal attributes and save them */
     if (tcgetattr(dev,otermios_p) < 0) {
-        logerr(errno,"failed to get terminal attributes");
+        logerr(errno,catgets(cat,8,8,"failed to get terminal attributes"));
         return(-2);
     }
 
@@ -174,19 +178,20 @@ int ttysetup(int dev,struct termios *otermios_p, int baud, int st)
     cfmakeraw(&ntermios);
 
     if (tcsetattr(dev,TCSANOW,&ntermios) < 0) {
-        logerr(errno,"Failed to set up serial line!");
+        logerr(errno,catgets(cat,8,9,"Failed to set up serial line!"));
         return(-1);
     }
 
     /* Read back terminal attributes to check we set what we needed to */
     if (tcgetattr(dev,&ttermios) < 0) {
-        logerr(errno,"Failed to re-read serial line attributes");
+        logerr(errno,catgets(cat,8,10,
+                "Failed to re-read serial line attributes"));
         return(-1);
     }
 
     if ((ttermios.c_cflag != ntermios.c_cflag) ||
         (ttermios.c_iflag != ntermios.c_iflag)) {
-        logerr(0,"Failed to correctly set up serial line");
+        logerr(0,catgets(cat,8,11,"Failed to correctly set up serial line"));
         return(-1);
     }
 
@@ -220,8 +225,10 @@ void write_serial(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((tbuf=malloc(TAGMAX)) == NULL) {
-            logerr(errno,"Disabing tag output on interface id %u (%s)",
-                ifa->id,(ifa->name)?ifa->name:"unlabelled");
+            logerr(errno,catgets(cat,8,12,
+                    "Disabing tag output on interface id %u (%s)"),
+                    ifa->id,(ifa->name)?ifa->name:catgets(cat,8,13,
+                    "unlabelled"));
             ifa->tagflags=0;
         }
     }
@@ -239,8 +246,10 @@ void write_serial(struct iface *ifa)
 
         if (ifa->tagflags) {
             if ((tlen = gettag(ifa,tbuf,senblk_p)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                    ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,catgets(cat,8,14,
+                        "Disabing tag output on interface id %u (%s)"),
+                        ifa->id,(ifa->name)?ifa->name:catgets(cat,8,13,
+                        "unlabelled"));
                 ifa->tagflags=0;
                 free(tbuf);
             }
@@ -316,23 +325,26 @@ struct iface *init_serial (struct iface *ifa)
                 baud=B460800;
 #endif
             else {
-                logerr(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
+                logerr(0,catgets(cat,8,15,
+                        "Unsupported baud rate \'%s\' in interface specification '\%s\'"),
+                        opt->val,devname);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,8,16,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else  {
-            logerr(0,"unknown interface option %s",opt->var);
+            logerr(0,catgets(cat,8,17,"unknown interface option %s"),opt->var);
             return(NULL);
         }
     }
 
     /* Allocate serial specific data storage */
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,8,17,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -340,9 +352,10 @@ struct iface *init_serial (struct iface *ifa)
     if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
         return(NULL);
     }
-    DEBUG(3,"%s: opened serial device %s for %s",ifa->name,devname,
-            (ifa->direction==IN)?"input":(ifa->direction==OUT)?"output":
-            "input/output");
+    DEBUG(3,catgets(cat,8,18,"%s: opened serial device %s for %s"),ifa->name,
+            devname,(ifa->direction==IN)?catgets(cat,8,20,"input"):
+            (ifa->direction==OUT)?catgets(cat,8,21,"output"):
+            catgets(cat,8,22,"input/output"));
 
     free_options(ifa->options);
 
@@ -350,7 +363,7 @@ struct iface *init_serial (struct iface *ifa)
     if ((ret = ttysetup(ifs->fd,&ifs->otermios,baud,0)) < 0) {
         if (ret == -1) {
             if (tcsetattr(ifs->fd,TCSANOW,&ifs->otermios) < 0) {
-                logerr(errno,"Failed to reset serial line");
+                logerr(errno,catgets(cat,8,23,"Failed to reset serial line"));
             }
         }
         return(NULL);
@@ -367,7 +380,7 @@ struct iface *init_serial (struct iface *ifa)
     /* Allocate queue for outbound interfaces */
     if (ifa->direction != IN)
         if (init_q(ifa, qsize) < 0) {
-            logerr(errno,"Could not create queue");
+            logerr(errno,catgets(cat,8,24,"Could not create queue"));
             cleanup_serial(ifa);
             return(NULL);
         }
@@ -377,7 +390,7 @@ struct iface *init_serial (struct iface *ifa)
 
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,8,25,"Interface duplication failed"));
             cleanup_serial(ifa);
             return(NULL);
         }
@@ -415,7 +428,9 @@ struct iface *init_pty (struct iface *ifa)
         if (!strcasecmp(opt->var,"mode")) {
             master=opt->val;
             if(strcmp(master,"master") && strcmp(master,"slave")) {
-                logerr(0,"pty mode \'%s\' unsupported: must be master or slave",master);
+                logerr(0,catgets(cat,8,26,
+                        "pty mode \'%s\' unsupported: must be master or slave"),
+                        master);
                 return(NULL);
             }
         }
@@ -423,13 +438,13 @@ struct iface *init_pty (struct iface *ifa)
             devname=opt->val;
         else if (!strcasecmp(opt->var,"owner")) {
             if ((owner=getpwnam(opt->val)) == NULL) {
-                logerr(0,"No such user '%s'",opt->val);
+                logerr(0,catgets(cat,8,27,"No such user '%s'"),opt->val);
                 return(NULL);
             }
             uid=owner->pw_uid;
         } else if (!strcasecmp(opt->var,"group")) {
             if ((group=getgrnam(opt->val)) == NULL) {
-                logerr(0,"No such group '%s'",opt->val);
+                logerr(0,catgets(cat,8,28,"No such group '%s'"),opt->val);
                 return(NULL);
             }
             gid=group->gr_gid;
@@ -446,7 +461,8 @@ struct iface *init_pty (struct iface *ifa)
             }
             perm &= ACCESSPERMS;
             if (perm == 0) {
-                logerr(0,"Invalid permissions for tty device \'%s\'",opt->val);
+                logerr(0,catgets(cat,8,29,
+                        "Invalid permissions for tty device \'%s\'"),opt->val);
                 return 0;
             }
         } else if (!strcasecmp(opt->var,"baud")) {
@@ -464,22 +480,25 @@ struct iface *init_pty (struct iface *ifa)
             else if (!strcmp(opt->val,"115200"))
                 baud=B115200;
             else {
-                logerr(0,"Unsupported baud rate \'%s\' in interface specification '\%s\'",opt->val,devname);
+                logerr(0,catgets(cat,8,15,
+                        "Unsupported baud rate \'%s\' in interface specification '\%s\'"),
+                        opt->val,devname);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,8,31,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else {
-            logerr(0,"Unknown interface option %s",opt->var);
+            logerr(0,catgets(cat,8,32,"Unknown interface option %s"),opt->var);
             return(NULL);
         }
     }
 
     if ((ifs = malloc(sizeof(struct if_serial))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,8,18,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -488,18 +507,20 @@ struct iface *init_pty (struct iface *ifa)
 
     if (*master != 's') {
         if (openpty(&ifs->fd,&slavefd,slave,NULL,NULL) < 0) {
-            logerr(errno,"Error opening pty");
+            logerr(errno,catgets(cat,8,33,"Error opening pty"));
             return(NULL);
         }
         if (gid != -1 || uid != -1) {
             if (chown(slave,uid,gid) < 0) {
-                logerr(errno,"Failed to set ownership or group for slave pty");
+                logerr(errno,catgets(cat,8,34,
+                        "Failed to set ownership or group for slave pty"));
                 return(NULL);
             }
         }
         if (perm != 0) {
             if (chmod(slave,perm) < 0) {
-                logerr(errno,"Failed to set permissions for slave pty");
+                logerr(errno,catgets(cat,8,35,
+                        "Failed to set permissions for slave pty"));
                 return(NULL);
             }
         }
@@ -509,41 +530,51 @@ struct iface *init_pty (struct iface *ifa)
             /* file exists */
                 if (!S_ISLNK(statbuf.st_mode)) {
             /* If it's not a symlink already, don't replace it */
-                    logerr(0,"%s: File exists and is not a symbolic link",devname);
+                    logerr(0,catgets(cat,8,36,
+                            "%s: File exists and is not a symbolic link"),
+                            devname);
                     return(NULL);
                 }
             /* It's a symlink. remove it */
                 if (unlink(devname) && errno != ENOENT) {
-                    logerr(errno,"Could not unlink %s",devname);
+                    logerr(errno,catgets(cat,8,37,"Could not unlink %s"),
+                            devname);
                     return(NULL);
                 }
             }
         /* link the given name to our new pty */
             if (symlink(slave,devname)) {
-                logerr(errno,"Could not create symbolic link %s for %s",devname,slave);
+                logerr(errno,catgets(cat,8,38,
+                        "Could not create symbolic link %s for %s"),devname,
+                        slave);
                 return(NULL);
             }
-            DEBUG(3,"%s: created pty link %s to %s",ifa->name,devname,slave);
+            DEBUG(3,catgets(cat,8,39,"%s: created pty link %s to %s"),ifa->name,
+                    devname,slave);
 
             /* Save the name to unlink it on exit */
             if ((ifs->slavename=strdup(devname)) == NULL) {
-                logerr(errno,"Failed to save device name. Link will not be removed on exit");
+                logerr(errno,catgets(cat,8,40,
+                        "Failed to save device name. Link will not be removed on exit"));
             }
         } else
     /* No device name was given: Just print the pty name */
-            loginfo("Slave pty for output at %s baud is %s",baudstr,slave);
+            loginfo(catgets(cat,8,41,"Slave pty for output at %s baud is %s"),
+                    baudstr,slave);
     } else {
     /* Slave mode: This is no different from a serial line */
         if (!devname) {
-            logerr(0,"Must Specify a filename for slave mode pty");
+            logerr(0,catgets(cat,8,42,
+                    "Must Specify a filename for slave mode pty"));
             return(NULL);
         }
         if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
             return(NULL);
         }
-        DEBUG(3,"%s: opened pty slave %s for %s",ifa->name,devname,
-                (ifa->direction==IN)?"input":(ifa->direction==OUT)?"output":
-                "input/output");
+        DEBUG(3,catgets(cat,8,43,"%s: opened pty slave %s for %s"),ifa->name,
+                devname,(ifa->direction==IN)?catgets(cat,8,20,"input"):
+                (ifa->direction==OUT)?catgets(cat,8,21,"output"):
+                catgets(cat,8,22,"input/output"));
     }
 
     free_options(ifa->options);
@@ -551,7 +582,7 @@ struct iface *init_pty (struct iface *ifa)
     if ((ret=ttysetup(ifs->fd,&ifs->otermios,baud,0)) < 0) {
         if (ret == -1) {
             if (tcsetattr(ifs->fd,TCSANOW,&ifs->otermios) < 0) {
-                logerr(errno,"Failed to reset serial line");
+                logerr(errno,catgets(cat,8,23,"Failed to reset serial line"));
             }
         }
         return(NULL);
@@ -565,7 +596,7 @@ struct iface *init_pty (struct iface *ifa)
 
     if (ifa->direction != IN)
         if (init_q(ifa, qsize) < 0) {
-            logerr(errno,"Could not create queue");
+            logerr(errno,catgets(cat,8,24,"Could not create queue"));
             cleanup_serial(ifa);
             return(NULL);
         }
@@ -573,7 +604,7 @@ struct iface *init_pty (struct iface *ifa)
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,8,44,"Interface duplication failed"));
             cleanup_serial(ifa);
             return(NULL);
         }

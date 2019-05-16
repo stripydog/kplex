@@ -1,6 +1,6 @@
 /* tcp.c
  * This file is part of kplex
- * Copyright Keith Young 2012-2016
+ * Copyright Keith Young 2012-2019
  * For copying information see the file COPYING distributed with this software
  */
 
@@ -105,7 +105,8 @@ int establish_keepalive(struct if_tcp *ift)
 
     if (ift->shared->keepalive)  {
         if (setsockopt(ift->fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(on)) < 0) {
-            logerr(errno,"Could not enable keepalives on tcp socket");
+            logerr(errno,catgets(cat,10,1,
+                    "Could not enable keepalives on tcp socket"));
             return(-1);
         }
 
@@ -113,13 +114,13 @@ int establish_keepalive(struct if_tcp *ift)
 #ifdef __APPLE__
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPALIVE,
                     &ift->shared->keepidle, sizeof(unsigned)) < 0) {
-                logerr(errno,"Could not set tcp keepidle");
+                logerr(errno,catgets(cat,10,2,"Could not set tcp keepidle"));
                 err=-1;
             }
 #else
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPIDLE,
                     &ift->shared->keepidle,sizeof(unsigned)) < 0) {
-                logerr(errno,"Could not set tcp keepidle");
+                logerr(errno,catgets(cat,10,2,"Could not set tcp keepidle"));
                 err=-1;
             }
 #endif
@@ -127,14 +128,14 @@ int establish_keepalive(struct if_tcp *ift)
         if (ift->shared->keepintvl)
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPINTVL,
                     &ift->shared->keepintvl,sizeof(unsigned)) < 0) {
-                logerr(errno,"Could not set tcp keepintvl");
+                logerr(errno,catgets(cat,10,3,"Could not set tcp keepintvl"));
                 err=-1;
             }
 
         if (ift->shared->keepcnt)
             if (setsockopt(ift->fd,IPPROTO_TCP,TCP_KEEPCNT,
                     &ift->shared->keepcnt,sizeof(unsigned)) < 0) {
-                logerr(errno,"Could not set tcp keepcnt");
+                logerr(errno,catgets(cat,10,4,"Could not set tcp keepcnt"));
                 err=-1;
             }
 #endif
@@ -144,7 +145,7 @@ int establish_keepalive(struct if_tcp *ift)
                     sizeof(ift->shared->tv)) < 0) || (setsockopt(ift->fd,
                     SOL_SOCKET,SO_SNDBUF,&ift->shared->sndbuf,
                     sizeof(ift->shared->sndbuf)) <0))
-            logerr(errno,"Could not set tcp send timeout");
+            logerr(errno,catgets(cat,10,5,"Could not set tcp send timeout"));
                 err=-1;
     }
     return(err);
@@ -163,7 +164,7 @@ int reconnect(iface_t *ifa, int err)
     int retval=0;
     int on=1;
 
-    DEBUG(3,"%s: Reconnecting (write) interface",ifa->name);
+    DEBUG(3,catgets(cat,10,6,"%s: Reconnecting (write) interface"),ifa->name);
 
     /* ift->shared_t_mutex should be locked by the calling routine */
 
@@ -183,11 +184,11 @@ int reconnect(iface_t *ifa, int err)
         close(ift->fd);
         if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
                 ift->shared->protocol)) < 0) {
-            logerr(errno,"Failed to create socket");
+            logerr(errno,catgets(cat,10,7,"Failed to create socket"));
             retval=-1;
             break;
         }
-        DEBUG(6,"%s: Reconnecting...",ifa->name);
+        DEBUG(6,catgets(cat,10,8,"%s: Reconnecting..."),ifa->name);
         if (connect(ift->fd,(const struct sockaddr *)
                 &ift->shared->sa,ift->shared->sa_len) == 0) {
             break;
@@ -205,7 +206,7 @@ int reconnect(iface_t *ifa, int err)
             retval = -1;
         }
     }
-    DEBUG(3,"%s: Reconnected (write) interface",ifa->name);
+    DEBUG(3,catgets(cat,10,9,"%s: Reconnected (write) interface"),ifa->name);
     if (retval == 0) {
         if (ifa->pair) {
                 iftp = (struct if_tcp *) ifa->pair->info;
@@ -214,14 +215,15 @@ int reconnect(iface_t *ifa, int err)
         if (ift->shared->nodelay &&
                 (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
                 < 0))
-            logerr(errno,"Could not disable Nagle on new tcp connection");
+            logerr(errno,catgets(cat,10,10,
+                    "Could not disable Nagle on new tcp connection"));
         (void) establish_keepalive(ift);
         if (ift->shared->preamble){
             do_preamble(ift,NULL);
         }
     }
 
-    DEBUG(7,"Flushing queue interface %s",ifa->name);
+    DEBUG(7,catgets(cat,10,11,"Flushing queue interface %s"),ifa->name);
     flush_queue(ifa->q);
 
     return(retval);
@@ -243,17 +245,18 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     int fflags;
     int on=1;
 
-    DEBUG(3,"%s: Reconnecting (read) interface",ifa->name);
+    DEBUG(3,catgets(cat,10,12,"%s: Reconnecting (read) interface"),ifa->name);
     /* ift->shared->t_mutex should be held by the calling routine */
     /* Make socket non-blocking so we don't hold the mutex longer
      * than necessary */
     if ((fflags=fcntl(ift->fd,F_GETFL)) < 0) {
-        logerr(errno,"Failed to get socket flags");
+        logerr(errno,catgets(cat,10,13,"Failed to get socket flags"));
         return(-1);
     }
 
     if (fcntl(ift->fd,F_SETFL,fflags | O_NONBLOCK) < 0) {
-        logerr(errno,"Failed to make tcp socket non-blocking");
+        logerr(errno,catgets(cat,10,14,
+                "Failed to make tcp socket non-blocking"));
         return(-1);
     }
 
@@ -264,18 +267,19 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
                 close(ift->fd);
                 if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
                         ift->shared->protocol)) < 0) {
-                    logerr(errno,"Failed to create socket");
+                    logerr(errno,catgets(cat,10,15,"Failed to create socket"));
                     nread=-1;
                     break;
                 }
 
                 mysleep(ift->shared->retry);
-                DEBUG(7,"%s: Retrying connection...",ifa->name);
+                DEBUG(7,catgets(cat,10,16,"%s: Retrying connection..."),
+                        ifa->name);
                 if ((nread=connect(ift->fd,
                         (const struct sockaddr *)&ift->shared->sa,
                         ift->shared->sa_len)) == 0)
-                    DEBUG(3,"%s: Reconnected (read) interface",ifa->name);
-
+                    DEBUG(3,catgets(cat,10,17,
+                            "%s: Reconnected (read) interface"),ifa->name);
             }
         } else {
             nread=0;
@@ -283,7 +287,8 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     }
     if (nread >= 0) {
         if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
-            logerr(errno,"Failed to make tcp socket blocking");
+            logerr(errno,catgets(cat,10,18,
+                    "Failed to make tcp socket blocking"));
             nread=-1;
         }
     }
@@ -292,13 +297,14 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
 
         if (ifa->pair) {
             if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
-                logerr(errno,"No pair information found for bi-directional tcp connection!");
+                logerr(errno,catgets(cat,10,19,
+                    "No pair information found for bi-directional tcp connection!"));
                 nread=-1;
             } else {
                 if (ift->shared->nodelay && (setsockopt(ift->fd,IPPROTO_TCP,
                         TCP_NODELAY,&on,sizeof(on)) < 0))
-                    logerr(errno,
-                            "Could not disable Nagle on new tcp connection");
+                    logerr(errno,catgets(cat,10,20,
+                            "Could not disable Nagle on new tcp connection"));
 
                 iftp->fd = ift->fd;
                 if (iftp->shared->preamble)
@@ -353,7 +359,7 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
         nread=read(ift->fd,buf,BUFSIZ);
         if (nread <= 0) {
             if (nread) {
-                DEBUG(3,"%s: %s",ifa->name,"Read Failed");
+                DEBUG(3,catgets(cat,10,21,"%s: Read Failed"),ifa->name);
             } else {
                 DEBUG(3,"%s: EOF",ifa->name);
             }
@@ -373,7 +379,8 @@ ssize_t read_tcp(struct iface *ifa, char *buf)
                 if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
                     if (ifa->pair)
                         ((struct if_tcp *)ifa->pair->info)->fd=-1;
-                    logerr(errno,"failed to reconnect tcp connection");
+                    logerr(errno,catgets(cat,10,22,
+                        "Failed to reconnect tcp connection"));
                 }
                 if (ift->shared->fixing) {
                     ift->shared->fixing=0;
@@ -406,7 +413,8 @@ void write_tcp(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %x (%s)",
+                logerr(errno,catgets(cat,10,23,
+                        "Disabing tag output on interface id %x (%s)"),
                         ifa->id,ifa->name);
                 ifa->tagflags=0;
         } else {
@@ -427,7 +435,8 @@ void write_tcp(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %x (%s)",
+                logerr(errno,catgets(cat,10,23,
+                        "Disabing tag output on interface id %x (%s)"),
                         ifa->id,ifa->name);
                 ifa->tagflags=0;
                 cnt=1;
@@ -452,7 +461,8 @@ void write_tcp(struct iface *ifa)
             }
         }
         if (writev(ift->fd,iov,cnt) <0) {
-            DEBUG2(3,"%s id %x: write failed",ifa->name,ifa->id);
+            DEBUG2(3,catgets(cat,10,24,"%s id %x: write failed"),ifa->name,
+                    ifa->id);
             err=errno;
             if (!flag_test(ifa,F_PERSIST)) {
                 senblk_free(sptr,ifa->q);
@@ -471,7 +481,8 @@ void write_tcp(struct iface *ifa)
                 if ((status=reconnect(ifa,err)) <  0) {
                     if (ifa->pair)
                         ((struct if_tcp *) ifa->pair->info)->fd=-1;
-                    logerr(errno,"failed to reconnect tcp connection");
+                    logerr(errno,catgets(cat,10,23,
+                            "Failed to reconnect tcp connection"));
                     done++;
                 }
                 if (ift->shared->fixing) {
@@ -515,7 +526,9 @@ void delayed_connect(iface_t *ifa)
     while (ift->shared->host) {
         if ((err=getaddrinfo(ift->shared->host,ift->shared->port,&hints,&abase))) {
             if ((err != EAI_AGAIN && err != EAI_FAIL)) {
-                logerr(0,"Lookup failed for host %s/service %s: %s",ift->shared->host,ift->shared->port,gai_strerror(err));
+                logerr(0,catgets(cat,10,25,
+                        "Lookup failed for host %s/service %s: %s"),
+                        ift->shared->host,ift->shared->port,gai_strerror(err));
                 iface_thread_exit(errno);
             }
             abase=NULL;
@@ -539,7 +552,8 @@ void delayed_connect(iface_t *ifa)
             if (ift->shared->nodelay &&
                     (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
                         < 0))
-                logerr(errno,"Could not disable Nagle on new tcp connection");
+                logerr(errno,catgets(cat,10,10,
+                        "Could not disable Nagle on new tcp connection"));
 
             (void) establish_keepalive(ift);
             if (ifa->pair) {
@@ -550,10 +564,12 @@ void delayed_connect(iface_t *ifa)
             if (ift->shared->preamble)
                 do_preamble(ift,NULL);
 
-            DEBUG(3,"%s: Completed delayed connect",ifa->name);
+            DEBUG(3,catgets(cat,10,26,"%s: Completed delayed connect"),
+                    ifa->name);
 
         } else {
-            DEBUG(4,"%s: Delayed connect failed (sleeping)",ifa->name);
+            DEBUG(4,catgets(cat,10,27,"%s: Delayed connect failed (sleeping)"),
+                    ifa->name);
             mysleep(ift->shared->retry);
         }
     }
@@ -577,7 +593,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     sigset_t set,saved;
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL) {
-        logerr(errno,"malloc failed for %s",ifa->name);
+        logerr(errno,catgets(cat,10,28,"malloc failed for %s"),ifa->name);
         return(NULL);
     }
 
@@ -586,7 +602,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
             (init_q(newifa, oldift->qsize) < 0))) {
-        logerr(errno,"Failed to set up new connection");
+        logerr(errno,catgets(cat,10,29,"Failed to set up new connection"));
         if (newifa && newifa->q)
             free(newifa->q);
         if (newift)
@@ -618,11 +634,12 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         newifa->q=ifa->lists->engine->q;
     else {
         if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
-            logerr(errno,"Could not disable Nagle on new tcp connection");
+            logerr(errno,catgets(cat,10,20,
+                    "Could not disable Nagle on new tcp connection"));
 
         if (ifa->direction == BOTH) {
             if ((newifa->next=ifdup(newifa)) == NULL) {
-                logwarn("Interface duplication failed");
+                logwarn(catgets(cat,10,30,"Interface duplication failed"));
                 free(newifa->q);
                 free(newift);
                 free(newifa);
@@ -663,7 +680,8 @@ void tcp_server(iface_t *ifa)
             slen = sizeof(struct sockaddr_storage);
             if ((afd = accept(ift->fd,(struct sockaddr *) &sad,&slen)) < 0) {
                 afd=errno;
-                logerr(errno,"accept failed for connection to %s",ifa->name);
+                logerr(errno,catgets(cat,10,31,
+                        "accept failed for connection to %s"),ifa->name);
                 continue;
             }
     
@@ -671,8 +689,9 @@ void tcp_server(iface_t *ifa)
                 close(afd);
                 afd=-1;
             }
-            DEBUG(3,"%s: New connection id %x %ssuccessfully received from %s",
-                    ifa->name,newifa->id,(afd<0)?"un":"",
+            DEBUG(3,catgets(cat,10,32,
+                    "%s: New connection id %x %ssuccessfully received from %s"),
+                    ifa->name,newifa->id,(afd<0)?catgets(cat,10,33,"un"):"",
                     inet_ntop(sad.ss_family,(sad.ss_family == AF_INET)?
                     (const void *) &((struct sockaddr_in *)&sad)->sin_addr:
                     (const void *) &((struct sockaddr_in6 *)&sad)->sin6_addr,
@@ -767,17 +786,20 @@ struct tcp_preamble *parse_preamble(const char * val)
             *ptr++=*optr;
     }
     if (count == MAXPREAMBLE) {
-        logerr(0,"Specified preamble is too long: Max %d chars",MAXPREAMBLE);
+        logerr(0,catgets(cat,10,34,
+                "Specified preamble is too long: Max %d chars"),MAXPREAMBLE);
         return(0);
     }
 
     if ((preamble = (struct tcp_preamble *)
             malloc(sizeof(struct tcp_preamble))) == NULL) {
-        logerr(errno,"Failed to allocate memory for preamble");
+        logerr(errno,catgets(cat,10,35,
+                "Failed to allocate memory for preamble"));
         return(NULL);
     }
     if ((preamble->string=(unsigned char *) malloc(count)) == NULL) {
-        logerr(errno,"Failed to allocate memory for preamble string");
+        logerr(errno,catgets(cat,10,36,
+                "Failed to allocate memory for preamble string"));
         if (preamble)
             free(preamble);
         return(NULL);
@@ -786,8 +808,6 @@ struct tcp_preamble *parse_preamble(const char * val)
     preamble->len=(size_t) count;
     return(preamble);
 }
-
-                
 
 iface_t *init_tcp(iface_t *ifa)
 {
@@ -815,7 +835,7 @@ iface_t *init_tcp(iface_t *ifa)
     host=port=NULL;
 
     if ((ift = malloc(sizeof(struct if_tcp))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,10,37,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -828,7 +848,9 @@ iface_t *init_tcp(iface_t *ifa)
             host=opt->val;
         else if (!strcasecmp(opt->var,"mode")) {
             if (strcasecmp(opt->val,"client") && strcasecmp(opt->val,"server")){
-                logerr(0,"Unknown tcp mode %s (must be \'client\' or \'server\')",opt->val);
+                logerr(0,catgets(cat,10,38,
+                    "Unknown tcp mode %s (must be \'client\' or \'server\')"),
+                    opt->val);
                 return(NULL);
             }
             conntype=opt->val;
@@ -836,26 +858,30 @@ iface_t *init_tcp(iface_t *ifa)
             port=opt->val;
         } else if (!strcasecmp(opt->var,"retry")) {
             if (!flag_test(ifa,F_PERSIST)) {
-                logerr(0,"retry valid only valid with persist option");
+                logerr(0,catgets(cat,10,39,
+                        "retry valid only valid with persist option"));
                 return(NULL);
             }
             errno=0;
             if ((retry=strtol(opt->val,&eptr,0)) == 0 || (errno)) {
-                logerr(0,"retry value %s out of range",opt->val);
+                logerr(0,catgets(cat,10,40,"retry value %s out of range"),
+                        opt->val);
                 return(NULL);
             }
             if (*eptr != '\0') {
-                logerr(0,"Invalid retry value %s",opt->val);
+                logerr(0,catgets(cat,10,41,"Invalid retry value %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(ift->qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,10,42,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"keepalive")) {
             if (!flag_test(ifa,F_PERSIST)) {
-                logerr(0,"keepalive valid only valid with persist option");
+                logerr(0,catgets(cat,10,43,
+                        "keepalive valid only valid with persist option"));
                 return(NULL);
             }
             if (!strcasecmp(opt->val,"yes"))
@@ -863,48 +889,58 @@ iface_t *init_tcp(iface_t *ifa)
             else if (!strcasecmp(opt->val,"no"))
                 keepalive=0;
             else {
-                logerr(0,"keepalive must be \"yes\" or \"no\"");
+                logerr(0,catgets(cat,10,44,
+                        "keepalive must be \"yes\" or \"no\""));
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"keepcnt")) {
             if ((keepcnt=atoi(opt->val)) <= 0) {
-                logerr(0,"Invalid keepcnt value specified: %s",opt->val);
+                logerr(0,catgets(cat,10,45,
+                        "Invalid keepcnt value specified: %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"keepintvl")) {
             if ((keepintvl=atoi(opt->val)) <= 0) {
-                logerr(0,"Invalid keepintvl value specified: %s",opt->val);
+                logerr(0,catgets(cat,10,46,
+                        "Invalid keepintvl value specified: %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"keepidle")) {
             if ((keepidle=atoi(opt->val)) <= 0) {
-                logerr(0,"Invalid keepidle value specified: %s",opt->val);
+                logerr(0,catgets(cat,10,47,
+                        "Invalid keepidle value specified: %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"timeout")) {
             if (!flag_test(ifa,F_PERSIST)) {
-                logerr(0,"timeout valid only valid with persist option");
+                logerr(0,catgets(cat,10,48,
+                        "Timeout valid only valid with persist option"));
                 return(NULL);
             }
             if (ifa->direction == IN) {
-                logerr(0,"Timout option is for sending tcp data only (not receiving)");
+                logerr(0,catgets(cat,10,49,
+                        "Timout option is for sending tcp data only (not receiving)"));
                 return(NULL);
             }
             if ((timeout=atoi(opt->val)) <= 0) {
-                logerr(0,"Invalid timeout value specified: %s",opt->val);
+                logerr(0,catgets(cat,10,50,
+                        "Invalid timeout value specified: %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"sndbuf")) {
             if (!flag_test(ifa,F_PERSIST)) {
-                logerr(0,"sndbuf valid only valid with persist option");
+                logerr(0,catgets(cat,10,51,
+                        "sndbuf valid only valid with persist option"));
                 return(NULL);
             }
             if (ifa->direction == IN) {
-                logerr(0,"sndbuf option is for sending tcp data only (not receiving)");
+                logerr(0,catgets(cat,10,52,
+                        "sndbuf option is for sending tcp data only (not receiving)"));
                 return(NULL);
             }
             if ((sndbuf=atoi(opt->val)) <= 0) {
-                logerr(0,"Invalid sndbuf size value specified: %s",opt->val);
+                logerr(0,catgets(cat,10,53,
+                        "Invalid sndbuf size value specified: %s"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"gpsd")) {
@@ -920,11 +956,12 @@ iface_t *init_tcp(iface_t *ifa)
             }
         } else if (!strcasecmp(opt->var,"preamble")) {
             if (preamble) {
-                logerr(0,"Can only specify preamble once");
+                logerr(0,catgets(cat,10,54,"Can only specify preamble once"));
                 return(NULL);
             }
             if ((preamble=parse_preamble(opt->val)) == NULL) {
-                logerr(0,"Could not parse preamble %s",opt->val);
+                logerr(0,catgets(cat,10,55,"Could not parse preamble %s"),
+                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"nodelay")) {
@@ -933,11 +970,13 @@ iface_t *init_tcp(iface_t *ifa)
             } else if (!strcasecmp(opt->val,"yes")) {
                 nodelay=1;
             } else {
-                logerr(0,"Invalid option \"nodelay=%s\"",opt->val);
+                logerr(0,catgets(cat,10,56,"Invalid option \"nodelay=%s\""),
+                        opt->val);
                 return(NULL);
             }
         } else  {
-            logerr(0,"unknown interface option %s\n",opt->var);
+            logerr(0,catgets(cat,10,57,
+                    "Unknown interface option %s\n"),opt->var);
             return(NULL);
         }
     }
@@ -960,31 +999,35 @@ iface_t *init_tcp(iface_t *ifa)
 
     if (*conntype == 'c') {
         if (!host) {
-            logerr(0,"Must specify address for tcp client mode\n");
+            logerr(0,catgets(cat,10,58,
+                    "Must specify address for tcp client mode\n"));
             return(NULL);
         }
         if (gpsd) {
             if (preamble) {
-                logerr(0,"Can't specify preamble with proto=gpsd");
+                logerr(0,catgets(cat,10,59,
+                        "Can't specify preamble with proto=gpsd"));
                 return(NULL);
             }
             preamble=parse_preamble("?WATCH={\"enable\":true,\"nmea\":true}");
         }
     } else {
         if (flag_test(ifa,F_PERSIST)) {
-            logerr(0,"persist option not valid for tcp servers");
+            logerr(0,catgets(cat,10,60,
+                    "persist option not valid for tcp servers"));
             return(NULL);
         }
 
         if (preamble) {
-            logerr(0,"preamble option not valid for servers");
+            logerr(0,catgets(cat,10,61,
+                    "preamble option not valid for servers"));
             free(preamble->string);
             free(preamble);
             return(NULL);
         }
 
         if (gpsd) {
-            logerr(0,"proto=gpsd not valid for servers");
+            logerr(0,catgets(cat,10,62,"proto=gpsd not valid for servers"));
             return(NULL);
         }
     }
@@ -1006,7 +1049,9 @@ iface_t *init_tcp(iface_t *ifa)
         if (flag_test(ifa,F_IPERSIST) && (err == EAI_AGAIN || err == EAI_FAIL)){
             abase=NULL;
         } else {
-            logerr(0,"Lookup failed for host %s/service %s: %s",host,port,gai_strerror(err));
+            logerr(0,catgets(cat,10,63,
+                    "Lookup failed for host %s/service %s: %s"),host,port,
+                    gai_strerror(err));
             return(NULL);
         }
     }
@@ -1026,7 +1071,8 @@ iface_t *init_tcp(iface_t *ifa)
                 if (i == sizeof(struct in6_addr)) {
                     if (setsockopt(ift->fd,IPPROTO_IPV6,IPV6_V6ONLY,
                             (void *)&off,sizeof(off)) <0) {
-                        logerr(errno,"Failed to set ipv6 mapped ipv4 addresses on socket");
+                        logerr(errno,catgets(cat,10,64,
+                                "Failed to set ipv6 mapped ipv4 addresses on socket"));
                     }
                 }
             }
@@ -1038,30 +1084,33 @@ iface_t *init_tcp(iface_t *ifa)
      }
 
     if (connection == NULL && (!flag_test(ifa,F_IPERSIST))) {
-        logerr(err,"Failed to open tcp %s for %s/%s",(*conntype == 's')?"server":"connection",host,port);
+        logerr(err,catgets(cat,10,65,"Failed to open tcp %s for %s/%s"),
+                (*conntype == 's')?catgets(cat,10,66,"server"):
+                catgets(cat,10,67,"connection"),host,port);
         return(NULL);
     }
 
     if (flag_test(ifa,F_PERSIST)) {
         if ((ift->shared = malloc(sizeof(struct if_tcp_shared))) == NULL) {
-            logerr(errno,"Could not allocate memory");
+            logerr(errno,catgets(cat,10,37,"Could not allocate memory"));
             free(ift);
             return(NULL);
         }
 
         if (pthread_mutex_init(&ift->shared->t_mutex,NULL) != 0) {
-            logerr(errno,"tcp mutex initialisation failed");
+            logerr(errno,catgets(cat,10,68,"tcp mutex initialisation failed"));
             return(NULL);
         }
 
         if (pthread_cond_init(&ift->shared->fv,NULL) != 0) {
-            logerr(errno,"tcp condition variable initialisation failed");
+            logerr(errno,catgets(cat,10,69,
+                    "tcp condition variable initialisation failed"));
             return(NULL);
         }
 
         ift->shared->retry=retry;
         if (ift->shared->retry != retry) {
-            logerr(0,"retry value out of range");
+            logerr(0,catgets(cat,10,70,"retry value out of range"));
             return(NULL);
         }
         if (connection) {
@@ -1072,7 +1121,8 @@ iface_t *init_tcp(iface_t *ifa)
         } else {
             ift->shared->host=strdup(host);
             ift->shared->port=strdup(port);
-            DEBUG(3,"%s: Initial connection to %s port %s failed",ifa->name,
+            DEBUG(3,catgets(cat,10,71,
+                    "%s: Initial connection to %s port %s failed"),ifa->name,
                     host,port);
         }
         ift->shared->donewith=1;
@@ -1098,13 +1148,14 @@ iface_t *init_tcp(iface_t *ifa)
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
         if (init_q(ifa, ift->qsize) < 0) {
-            logerr(errno,"Interface duplication failed");
+            logerr(errno,catgets(cat,10,30,"Interface duplication failed"));
             return(NULL);
         }
         /* Disable Nagle. Not fatal if we fail for any reason */
         if (connection) {
             if (nodelay && (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0))
-                logerr(errno,"Could not disable Nagle algorithm for tcp socket");
+                logerr(errno,catgets(cat,10,72,
+                        "Could not disable Nagle algorithm for tcp socket"));
         }
     }
 
@@ -1128,7 +1179,7 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->readbuf=read_tcp;
         if (ifa->direction == BOTH) {
             if ((ifa->next=ifdup(ifa)) == NULL) {
-                logerr(errno,"Interface duplication failed");
+                logerr(errno,catgets(cat,10,30,"Interface duplication failed"));
                 return(NULL);
             }
             ifa->direction=OUT;
@@ -1139,6 +1190,6 @@ iface_t *init_tcp(iface_t *ifa)
         ifa->read=tcp_server;
     }
     free_options(ifa->options);
-    DEBUG(3,"%s: initialised",ifa->name);
+    DEBUG(3,catgets(cat,10,73,"%s: initialised"),ifa->name);
     return(ifa);
 }

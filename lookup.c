@@ -1,6 +1,6 @@
 /* lookup.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2015
+ * Copyright Keith Young 2012 - 2019
  * For copying information see the file COPYING distributed with this software
  *
  * functions for associating names with interfaces
@@ -51,7 +51,7 @@ unsigned long namelookup(char *name)
     struct nameid *nptr;
 
     if (name == NULL) {
-        logerr(0,"namelookup: NULL pointer passed");
+        logerr(0,catgets(cat,9,1,"namelookup: NULL pointer passed"));
         return(0);
     }
 
@@ -79,12 +79,13 @@ int insertname(char *name, unsigned long id)
 
     for (nptrp=&idlist;(*nptrp);nptrp=&(*nptrp)->next)
         if ((ret=strcasecmp(name,(*nptrp)->name)) == 0) {
-            logwarn("%s used as name for more than one interface",name);
+            logwarn(catgets(cat,9,2,
+                    "%s used as name for more than one interface"),name);
             return(-1);
         } else if (ret < 0 )
             break;
     if ((nptr = (struct nameid *)malloc(sizeof(struct nameid))) < 0) {
-        logerr(errno,"Memory allocation failed");
+        logerr(errno,catgets(cat,9,3,"Memory allocation failed"));
         return(-1);
     }
     nptr->name=name;

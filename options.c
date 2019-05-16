@@ -1,6 +1,6 @@
 /* options.c.
  * This flie is part of kplex.
- * Copyright Keith Young 2012-2017
+ * Copyright Keith Young 2012-2019
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command
@@ -21,7 +21,8 @@ static char configbuf[BUFSIZE];
 
 void lineerror(unsigned int line)
 {
-    fprintf(stderr,"Error parsing config file at line %d\n",line);
+    fprintf(stderr,catgets(cat,7,1,"Error parsing config file at line %d\n"),
+            line);
     exit(1);
 }
 
@@ -489,8 +490,8 @@ iface_t *parse_file(char *fname)
     struct if_engine *ifg;
 
     if ((fp = fopen(fname,"r")) == NULL) {
-        fprintf(stderr,"Failed to open config file %s: %s\n",fname,
-            strerror(errno));
+        fprintf(stderr,catgets(cat,7,2,"Failed to open config file %s: %s\n"),
+                fname,strerror(errno));
         exit(1);
     }
     
@@ -503,13 +504,15 @@ iface_t *parse_file(char *fname)
             }
             return(list);
         } else if (type == GLOBAL && list && list->type == GLOBAL) {
-            fprintf(stderr,"Error: duplicate global section in config file line %d\n",line);
+            fprintf(stderr,catgets(cat,7,3,
+                    "Error: duplicate global section in config file line %d\n"),
+                    line);
             exit(1);
         }
 
         if ((ifp = get_config(fp,&line,type)) == NULL) {
             if (line == 0) {
-                perror("Error creating interface");
+                perror(catgets(cat,7,4,"Error creating interface"));
                 exit(1);
             } else {
                 lineerror(line);
@@ -520,7 +523,7 @@ iface_t *parse_file(char *fname)
             if ((ifg = (struct if_engine *)malloc(sizeof(struct if_engine)))
                     == NULL) {
                 free(ifp);
-                perror("Error creating interface");
+                perror(catgets(cat,7,4,"Error creating interface"));
                 exit(1);
             }
             ifg->flags=0;
@@ -540,7 +543,7 @@ iface_t *parse_file(char *fname)
     }
     if (line)
         lineerror(line);
-    perror("Error parsing config file");
+    perror(catgets(cat,7,5,"Error parsing config file"));
     exit(1);
 }
 
@@ -594,7 +597,7 @@ iface_t *parse_arg(char *arg)
     else if (!strcasecmp(arg,"gofree"))
         ifp->type = GOFREE;
     else {
-        fprintf(stderr,"Unrecognised interface type %s\n",arg);
+        fprintf(stderr,catgets(cat,7,6,"Unrecognised interface type %s\n"),arg);
         free(ifp);
         return(NULL);
     }
@@ -652,14 +655,14 @@ int cmdlineopt(struct kopts **options, char *arg)
 
     for (val=arg;*val && *val != '=';val++);
     if (*val != '=') {
-        logerr(0,"Badly formatted option %s\n",arg);
+        logerr(0,catgets(cat,7,7,"Badly formatted option %s\n"),arg);
         return(-1);
     }
 
     for(*val++ = '\0',ptr=val;*ptr;ptr++);
 
     if ((optr=add_option(arg,val)) == NULL) {
-        logerr(errno,"Failed to add option");
+        logerr(errno,catgets(cat,7,8,"Failed to add option"));
         return(-1);
     }
 
