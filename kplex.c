@@ -23,9 +23,15 @@
 #include <sys/wait.h>
 #include <inttypes.h>
 #include <fcntl.h>
+#include <locale.h>
 
 /* Macro to identify kplex Proprietary sentences */
 #define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
+
+/* Message catalogue location passed from Makefile */
+#ifndef SHAREDIR
+#define SHAREDIR "/usr/share/kplex"
+#endif
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
@@ -1153,7 +1159,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             else if (!strcasecmp(optr->val,"no"))
                 e_info->checksum=0;
             else {
-                fprintf(stderr,catgets(cat,2,51,
+                fprintf(stderr,"%s",catgets(cat,2,51,
                         "Checksum option must be either \'yes\' or \'no\'\n"));
                 exit(1);
             }
@@ -1163,7 +1169,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             else if (!strcasecmp(optr->val,"no"))
                 e_info->strict=0;
             else {
-                fprintf(stderr,catgets(cat,2,52,
+                fprintf(stderr,"%s",catgets(cat,2,52,
                         "Strict option must be either \'yes\' or \'no\'\n"));
                 exit(1);
             }
@@ -1383,6 +1389,7 @@ char * mkname(iface_t *ifa, unsigned int i)
 int main(int argc, char ** argv)
 {
     char *tmpbuf;
+    char *lang;
     pthread_t tid;
     pid_t pid;
     int pfd;
@@ -1413,9 +1420,28 @@ int main(int argc, char ** argv)
     int rcvdsig;
     struct sigaction sa;
 
-    /* initialize i8n: We do nothing with this yet: failure will be printed
-     * or syslogged later as appropriate */
-    cat = catopen("/usr/share/kplex/locale/%l/kplex.cat",0);
+    /* initialize i8n: First try NLSPATH/defaults */
+    setlocale(LC_ALL,"");
+
+    if ((cat = catopen("kplex.cat",NL_CAT_LOCALE)) == (nl_catd) -1) {
+        /* try our compiled-in default */
+        if ((lang=getenv("LANG")) || (lang=setlocale(LC_MESSAGES,NULL))) {
+            if (strcmp(lang,"POSIX") && strcmp(lang,"C") &&
+                    (strlen(lang) >= 2) && ( lang[2] == '\0' ||
+                    (lang[2] == '_') || (lang[2] == '.'))) { 
+
+                if ((tmpbuf = (char *) malloc(strlen(SHAREDIR) +
+                        strlen("/locale//kplex.cat" + (size_t) 3))) == NULL) {
+                    perror("Failed to allocate memory");
+                    exit(1);
+                }
+
+                sprintf(tmpbuf,"%s/locale/%.2s/kplex.cat",SHAREDIR,lang);
+                cat = catopen(tmpbuf,0);
+                free(tmpbuf);
+            }
+        }
+    }
 
     pthread_mutex_init(&lists.io_mutex,NULL);
 

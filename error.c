@@ -59,7 +59,7 @@ void logdebug(int err, char *fmt, ...)
             if (strerror_r(err,ebuf,128) == 0 || errno == ERANGE)
                 fprintf(stderr,": %s",ebuf);
             else
-                fprintf(stderr,catgets(cat,1,1,": Unknown Error"));
+                fprintf(stderr,"%s",catgets(cat,1,1,": Unknown Error"));
         }
         fputc('\n',stderr);
     }
@@ -120,7 +120,7 @@ void logerr2(int err, char *fmt, va_list args)
             if (strerror_r(err,ebuf,128) == 0 || errno == ERANGE)
                 fprintf(stderr,": %s",ebuf);
             else
-                fprintf(stderr,catgets(cat,1,1,": Unknown Error"));
+                fprintf(stderr,"%s",catgets(cat,1,1,": Unknown Error"));
         }
         fputc('\n',stderr);
     }

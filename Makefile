@@ -35,12 +35,13 @@ version:
 	fi
 
 kplex: $(objects)
-	$(CC) -o kplex $(objects) $(LDFLAGS) $(LDLIBS)
+	$(CC) -o kplex $(objects) $(LDLIBS)
 
 tcp.o: tcp.h
 gofree.o: tcp.h
 $(objects): kplex.h
-kplex.o: kplex_mods.h version.h
+kplex.o: kplex.c kplex_mods.h version.h
+	$(CC) -c -DSHAREDIR=\"$(SHAREDIR)\" kplex.c
 
 version.h:
 	@echo '#define VERSION "'$(BASE_VERSION)'"' > version.h

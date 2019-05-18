@@ -45,7 +45,7 @@ $set 2 kplex.c
 41 "verbinding"
 42 "Kan niet zoeken in OSX configuratie bestand"
 43 "Gebruik van %s is verouderd voor kplex configuratie.\nVerwijder dit bestand tot ~/%s om deze waarschuwing te onderdrukken"
-44 "Onbekende interface \'%s\'
+44 "Onbekende interface \'%s\'"
 45 "Onbekende interface \'%s\' in failover regels"
 46 "Ongeldige wachtrij grootte: %s\n"
 47 "Waarschuwing: niet herkende mode \'%s\' gespecificeerd\n"
@@ -53,7 +53,7 @@ $set 2 kplex.c
 49 "Verkeerd debug niveau \"%s\": Moet zijn 0-9\n"
 50 "Verkeerde waarde voor uitstel periode: %s\n"
 51 "Controlegetal optie moet \'yes\' of \'no\' zijn\n"
-52 "Strikte optie moet \'yes\' of \'no\' zijn\n
+52 "Strikte optie moet \'yes\' of \'no\' zijn\n"
 53 "Toevoegen van failover %s mislukt\n"
 54 "Waarschuwing: Niet herkende optie \'%s\'\n"
 55 "initialiseren van wachtrij mislukt"

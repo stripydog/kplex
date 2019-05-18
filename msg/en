@@ -25,7 +25,7 @@ $set 2 kplex.c
 21 "Too many interfaces"
 22 "Failed to make interface name"
 23 "Failed to associate interface name and id"
-24 "Failed to initialize Interface %s
+24 "Failed to initialize Interface %s"
 25 "(unnamed)"
 26 "Name to interface translation failed"
 27 "Error creating key"
@@ -45,7 +45,7 @@ $set 2 kplex.c
 41 "connection"
 42 "Can't query OSX config file"
 43 "Use of %s is deprecated for kplex config.\nPlease move this file to ~/%s to suppress this warning"
-44 "Unknown interface \'%s\'
+44 "Unknown interface \'%s\'"
 45 "Unknown interface \'%s\' in failover rules"
 46 "Invalid queue size: %s\n"
 47 "Warning: unrecognized mode \'%s\' specified\n"
@@ -53,7 +53,7 @@ $set 2 kplex.c
 49 "Bad debug level \"%s\": Must be 0-9\n"
 50 "Bad value for graceperiod: %s\n"
 51 "Checksum option must be either \'yes\' or \'no\'\n"
-52 "Strict option must be either \'yes\' or \'no\'\n
+52 "Strict option must be either \'yes\' or \'no\'\n"
 53 "Failed to add failover %s\n"
 54 "Warning: Unrecognized option \'%s\'\n"
 55 "failed to initiate queue"
@@ -113,7 +113,7 @@ $set 4 fileio.c
 29 "Failed to create file %s"
 30 "Failed to open file %s"
 31 "%s: opened %s for %s"
-32 "input
+32 "input"
 33 "output"
 34 "Could not create queue"
 35 "Interface duplication failed"
