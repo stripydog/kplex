@@ -1385,7 +1385,42 @@ char * mkname(iface_t *ifa, unsigned int i)
     return(strdup(nambuf));
 }        
 
-    
+nl_catd init_i8n()
+{
+    char * tmpbuf;
+    char *lang;
+    int i;
+
+    /* initialize i8n: First try NLSPATH/defaults */
+    setlocale(LC_ALL,"");
+
+    if ((cat = catopen("kplex.cat",NL_CAT_LOCALE)) == (nl_catd) -1) {
+        /* try our compiled-in default */
+        if ((lang=getenv("LANG")) || (lang=setlocale(LC_MESSAGES,NULL))) {
+            if (strcmp(lang,"POSIX") && strcmp(lang,"C") &&
+                    (strlen(lang) >= 2) && ( lang[2] == '\0' ||
+                    (lang[2] == '_') || (lang[2] == '.'))) { 
+                if ((tmpbuf = (char *) malloc(strlen(SHAREDIR) +
+                        strlen("/locale//kplex.cat" + (size_t) 6))) == NULL) {
+                    perror("Failed to allocate memory");
+                    exit(1);
+                }
+
+                if (strlen(lang) >= 5) {
+                    sprintf(tmpbuf,"%s/locale/%.5s/kplex.cat",SHAREDIR,lang);
+                    cat = catopen(tmpbuf,0);
+                }
+                if (cat == (nl_catd) -1) {
+                    sprintf(tmpbuf,"%s/locale/%.2s/kplex.cat",SHAREDIR,lang);
+                    cat = catopen(tmpbuf,0);
+                }
+                free(tmpbuf);
+            }
+        }
+    }
+    return cat;
+}
+
 int main(int argc, char ** argv)
 {
     char *tmpbuf;
@@ -1420,28 +1455,7 @@ int main(int argc, char ** argv)
     int rcvdsig;
     struct sigaction sa;
 
-    /* initialize i8n: First try NLSPATH/defaults */
-    setlocale(LC_ALL,"");
-
-    if ((cat = catopen("kplex.cat",NL_CAT_LOCALE)) == (nl_catd) -1) {
-        /* try our compiled-in default */
-        if ((lang=getenv("LANG")) || (lang=setlocale(LC_MESSAGES,NULL))) {
-            if (strcmp(lang,"POSIX") && strcmp(lang,"C") &&
-                    (strlen(lang) >= 2) && ( lang[2] == '\0' ||
-                    (lang[2] == '_') || (lang[2] == '.'))) { 
-
-                if ((tmpbuf = (char *) malloc(strlen(SHAREDIR) +
-                        strlen("/locale//kplex.cat" + (size_t) 3))) == NULL) {
-                    perror("Failed to allocate memory");
-                    exit(1);
-                }
-
-                sprintf(tmpbuf,"%s/locale/%.2s/kplex.cat",SHAREDIR,lang);
-                cat = catopen(tmpbuf,0);
-                free(tmpbuf);
-            }
-        }
-    }
+    (void) init_i8n();
 
     pthread_mutex_init(&lists.io_mutex,NULL);
 
