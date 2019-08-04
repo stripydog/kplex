@@ -444,7 +444,7 @@ Non-ASCII characters may be specified either by a backslash followed by the
 (exactly) 3-digit octal representation of the character or the sequence "\x"
 followed by the (exactly) 2-digit hexadecimal representation of the character.
 The NULL character must be specified as "\000" or "\x00" and may not be
-abreviated to "\0" or "\x0".  Standard escape sequences (\a,\b,\f,\r,\n,\t,\v)
+abbreviated to "\0" or "\x0".  Standard escape sequences (\a,\b,\f,\r,\n,\t,\v)
 are recognised.  Other escaped characters are sent literally without the leading
 backslash.  Any string termination must be explicitly stated, so a NULL-
 terminated string must end with "\000" or "\x00".  Care must be taken when using
