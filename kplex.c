@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2017
+ * Copyright Keith Young 2012-2019
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -23,16 +23,23 @@
 #include <sys/wait.h>
 #include <inttypes.h>
 #include <fcntl.h>
+#include <locale.h>
 
 /* Macro to identify kplex Proprietary sentences */
 #define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
+
+/* Message catalogue location passed from Makefile */
+#ifndef SHAREDIR
+#define SHAREDIR "/usr/share/kplex"
+#endif
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
 pthread_key_t ifkey;    /* Key for Thread local pointer to interface struct */
 pthread_t reaper;       /* tid of thread responsible for reaping */
 int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
 time_t graceperiod=3;   /* Grace period for unsent data before shutdown (secs)*/
-int debuglevel=0;                    /* debug off by default */
+int debuglevel=0;       /* debug off by default */
+nl_catd cat;            /* i8n catalogue */
 
 /* Signal handler for SIGUSR1 used by interface threads.  Note that this is
  * highly dubious: pthread_exit() is not async safe.  No associated problems
@@ -305,7 +312,8 @@ int addfailover(sfilter_t **head,char *spec)
             done++;
 
         if ((src->src.name = strdup(nptr)) == NULL) {
-            logerr(errno,"Failed to allocate memory for string duplication");
+            logerr(errno,catgets(cat,2,32,
+                    "Failed to allocate memory for string duplication"));
             free(newrule);
             return(-1);
         }
@@ -435,7 +443,9 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             q->qhead=q->qhead->next;
             if (q->drops < 0)
                 q->drops++;
-            DEBUG(4,"Dropped senblk q=%s",(q->owner->name)?q->owner->name:"(unknown)");
+            DEBUG(4,catgets(cat,2,33,"Dropped senblk q=%s"),
+                    (q->owner->name)?q->owner->name:
+                    catgets(cat,2,34,"(unknown)"));
         }
     
         (void) senblk_copy(tptr,sptr);
@@ -687,13 +697,14 @@ void start_interface(void *ptr)
     ifa->tid = pthread_self();
 
     if (pthread_setspecific(ifkey,ptr)) {
-        perror("Falied to set key");
+        perror(catgets(cat,2,35,"Falied to set key"));
         exit(1);
     }
 
     for (iptr=&ifa->lists->initialized;*iptr!=ifa;iptr=&(*iptr)->next)
         if (*iptr == NULL) {
-            perror("interface does not exist on initialized list!");
+            perror(catgets(cat,2,36,
+                    "interface does not exist on initialized list!"));
             exit(1);
         }
 
@@ -855,9 +866,11 @@ void iface_destroy(void *ifptr)
 {
     iface_t *ifa = (iface_t *) ifptr;
 
-    DEBUG(3,"Cleaning up data for exiting %s %s %s id %x",
-            (ifa->direction == IN)?"input":"output",(ifa->id & IDMINORBITS)?
-            "connection":"interface",ifa->name,ifa->id);
+    DEBUG(3,catgets(cat,2,37,"Cleaning up data for exiting %s %s %s id %x"),
+            (ifa->direction == IN)?catgets(cat,2,38,"input"):
+            catgets(cat,2,39,"output"),(ifa->id & IDMINORBITS)?
+            catgets(cat,2,40,"connection"):catgets(cat,2,41,"interface"),
+            ifa->name,ifa->id);
     sigset_t set,saved;
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
@@ -951,7 +964,7 @@ char *get_def_config()
             confptr=pw->pw_dir;
     if (confptr) {
         if ((buf = malloc(strlen(confptr)+strlen(KPLEXHOMECONF)+2)) == NULL) {
-            perror("failed to allocate memory");
+            perror(catgets(cat,2,2,"failed to allocate memory"));
             exit(1);
         }
         strcpy(buf,confptr);
@@ -972,7 +985,7 @@ char *get_def_config()
 
         if ((strlen(KPLEXHOMECONF)) < osxlen) {
             if (realloc(buf,(baselen=strlen(buf))+osxlen+1) == NULL) {
-                perror("Can't query OSX config file");
+                perror(catgets(cat,2,42,"Can't query OSX config file"));
                 doosxconf=0;
             }
         }
@@ -980,7 +993,9 @@ char *get_def_config()
         if (doosxconf) {
             strcat(buf,KPLEXOLDHOMECONFOSX);
             if (!access(buf,F_OK)) {
-                logwarn("Use of %s is deprecated for kplex config.\nPlease move this file to ~/%s to suppress this warning",buf,KPLEXHOMECONF);
+                logwarn(catgets(cat,2,43,
+                        "Use of %s is deprecated for kplex config.\nPlease move this file to ~/%s to suppress this warning"),
+                        buf,KPLEXHOMECONF);
                 return(buf);
             }
             strcpy(buf+baselen,KPLEXHOMECONFOSX);
@@ -1060,7 +1075,9 @@ int name2id(sfilter_t *filter)
             if (rptr->src.name == NULL)
                 continue;
             if (!(id=namelookup(rptr->src.name))) {
-                logwarn("Unknown interface \'%s\' in filter rules",rptr->src.name);
+                logwarn(catgets(cat,2,44,
+                        "Unknown interface \'%s\' in filter rules"),
+                        rptr->src.name);
                 return(-1);
             }
             free(rptr->src.name);
@@ -1073,7 +1090,9 @@ int name2id(sfilter_t *filter)
     for (rptr=filter->rules;rptr;rptr=rptr->next)
         for (sptr=rptr->info.source;sptr;sptr=sptr->next) {
             if (!(id=namelookup(sptr->src.name))) {
-               logwarn("Unknown interface \'%s\' in failover rules",sptr->src.name);
+               logwarn(catgets(cat,2,45,
+                        "Unknown interface \'%s\' in failover rules"),
+                        sptr->src.name);
                 return(-1);
             }
             free(sptr->src.name);
@@ -1099,7 +1118,8 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
     for (optr=e_info->options;optr;optr=optr->next) {
         if (!strcasecmp(optr->var,"qsize")) {
             if(!(qsize = atoi(optr->val))) {
-                fprintf(stderr,"Invalid queue size: %s\n",optr->val);
+                fprintf(stderr,catgets(cat,2,46,"Invalid queue size: %s\n"),
+                        optr->val);
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"mode")) {
@@ -1108,15 +1128,19 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             else if (!strcasecmp(optr->val,"foreground"))
                 ifg->flags &= ~K_BACKGROUND;
             else
-                fprintf(stderr,"Warning: unrecognized mode \'%s\' specified\n",optr->val);
+                fprintf(stderr,catgets(cat,2,47,
+                        "Warning: unrecognized mode \'%s\' specified\n"),
+                        optr->val);
         } else if (!strcasecmp(optr->var,"logto")) {
             if ((ifg->logto = string2facility(optr->val)) < 0) {
-                fprintf(stderr,"Unknown log facility \'%s\' specified\n",optr->val);
+                fprintf(stderr,catgets(cat,2,48,
+                        "Unknown log facility \'%s\' specified\n"),optr->val);
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"debuglevel")) {
             if ((*optr->val < '0') || (*optr->val > '9') || *(optr->val+1)) {
-                fprintf(stderr,"Bad debug level \"%s\": Must be 0-9\n",optr->val);
+                fprintf(stderr,catgets(cat,2,49,
+                        "Bad debug level \"%s\": Must be 0-9\n"),optr->val);
                 exit(0);
             } else {
                 debuglevel = (int) (*optr->val - '0');
@@ -1124,7 +1148,9 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
         } else if (!strcasecmp(optr->var,"graceperiod")) {
             if (((graceperiod=(time_t) strtoumax(optr->val,NULL,0)) == 0) &&
                     (errno)) {
-                fprintf(stderr,"Bad value for graceperiod: %s\n",optr->val);
+                fprintf(stderr,catgets(cat,2,50,
+                        "Bad value for graceperiod: %s\n"),
+                        optr->val);
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"checksum")) {
@@ -1133,7 +1159,8 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             else if (!strcasecmp(optr->val,"no"))
                 e_info->checksum=0;
             else {
-                fprintf(stderr,"Checksum option must be either \'yes\' or \'no\'\n");
+                fprintf(stderr,"%s",catgets(cat,2,51,
+                        "Checksum option must be either \'yes\' or \'no\'\n"));
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"strict")) {
@@ -1142,22 +1169,25 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             else if (!strcasecmp(optr->val,"no"))
                 e_info->strict=0;
             else {
-                fprintf(stderr,"Strict option must be either \'yes\' or \'no\'\n");
+                fprintf(stderr,"%s",catgets(cat,2,52,
+                        "Strict option must be either \'yes\' or \'no\'\n"));
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"failover")) {
             if (addfailover(&e_info->ofilter,optr->val) != 0) {
-                fprintf(stderr,"Failed to add failover %s\n",optr->val);
+                fprintf(stderr,catgets(cat,2,53,
+                        "Failed to add failover %s\n"),optr->val);
                 exit(1);
             }
         } else {
-            fprintf(stderr,"Warning: Unrecognized option \'%s\'\n",optr->var);
+            fprintf(stderr,catgets(cat,2,54,
+                    "Warning: Unrecognized option \'%s\'\n"),optr->var);
             exit(0);
         }
     }
 
     if (init_q(e_info, qsize) < 0) {
-        perror("failed to initiate queue");
+        perror(catgets(cat,2,55,"failed to initiate queue"));
         exit(1);
     }
     return(0);
@@ -1346,17 +1376,55 @@ char * mkname(iface_t *ifa, unsigned int i)
      * unnecessary complexity.  Return simple error instead */
 
     if (namelookup(nambuf)) {
-        logerr(0,"\"%s\" already specified as an interface name",nambuf);
+        logerr(0,catgets(cat,2,56,
+                "\"%s\" already specified as an interface name"),
+                nambuf);
         return(NULL);
     }
 
     return(strdup(nambuf));
 }        
 
-    
+nl_catd init_i8n()
+{
+    char * tmpbuf;
+    char *lang;
+    int i;
+
+    /* initialize i8n: First try NLSPATH/defaults */
+    setlocale(LC_ALL,"");
+
+    if ((cat = catopen("kplex.cat",NL_CAT_LOCALE)) == (nl_catd) -1) {
+        /* try our compiled-in default */
+        if ((lang=getenv("LANG")) || (lang=setlocale(LC_MESSAGES,NULL))) {
+            if (strcmp(lang,"POSIX") && strcmp(lang,"C") &&
+                    (strlen(lang) >= 2) && ( lang[2] == '\0' ||
+                    (lang[2] == '_') || (lang[2] == '.'))) { 
+                if ((tmpbuf = (char *) malloc(strlen(SHAREDIR) +
+                        strlen("/locale//kplex.cat" + (size_t) 6))) == NULL) {
+                    perror("Failed to allocate memory");
+                    exit(1);
+                }
+
+                if (strlen(lang) >= 5) {
+                    sprintf(tmpbuf,"%s/locale/%.5s/kplex.cat",SHAREDIR,lang);
+                    cat = catopen(tmpbuf,0);
+                }
+                if (cat == (nl_catd) -1) {
+                    sprintf(tmpbuf,"%s/locale/%.2s/kplex.cat",SHAREDIR,lang);
+                    cat = catopen(tmpbuf,0);
+                }
+                free(tmpbuf);
+            }
+        }
+    }
+    return cat;
+}
+
 int main(int argc, char ** argv)
 {
     char *tmpbuf;
+    char *lang;
     pthread_t tid;
     pid_t pid;
     int pfd;
@@ -1387,6 +1455,8 @@ int main(int argc, char ** argv)
     int rcvdsig;
     struct sigaction sa;
 
+    (void) init_i8n();
+
     pthread_mutex_init(&lists.io_mutex,NULL);
 
     /* command line argument processing */
@@ -1395,11 +1465,11 @@ int main(int argc, char ** argv)
             case 'd':
                 if (*(optarg+1)) {
                     /* debuglevel is more than one character long */
-                    fprintf(stderr,"Bad debug level \"%s\": Must be 0-9\n",
-                            optarg);
+                    fprintf(stderr,catgets(cat,2,1,
+                            "Bad debug level \"%s\": Must be 0-9\n"),optarg);
                     err++;
                 } else if ((tmpbuf = (char *) malloc(13)) == NULL ) {
-                    logerr(errno,"failed to allocate memory");
+                    logerr(errno,catgets(cat,2,2,"failed to allocate memory"));
                     err++;
                 } else {
                     sprintf(tmpbuf,"debuglevel=%c",*optarg);
@@ -1431,7 +1501,7 @@ int main(int argc, char ** argv)
     }
 
     if (err) {
-        fprintf(stderr, "Usage: %s [-V] | [ -d <level> ] [ -p <pid file> ] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n",argv[0]);
+        fprintf(stderr, catgets(cat,2,3,"Usage: %s [-V] | [ -d <level> ] [ -p <pid file> ] [ -f <config file>] [-o <option=value>]... [<interface specification> ...]\n"),argv[0]);
         exit(1);
     }
 
@@ -1442,16 +1512,16 @@ int main(int argc, char ** argv)
      */
     if ((config && (strcmp(config,"-"))) ||
             (!config && (config = get_def_config()))) {
-        DEBUG(1,"Using config file %s",config);
+        DEBUG(1,catgets(cat,2,4,"Using config file %s"),config);
         if ((engine=parse_file(config)) == NULL) {
-            fprintf(stderr,"Error parsing config file: %s\n",errno?
-                    strerror(errno):"Syntax Error");
+            fprintf(stderr,catgets(cat,2,5,"Error parsing config file: %s\n"),
+                    errno?strerror(errno):catgets(cat,2,6,"Syntax Error"));
             exit(1);
         }
     } else {
         /* global options for engine configuration are also returned in config
          * file parsing. If we didn't do that, get default options here */
-        DEBUG(1,"Not using config file");
+        DEBUG(1,catgets(cat,2,7,"Not using config file"));
         engine = get_default_global();
     }
 
@@ -1462,7 +1532,8 @@ int main(int argc, char ** argv)
 
     for (tiptr=&engine->next;optind < argc;optind++) {
         if (!(ifptr=parse_arg(argv[optind]))) {
-            fprintf(stderr,"Failed to parse interface specifier %s\n",
+            fprintf(stderr,catgets(cat,2,8,
+                    "Failed to parse interface specifier %s\n"),
                     argv[optind]);
             exit(1);
         }
@@ -1483,7 +1554,7 @@ int main(int argc, char ** argv)
     ifg=(struct if_engine *)engine->info;
     if (ifg->flags & K_BACKGROUND) {
          if ((pid = fork()) < 0) {
-            perror("fork failed");
+            perror(catgets(cat,2,9,"fork failed"));
             exit(1);
         } else if (pid) {
             sigwait(&set,&rcvdsig);
@@ -1508,12 +1579,13 @@ int main(int argc, char ** argv)
     if (pidfile) {
         /* Check for pidfile and lock it if not locked already */
         if ((pfd=open(pidfile,O_RDWR|O_CREAT,0644)) < 0) {
-            fprintf(stderr,"Could not create pid file: %s",strerror(errno));
+            fprintf(stderr,catgets(cat,2,11,"Could not create pid file: %s"),
+                    strerror(errno));
             exit(1);
         }
 
         if ((fl=(struct flock *) malloc(sizeof(struct flock))) == NULL) {
-            perror("Could not allocate memory for pid lock");
+            perror(catgets(cat,2,12,"Could not allocate memory for pid lock"));
             exit(1);
         }
 
@@ -1524,16 +1596,19 @@ int main(int argc, char ** argv)
 
         if ((err=fcntl(pfd,F_SETLK,fl)) < 0) {
             if (errno == EACCES || err == EAGAIN ) {
-                fprintf(stderr,"pid file %s currently lock by pid %d\n",pidfile,
+                fprintf(stderr,catgets(cat,2,13,
+                        "pid file %s currently lock by pid %d\n"),pidfile,
                         (int) fl->l_pid); 
             } else {
-                fprintf(stderr,"Could not lock pid file %s: %s\n",pidfile,
+                fprintf(stderr,catgets(cat,2,14,
+                        "Could not lock pid file %s: %s\n"),pidfile,
                         strerror(err));
             }
             exit(1);
         }
         if (truncate(pidfile,0) < 0) {
-            fprintf(stderr,"Could not truncate pid file %s: %s\n",pidfile,
+            fprintf(stderr,catgets(cat,2,15,
+                    "Could not truncate pid file %s: %s\n"),pidfile,
                     strerror(errno));
             exit(1);
         }
@@ -1578,16 +1653,18 @@ int main(int argc, char ** argv)
      * corrected
      */
     if (getrlimit(RLIMIT_NOFILE,&lim) < 0)
-            logterm(errno,"Couldn't get resource limits");
+            logterm(errno,catgets(cat,2,16,"Couldn't get resource limits"));
     if (lim.rlim_cur > 1<<IDMINORBITS) {
-        DEBUG(3,"Lowering NOFILE from %u to %u",lim.rlim_cur,1<<IDMINORBITS);
+        DEBUG(3,catgets(cat,2,17,
+                "Lowering NOFILE from %u to %u"),lim.rlim_cur,1<<IDMINORBITS);
         lim.rlim_cur=1<<IDMINORBITS;
         if(setrlimit(RLIMIT_NOFILE,&lim) < 0)
-            logterm(errno,"Could not set file descriptor limit");
+            logterm(errno,catgets(cat,2,18,
+                    "Could not set file descriptor limit"));
     }
 
-    DEBUG(1,"kplex starting, config file %s",
-            (config && strcmp(config,"-"))?config:"<none>");
+    DEBUG(1,catgets(cat,2,19,"kplex starting, config file %s"),
+            (config && strcmp(config,"-"))?config:catgets(cat,2,20,"<none>"));
 
     /* our list of "real" interfaces starts after the first which is the
      * dummy "interface" specifying the multiplexing engine
@@ -1599,21 +1676,23 @@ int main(int argc, char ** argv)
         ifptr2 = ifptr->next;
 
         if (i == MAXINTERFACES)
-            logterm(0,"Too many interfaces");
+            logterm(0,catgets(cat,2,21,"Too many interfaces"));
         ifptr->id=++i<<IDMINORBITS;
         if (!ifptr->name) {
             if (!(ifptr->name=mkname(ifptr,i)))
-                logterm(errno,"Failed to make interface name");
+                logterm(errno,catgets(cat,2,22,
+                        "Failed to make interface name"));
         }
 
         if (insertname(ifptr->name,ifptr->id) < 0)
-            logterm(errno,"Failed to associate interface name and id");
+            logterm(errno,catgets(cat,2,23,
+                    "Failed to associate interface name and id"));
 
         ifptr->lists = &lists;
 
         if ((rptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
-            logerr(0,"Failed to initialize Interface %s",(ifptr->name)?
-                    ifptr->name:"(unnamed)");
+            logerr(0,catgets(cat,2,24,"Failed to initialize Interface %s"),
+                    (ifptr->name)?ifptr->name:catgets(cat,2,25,"(unnamed)"));
             if (!flag_test(ifptr,F_OPTIONAL)) {
                 timetodie++;
                 break;
@@ -1657,14 +1736,15 @@ int main(int argc, char ** argv)
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
         if (ifptr->direction != IN && ifptr->ofilter)
             if (name2id(ifptr->ofilter))
-                logterm(errno,"Name to interface translation failed");
+                logterm(errno,catgets(cat,2,26,
+                        "Name to interface translation failed"));
     }
 
     /* Create the key for thread local storage: in this case for a pointer to
      * the interface each thread is handling
      */
     if (pthread_key_create(&ifkey,iface_destroy)) {
-        logerr(errno,"Error creating key");
+        logerr(errno,catgets(cat,2,27,"Error creating key"));
         timetodie++;
     }
 
@@ -1677,7 +1757,8 @@ int main(int argc, char ** argv)
     }
 
     if (name2id(engine->ofilter))
-            logterm(errno,"Failed to translate interface names to IDs");
+            logterm(errno,catgets(cat,2,29,
+                    "Failed to translate interface names to IDs"));
 
     if (engine->options)
         free_options(engine->options);
@@ -1716,7 +1797,7 @@ int main(int argc, char ** argv)
      * avoid deadlock on io_mutex
      */
     if (!gotinputs) {
-        logerr(0,"No Inputs!");
+        logerr(0,catgets(cat,2,29,"No Inputs!"));
         pthread_mutex_lock(&engine->q->q_mutex);
         engine->q->active=0;
         pthread_cond_broadcast(&engine->q->freshmeat);
@@ -1785,11 +1866,13 @@ int main(int argc, char ** argv)
     /* For neatness... */
     pthread_mutex_unlock(&lists.io_mutex);
 
-    DEBUG(3,"Removing pid file");
+    DEBUG(3,catgets(cat,2,30,"Removing pid file"));
 
     unlink(pidfile);
 
-    DEBUG(1,"Kplex exiting");
+    DEBUG(1,catgets(cat,2,31,"Kplex exiting"));
+
+    catclose(cat);
 
     exit(0);
 }

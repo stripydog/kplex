@@ -1,6 +1,6 @@
 /* bcast.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2016
+ * Copyright Keith Young 2012 - 2019
  * For copying information see the file COPYING distributed with this software
  *
  * This is hideous and proves what an abomination IPv4 broadcast is.
@@ -80,7 +80,8 @@ void *ifdup_bcast(void *ifb)
 
     /* Whole new socket so we can bind() it to a different address */
     if ((newif->fd = socket(AF_INET,SOCK_DGRAM,0)) < 0) {
-        logwarn("Could not create duplicate socket: %s",strerror(errno));
+        logwarn(catgets(cat,3,1,"Could not create duplicate socket: %s"),
+                strerror(errno));
         free(newif);
         return(NULL);
     }
@@ -122,8 +123,10 @@ void write_bcast(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,catgets(cat,3,2,
+                        "Disabing tag output on interface id %u (%s)"),
+                        ifa->id,(ifa->name)?ifa->name:
+                        catgets(cat,3,3,"unlabelled"));
                 ifa->tagflags=0;
         } else {
             msgh.msg_iovlen=2;
@@ -142,8 +145,10 @@ void write_bcast(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,catgets(cat,3,4,
+                        "Disabing tag output on interface id %u (%s)"),
+                        ifa->id,(ifa->name)?ifa->name:
+                        catgets(cat,3,3,"unlabelled"));
                 ifa->tagflags=0;
                 msgh.msg_iovlen=1;
                 data=0;
@@ -218,7 +223,7 @@ struct iface *init_bcast(struct iface *ifa)
     struct kopts *opt;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,3,5,"Could not allocate memory"));
         return(NULL);
     }
     memset(ifb,0,sizeof(struct if_bcast));
@@ -226,7 +231,7 @@ struct iface *init_bcast(struct iface *ifa)
 #if 0
     if (pthread_once(&bcast_init,init_bcast_lock) != 0 ||
             bcast_rwlock_initialized != 1) {
-        logerr(errno,"rwlock initialization failed");
+        logerr(errno,catgets(cat,3,6,"rwlock initialization failed"));
         return(NULL);
     }
 #endif
@@ -239,22 +244,23 @@ struct iface *init_bcast(struct iface *ifa)
         else if (!strcasecmp(opt->var,"address")) {
             bname=opt->val;
             if (inet_aton(opt->val,&baddr) == 0) {
-                logerr(0,"%s is not a valid address",opt->val);
+                logerr(0,catgets(cat,3,7,"%s is not a valid address"),opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"port")) {
             if (((port=atoi(opt->val)) <= 0) || (port > 65535)) {
-                logerr(0,"port %s out of range",opt->val);
+                logerr(0,catgets(cat,3,8,"port %s out of range"),opt->val);
                 return(NULL);
             } else
                 port=htons(port);
         }  else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,3,9,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else  {
-            logerr(0,"Unknown interface option %s",opt->var);
+            logerr(0,catgets(cat,3,10,"Unknown interface option %s"),opt->var);
             return(NULL);
         }
     }
@@ -271,7 +277,8 @@ struct iface *init_bcast(struct iface *ifa)
 
     if (ifname == NULL) {
         if (ifa->direction != IN) {
-            logerr(0,"Must specify interface for outgoing broadcasts");
+            logerr(0,catgets(cat,3,11,
+                    "Must specify interface for outgoing broadcasts"));
             return(NULL);
         }
         if (bname)
@@ -284,7 +291,7 @@ struct iface *init_bcast(struct iface *ifa)
 #endif
         if (ifap == NULL)
             if (getifaddrs(&ifap) < 0) {
-                logerr(errno,"Error getting interface info");
+                logerr(errno,catgets(cat,3,12,"Error getting interface info"));
                 return(NULL);
         }
 #if 0
@@ -301,9 +308,10 @@ struct iface *init_bcast(struct iface *ifa)
         }
         if (!ifp) {
             if (iffound)
-                logerr(0,"Invalid broadcast address specified for %s",ifname);
+                logerr(0,catgets(cat,3,13,
+                        "Invalid broadcast address specified for %s"),ifname);
             else
-                logerr(0,"No IPv4 interface %s",ifname);
+                logerr(0,catgets(cat,3,14,"No IPv4 interface %s"),ifname);
             return(NULL);
         }
         ifb->addr.sin_addr.s_addr = bname?baddr.s_addr:((struct sockaddr_in *) ifp->ifa_broadaddr)->sin_addr.s_addr;
@@ -318,23 +326,23 @@ struct iface *init_bcast(struct iface *ifa)
         ifb->laddr.sin_port=port;
 
     if ((ifb->fd=socket(AF_INET,SOCK_DGRAM,0)) < 0) {
-        logerr(errno,"Could not create UDP socket");
+        logerr(errno,catgets(cat,3,15,"Could not create UDP socket"));
         return(NULL);
      }
 
      if ((ifa->direction != IN) &&
         (setsockopt(ifb->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0)) {
-        logerr(errno,"Setsockopt failed");
+        logerr(errno,catgets(cat,3,16,"Setsockopt failed"));
         return(NULL);
     }
 
     if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
-        logwarn("setsockopt failed: %s",strerror(errno));
+        logwarn(catgets(cat,3,17,"setsockopt failed: %s"),strerror(errno));
     }
 
 #ifdef SO_REUSEPORT
     if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
-        logerr(errno,"Failed to set SO_REUSEPORT");
+        logerr(errno,catgets(cat,3,18,"Failed to set SO_REUSEPORT"));
         return(NULL);
     }
 #endif
@@ -350,7 +358,7 @@ struct iface *init_bcast(struct iface *ifa)
     }
 #endif
     if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-        logerr(errno,"Bind failed");
+        logerr(errno,catgets(cat,3,19,"Bind failed"));
         return(NULL);
     }
 
@@ -359,7 +367,7 @@ struct iface *init_bcast(struct iface *ifa)
            need to ignore */
         if ((newig = (struct ignore_addr *) malloc(sizeof(struct ignore_addr)))
                 == NULL) {
-            logerr(errno,"Could not allocate memory");
+            logerr(errno,catgets(cat,3,5,"Could not allocate memory"));
             return(NULL);
         }
         newig->iaddr.sin_family = AF_INET;
@@ -390,7 +398,7 @@ struct iface *init_bcast(struct iface *ifa)
 
         /* write queue initialization */
         if (init_q(ifa,qsize) < 0) {
-            logerr(errno,"Could not create queue");
+            logerr(errno,catgets(cat,3,20,"Could not create queue"));
             return(NULL);
         }
     }
@@ -402,7 +410,7 @@ struct iface *init_bcast(struct iface *ifa)
     ifa->info = (void *) ifb;
     if (ifa->direction == BOTH) {
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,3,21,"Interface duplication failed"));
             return(NULL);
         }
 
@@ -412,7 +420,7 @@ struct iface *init_bcast(struct iface *ifa)
         ifb->laddr.sin_addr.s_addr=ifb->addr.sin_addr.s_addr;
         ifb->laddr.sin_port=ifb->addr.sin_port;
         if (setsockopt(ifb->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) <0) {
-            logwarn("setsockopt failed: %s",strerror(errno));
+            logwarn(catgets(cat,3,17,"setsockopt failed: %s"),strerror(errno));
         }
 #ifdef linux
         /* As before, this may be system / privs dependent so let's not stress
@@ -421,7 +429,7 @@ struct iface *init_bcast(struct iface *ifa)
 #endif
 
         if (bind(ifb->fd,(const struct sockaddr *) &ifb->laddr,sizeof(ifb->laddr)) < 0) {
-            logerr(errno,"Duplicate Bind failed");
+            logerr(errno,catgets(cat,3,22,"Duplicate Bind failed"));
             return(NULL);
         }
 

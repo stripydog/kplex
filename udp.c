@@ -1,6 +1,6 @@
 /* udp.c
  * This file is part of kplex
- * Copyright Keith Young 2015 - 2016
+ * Copyright Keith Young 2015 - 2019
  * For copying information see the file COPYING distributed with this software
  *
  * UDP interfaces
@@ -67,7 +67,8 @@ void *ifdup_udp(void *ifa)
      * address bound */
 
      if ((newif->fd = socket(oldif->addr.ss_family,SOCK_DGRAM,IPPROTO_UDP)) <0){
-        logwarn("Could not create duplicate socket: %s",strerror(errno));
+        logwarn(catgets(cat,11,1,"Could not create duplicate socket: %s"),
+                strerror(errno));
         free(newif);
         return(NULL);
     }
@@ -84,10 +85,10 @@ void cleanup_udp(iface_t *ifa)
         if (ifu->addr.ss_family == AF_INET) {
             if (setsockopt(ifu->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,
                     &ifu->mr.ipmr,sizeof(struct ip_mreq)) < 0)
-                logerr(errno,"IP_DROP_MEMBERSHIP failed");
+                logerr(errno,catgets(cat,11,2,"IP_DROP_MEMBERSHIP failed"));
         } else if (setsockopt(ifu->fd,IPPROTO_IPV6,IPV6_LEAVE_GROUP,
                     &ifu->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
-                logerr(errno,"IPV6_LEAVE_GROUP failed");
+                logerr(errno,catgets(cat,11,3,"IPV6_LEAVE_GROUP failed"));
         }
     } else if (ifu->ignore) {
         /* Broadcast Interface: OK to do this stuff with iomutex locked */
@@ -211,7 +212,8 @@ void write_udp(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"%s: Disabing tag output",ifa->name);
+                logerr(errno,catgets(cat,11,4,"%s: Disabing tag output"),
+                        ifa->name);
                 ifa->tagflags=0;
         } else {
             msgh.msg_iovlen=2;
@@ -229,7 +231,8 @@ void write_udp(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"%s: Disabing tag output",ifa->name);
+                logerr(errno,catgets(cat,11,4,"%s: Disabing tag output"),
+                        ifa->name);
                 ifa->tagflags=0;
                 msgh.msg_iovlen=1;
                 data=0;
@@ -343,7 +346,7 @@ struct iface *init_udp(struct iface *ifa)
     char debugbuf[INET6_ADDRSTRLEN];
     
     if ((ifu=malloc(sizeof(struct if_udp))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
         return(NULL);
     }
 
@@ -367,10 +370,12 @@ struct iface *init_udp(struct iface *ifa)
             else if (!strcasecmp(opt->val,"no"))
                 coalesce=0;
             else
-                logerr(0,"Unrecognized value for coalesce: %s",opt->val);
+                logerr(0,catgets(cat,11,6,
+                        "Unrecognized value for coalesce: %s"),opt->val);
         } else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,11,7,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"type")) {
@@ -381,11 +386,11 @@ struct iface *init_udp(struct iface *ifa)
             else if (!strcasecmp(opt->val,"broadcast"))
                 ifu->type = UDP_BROADCAST;
             else {
-                logerr(0,"Invalid UDP mode \'%s\'",opt->val);
+                logerr(0,catgets(cat,11,8,"Invalid UDP mode \'%s\'"),opt->val);
                 return(NULL);
             }
         } else  {
-            logerr(0,"Unknown interface option %s",opt->var);
+            logerr(0,catgets(cat,11,9,"Unknown interface option %s"),opt->var);
             return(NULL);
         }
     }
@@ -420,7 +425,9 @@ struct iface *init_udp(struct iface *ifa)
         hints.ai_protocol=IPPROTO_UDP;
 
         if ((err=getaddrinfo(address,service,&hints,&abase))) {
-            logerr(0,"Lookup failed for address %s/service %s: %s",address,service,gai_strerror(err));
+            logerr(0,catgets(cat,11,10,
+                    "Lookup failed for address %s/service %s: %s"),address,
+                    service,gai_strerror(err));
             return(NULL);
         }
         for (aptr=abase;aptr;aptr=aptr->ai_next) {
@@ -430,7 +437,8 @@ struct iface *init_udp(struct iface *ifa)
         }
 
         if (!aptr) {
-            logerr(0,"No Suitable address found for %s/%s",address,service);
+            logerr(0,catgets(cat,11,11,"No Suitable address found for %s/%s"),
+                    address,service);
             freeaddrinfo(abase);
             return(NULL);
         }
@@ -446,7 +454,8 @@ struct iface *init_udp(struct iface *ifa)
             switch (is_multicast(sa)) {
             case 0:
                 if (ifu->type == UDP_MULTICAST) {
-                    logerr(0,"%s is not a multicast address",address);
+                    logerr(0,catgets(cat,11,12,"%s is not a multicast address"),
+                            address);
                     return(NULL);
                 } else
                     break;
@@ -491,7 +500,9 @@ struct iface *init_udp(struct iface *ifa)
                         break;
                 if (ifp) {
                     if (ifname && strcmp(ifname,ifp->ifa_name)) {
-                        logerr(0,"Broadcast address %s matches %s but %s specified",address,ifp->ifa_name,ifname);
+                        logerr(0,catgets(cat,11,14,
+                                "Broadcast address %s matches %s but %s specified"),
+                                address,ifp->ifa_name,ifname);
                         freeifaddrs(ifap);
                         return(NULL);
                     }
@@ -509,24 +520,26 @@ struct iface *init_udp(struct iface *ifa)
     } else {
         /* No address specified */
         if (ifu->type == UDP_MULTICAST) {
-            logerr(0,"Must specify an address for multicast interfaces");
+            logerr(0,catgets(cat,11,15,
+                    "Must specify an address for multicast interfaces"));
             return(NULL);
         } else if (ifa->direction != IN && (ifname) && ifu->type != UDP_UNICAST)
             ifu->type = UDP_BROADCAST;
         else if (ifa->direction == IN) {
             if (!(ifu->type == UDP_UNSPEC || (ifname))) {
-                logerr(0,"No address or interface name specified");
+                logerr(0,catgets(cat,11,16,
+                        "No address or interface name specified"));
                 return(NULL);
             }
         } else {
-            logerr(0,"No address specified");
+            logerr(0,catgets(cat,11,17,"No address specified"));
             return(NULL);
         }
     }
 
     if (ifname) {
         if ((!ifap) && (getifaddrs(&ifap) < 0)) {
-                logerr(errno,"Error getting interface info");
+                logerr(errno,catgets(cat,11,18,"Error getting interface info"));
                 return(NULL);
         }
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
@@ -547,22 +560,25 @@ struct iface *init_udp(struct iface *ifa)
 
         if (!ifp) {
             if (iffound)
-                logerr(0,"Interface %s has no suitable address",ifname);
+                logerr(0,catgets(cat,11,19,
+                        "Interface %s has no suitable address"),ifname);
             else if (ifname)
-                logerr(0,"No interface %s found",ifname);
+                logerr(0,catgets(cat,11,20,"No interface %s found"),ifname);
             freeifaddrs(ifap);
             return(NULL);
         }
 
         if (ifu->type == UDP_MULTICAST) {
             if (!(ifp->ifa_flags & IFF_MULTICAST)) {
-                logerr(0,"Interface %s is not multicast capable",ifname);
+                logerr(0,catgets(cat,11,21,
+                        "Interface %s is not multicast capable"),ifname);
                 freeifaddrs(ifap);
                 return(NULL);
             }
 
             if ((ifindex=if_nametoindex(ifname)) == 0) {
-                logerr(0,"Can't determine interface index for %s",ifname);
+                logerr(0,catgets(cat,11,22,
+                        "Can't determine interface index for %s"),ifname);
                 freeifaddrs(ifap);
                 return(NULL);
             }
@@ -582,7 +598,8 @@ struct iface *init_udp(struct iface *ifa)
                 if (ifp->ifa_dstaddr)
                     ifu->type = UDP_UNICAST;
                 else if (!address) {
-                    logerr(0,"Interface %s is not broadcast capable",ifname);
+                    logerr(0,catgets(cat,11,23,
+                            "Interface %s is not broadcast capable"),ifname);
                     freeifaddrs(ifap);
                     return(NULL);
                 }
@@ -598,7 +615,8 @@ struct iface *init_udp(struct iface *ifa)
 
             if (ifa->direction != IN) {
                 if (!(ifp->ifa_dstaddr)) {
-                    logerr(0,"No output address specified for interface %s",
+                    logerr(0,catgets(cat,11,24,
+                            "No output address specified for interface %s"),
                             ifname);
                     freeifaddrs(ifap);
                     return(NULL);
@@ -608,14 +626,17 @@ struct iface *init_udp(struct iface *ifa)
                             UDP_BROADCAST:UDP_UNICAST;
                 else if (ifu->type == UDP_BROADCAST) {
                     if (!(ifp->ifa_flags & IFF_BROADCAST)) {
-                        logerr(0,"Interface %s is not broadcast capable",
+                        logerr(0,catgets(cat,11,23,
+                                "Interface %s is not broadcast capable"),
                                 ifname);
                         freeifaddrs(ifap);
                         return(NULL);
                     }
                 } else {
                     if (ifp->ifa_flags & IFF_BROADCAST) {
-                        logerr(0,"Interface %s is not point to point and no address specified",ifname);
+                        logerr(0,catgets(cat,11,25,
+                                "Interface %s is not point to point and no address specified"),
+                                ifname);
                         freeifaddrs(ifap);
                         return(NULL);
                     }
@@ -655,7 +676,8 @@ struct iface *init_udp(struct iface *ifa)
             } else if (ifu->addr.ss_family == AF_INET6) {
                 if (linklocal) {
                     if (((struct sockaddr_in6 *)&ifu->addr)->sin6_scope_id == 0) {
-                        logerr(0,"Must specify a device with link local multicast addresses");
+                        logerr(0,catgets(cat,11,26,
+                                "Must specify a device with link local multicast addresses"));
                         return(NULL);
                     }
                     ifu->mr.ip6mr.ipv6mr_interface = ((struct sockaddr_in6 *)
@@ -668,12 +690,12 @@ struct iface *init_udp(struct iface *ifa)
     }
 
     if (ifu->addr.ss_family == AF_UNSPEC) {
-        logerr(0,"No address specified");
+        logerr(0,catgets(cat,11,17,"No address specified"));
         return(NULL);
     }
 
     if ((ifu->fd=socket(ifu->addr.ss_family,SOCK_DGRAM,IPPROTO_UDP)) < 0) {
-        logerr(errno,"Could not create UDP socket");
+        logerr(errno,catgets(cat,11,27,"Could not create UDP socket"));
         if (ifap)
             freeifaddrs(ifap);
         return(NULL);
@@ -684,13 +706,15 @@ struct iface *init_udp(struct iface *ifa)
             if (ifu->addr.ss_family==AF_INET) {
                 if (setsockopt(ifu->fd,IPPROTO_IP,IP_MULTICAST_IF,
                         &ifu->mr.ipmr.imr_interface,sizeof(ifu->mr.ipmr.imr_interface)) < 0) {
-                    logerr(errno,"Failed to set multicast interface");
+                    logerr(errno,catgets(cat,11,28,
+                            "Failed to set multicast interface"));
                     return(NULL);
                 }
             } else if (ifu->addr.ss_family==AF_INET6) {
                 if (setsockopt(ifu->fd,IPPROTO_IPV6,IPV6_MULTICAST_IF,
                         &ifindex,sizeof(int)) < 0) {
-                    logerr(errno,"Failed to set multicast interface");
+                    logerr(errno,catgets(cat,11,28,
+                            "Failed to set multicast interface"));
                     return(NULL);
                 }
             }
@@ -705,7 +729,7 @@ struct iface *init_udp(struct iface *ifa)
         if (igp == NULL) {
             if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr)))
                     < 0) {
-                logerr(errno,"Could not allocate memory");
+                logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
                 return(NULL);
             }
             igp->iaddr.sin_port = ((struct sockaddr_in *)sa)->sin_port;
@@ -718,7 +742,7 @@ struct iface *init_udp(struct iface *ifa)
         }
 
         if ((igp->refcnt+=(ifa->direction == BOTH)?2:1)<0) {
-            logerr(0,"Max broadcast interfaces exceeded");
+            logerr(0,catgets(cat,11,29,"Max broadcast interfaces exceeded"));
             return(NULL);
         }
 
@@ -731,20 +755,20 @@ struct iface *init_udp(struct iface *ifa)
     if (ifa->direction != IN) {
         if (ifu->type == UDP_BROADCAST) {
             if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
-                logerr(errno,"Setsockopt failed");
+                logerr(errno,catgets(cat,11,30,"Setsockopt failed"));
                 return(NULL);
             }
         }
 
         /* write queue initialization */
         if (init_q(ifa, qsize) < 0) {
-            logerr(errno,"Could not create queue");
+            logerr(errno,catgets(cat,11,31,"Could not create queue"));
             return(NULL);
         }
         if (coalesce) {
             if ((ifu->coalesce=
                     (struct coalesce *)malloc(sizeof(struct coalesce))) == NULL) {
-                logerr(errno,"Could not allocate memory");
+                logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
                 return(NULL);
             }
             ifu->coalesce->offset=ifu->coalesce->seqid=0;
@@ -762,23 +786,25 @@ struct iface *init_udp(struct iface *ifa)
         and starts at the address pointed to we're fine */
         if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
                 strlen(ifname)) == 0) {
-            DEBUG2(3,"%s: BINDTODEVICE failed on device %s",
+            DEBUG2(3,catgets(cat,11,32,"%s: BINDTODEVICE failed on device %s"),
                    ifa->name,ifname);
         } else {
-            DEBUG(3,"%s: BINDTODEVICE succeeded on device %s",
-                    ifa->name,ifname);
+            DEBUG(3,catgets(cat,11,33,
+                    "%s: BINDTODEVICE succeeded on device %s"),ifa->name,
+                    ifname);
         }
     }
 #endif
 
     if (ifa->direction != IN) {
-        DEBUG(3,"%s: output address %s, port %d",ifa->name
-            ,inet_ntop(ifu->addr.ss_family,((ifu->addr.ss_family == AF_INET)?
-            (void*)&((struct sockaddr_in *)&ifu->addr)->sin_addr:
-            (void*)&((struct sockaddr_in6*)&ifu->addr)->sin6_addr),debugbuf,
-            INET6_ADDRSTRLEN),ntohs((ifu->addr.ss_family == AF_INET)?
-            ((struct sockaddr_in*)&ifu->addr)->sin_port:
-            ((struct sockaddr_in6*)&ifu->addr)->sin6_port));
+        DEBUG(3,catgets(cat,11,34,"%s: output address %s, port %d"),
+                ifa->name,inet_ntop(ifu->addr.ss_family,
+                ((ifu->addr.ss_family == AF_INET)?
+                (void*)&((struct sockaddr_in *)&ifu->addr)->sin_addr:
+                (void*)&((struct sockaddr_in6*)&ifu->addr)->sin6_addr),debugbuf,
+                INET6_ADDRSTRLEN),ntohs((ifu->addr.ss_family == AF_INET)?
+                ((struct sockaddr_in*)&ifu->addr)->sin_port:
+                ((struct sockaddr_in6*)&ifu->addr)->sin6_port));
     }
 
     ifa->write=write_udp;
@@ -793,13 +819,14 @@ struct iface *init_udp(struct iface *ifa)
                     (ifu->addr.ss_family == AF_INET)?
                     IP_MULTICAST_LOOP:IPV6_MULTICAST_LOOP,&off,
                     sizeof(off)) < 0) {
-                logerr(errno,"Failed to disable multicast loopback\nDon't use bi-directional interfaces with loopback interface");
+                logerr(errno,catgets(cat,11,35,
+                        "Failed to disable multicast loopback\nDon't use bi-directional interfaces with loopback interface"));
                 return(NULL);
             }
         }
 
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,11,36,"Interface duplication failed"));
             return(NULL);
         }
 
@@ -823,10 +850,12 @@ struct iface *init_udp(struct iface *ifa)
         if (ifname) {
             if (setsockopt(ifu->fd,SOL_SOCKET,SO_BINDTODEVICE,ifname,
                     strlen(ifname)) == 0) {
-                DEBUG2(3,"%s: BINDTODEVICE failed (read) to device %s",
+                DEBUG2(3,catgets(cat,11,37,
+                        "%s: BINDTODEVICE failed (read) to device %s"),
                         ifa->name,ifname);
             } else {
-                DEBUG(3,"%s: BINDTODEVICE succeeded (read) to device %s",
+                DEBUG(3,catgets(cat,11,38,
+                    "%s: BINDTODEVICE succeeded (read) to device %s"),
                     ifa->name,ifname);
             }
         }
@@ -836,14 +865,14 @@ struct iface *init_udp(struct iface *ifa)
 
     if (ifa->direction == IN || (ifa->pair != NULL)) {
         if (setsockopt(ifu->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) < 0) {
-            logerr(errno,"Failed to set SO_REUSEADDR");
+            logerr(errno,catgets(cat,11,39,"Failed to set SO_REUSEADDR"));
             return(NULL);
         }
 
 #ifdef SO_REUSEPORT
         if (ifu->type != UDP_UNICAST)
             if (setsockopt(ifu->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0){
-                logerr(errno,"Failed to set SO_REUSEPORT");
+                logerr(errno,catgets(cat,11,40,"Failed to set SO_REUSEPORT"));
                 return(NULL);
             }
 #endif
@@ -851,28 +880,32 @@ struct iface *init_udp(struct iface *ifa)
             if (ifu->addr.ss_family==AF_INET) {
                 if (setsockopt(ifu->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,
                     &ifu->mr.ipmr, sizeof(struct ip_mreq)) < 0) {
-                    logerr(errno,"Failed to join multicast group %s",address);
+                    logerr(errno,catgets(cat,11,41,
+                            "Failed to join multicast group %s"),address);
                     return(NULL);
                 }
             } else {
                 if (setsockopt(ifu->fd,IPPROTO_IPV6,IPV6_JOIN_GROUP,
                         &ifu->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
-                    logerr(errno,"Failed to join multicast group %s",address);
+                    logerr(errno,catgets(cat,11,41,
+                            "Failed to join multicast group %s"),address);
                     return(NULL);
                 }
             }
         }
         if (bind(ifu->fd,sa,ifu->asize) < 0) {
-            logerr(errno,"bind failed for udp interface %s",ifa->name);
+            logerr(errno,catgets(cat,11,42,"bind failed for udp interface %s"),
+                    ifa->name);
             return(NULL);
         }
-        DEBUG(3,"udp interface %s listening on %s, port %d",ifa->name,
-            inet_ntop(sa->sa_family,((sa->sa_family == AF_INET)?
-            (void*)&((struct sockaddr_in*)sa)->sin_addr:
-            (void*)&((struct sockaddr_in6*)sa)->sin6_addr),debugbuf,
-            INET6_ADDRSTRLEN),
-            ntohs((sa->sa_family==AF_INET)?((struct sockaddr_in*)sa)->sin_port:
-            ((struct sockaddr_in6*)sa)->sin6_port));
+        DEBUG(3,catgets(cat,11,43,"udp interface %s listening on %s, port %d"),
+                ifa->name,inet_ntop(sa->sa_family,((sa->sa_family == AF_INET)?
+                (void*)&((struct sockaddr_in*)sa)->sin_addr:
+                (void*)&((struct sockaddr_in6*)sa)->sin6_addr),debugbuf,
+                INET6_ADDRSTRLEN),
+                ntohs((sa->sa_family==AF_INET)?
+                ((struct sockaddr_in*)sa)->sin_port:
+                ((struct sockaddr_in6*)sa)->sin6_port));
     }
 
     free_options(ifa->options);

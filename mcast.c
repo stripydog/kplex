@@ -1,6 +1,6 @@
 /* mcast.c
  * This file is part of kplex
- * Copyright Keith Young 2013 - 2014
+ * Copyright Keith Young 2013 - 2019
  * For copying information see the file COPYING distributed with this software
  *
  * Multicast interfaces
@@ -52,10 +52,10 @@ void cleanup_mcast(iface_t *ifa)
         if (ifb->maddr.ss_family == AF_INET) {
             if (setsockopt(ifb->fd,IPPROTO_IP,IP_DROP_MEMBERSHIP,
                     &ifb->mr.ipmr,sizeof(struct ip_mreq)) < 0)
-                logerr(errno,"IP_DROP_MEMBERSHIP failed");
+                logerr(errno,catgets(cat,6,1,"IP_DROP_MEMBERSHIP failed"));
         } else if (setsockopt(ifb->fd,IPPROTO_IPV6,IPV6_LEAVE_GROUP,
                     &ifb->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
-                logerr(errno,"IPV6_LEAVE_GROUP failed");
+                logerr(errno,catgets(cat,6,2,"IPV6_LEAVE_GROUP failed"));
         }
     }
 
@@ -83,8 +83,10 @@ void write_mcast(struct iface *ifa)
 
     if (ifa->tagflags) {
         if ((iov[0].iov_base=malloc(TAGMAX)) == NULL) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,catgets(cat,6,3,
+                        "Disabing tag output on interface id %u (%s)"),
+                        ifa->id,(ifa->name)?ifa->name:catgets(cat,6,4,
+                        "unlabelled"));
                 ifa->tagflags=0;
         } else {
             msgh.msg_iovlen=2;
@@ -103,8 +105,10 @@ void write_mcast(struct iface *ifa)
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
-                logerr(errno,"Disabing tag output on interface id %u (%s)",
-                        ifa->id,(ifa->name)?ifa->name:"unlabelled");
+                logerr(errno,catgets(cat,6,5,
+                        "Disabing tag output on interface id %u (%s)"),
+                        ifa->id,(ifa->name)?ifa->name:catgets(cat,6,4,
+                        "unlabelled"));
                 ifa->tagflags=0;
                 msgh.msg_iovlen=1;
                 data=0;
@@ -183,7 +187,7 @@ struct iface *init_mcast(struct iface *ifa)
     int err;
     
     if ((ifm=malloc(sizeof(struct if_mcast))) == NULL) {
-        logerr(errno,"Could not allocate memory");
+        logerr(errno,catgets(cat,6,6,"Could not allocate memory"));
         return(NULL);
     }
     memset(ifm,0,sizeof(struct if_mcast));
@@ -199,17 +203,19 @@ struct iface *init_mcast(struct iface *ifa)
             service=opt->val;
         else if (!strcasecmp(opt->var,"qsize")) {
             if (!(qsize=atoi(opt->val))) {
-                logerr(0,"Invalid queue size specified: %s",opt->val);
+                logerr(0,catgets(cat,6,7,"Invalid queue size specified: %s"),
+                        opt->val);
                 return(NULL);
             }
         } else  {
-            logerr(0,"Unknown interface option %s",opt->var);
+            logerr(0,catgets(cat,6,8,"Unknown interface option %s"),opt->var);
             return(NULL);
         }
     }
 
     if (!host) {
-        logerr(0,"Must specify multicast address for multicast interfaces");
+        logerr(0,catgets(cat,6,9,
+                "Must specify multicast address for multicast interfaces"));
         return(NULL);
     }
 
@@ -228,7 +234,9 @@ struct iface *init_mcast(struct iface *ifa)
     hints.ai_protocol=IPPROTO_UDP;
 
     if ((err=getaddrinfo(host,service,&hints,&abase))) {
-        logerr(0,"Lookup failed for address %s/service %s: %s",host,service,gai_strerror(err));
+        logerr(0,catgets(cat,6,10,
+                "Lookup failed for address %s/service %s: %s"),host,service,
+                gai_strerror(err));
         return(NULL);
     }
 
@@ -237,7 +245,8 @@ struct iface *init_mcast(struct iface *ifa)
             break;
 
     if (!aptr) {
-        logerr(0,"No Suitable address found for %s/%s",host,service);
+        logerr(0,catgets(cat,6,11,"No Suitable address found for %s/%s"),host,
+                service);
         freeaddrinfo(abase);
         return(NULL);
     }
@@ -257,7 +266,8 @@ struct iface *init_mcast(struct iface *ifa)
                 &((struct sockaddr_in6 *)&ifm->maddr)->sin6_addr,
                 sizeof(struct in6_addr));
     } else {
-        logerr(0,"Unsupported address family %d\n",ifm->maddr.ss_family);
+        logerr(0,catgets(cat,6,12,"Unsupported address family %d\n"),
+                ifm->maddr.ss_family);
         return(NULL);
     }
 
@@ -270,7 +280,8 @@ struct iface *init_mcast(struct iface *ifa)
     hints.ai_protocol=IPPROTO_UDP;
 
     if ((err=getaddrinfo(NULL,service,&hints,&aptr))) {
-        logerr(0,"Lookup failed for bind addresss: %s",gai_strerror(err));
+        logerr(0,catgets(cat,6,13,"Lookup failed for bind addresss: %s"),
+                gai_strerror(err));
         return(NULL);
     }
 
@@ -279,14 +290,15 @@ struct iface *init_mcast(struct iface *ifa)
             break;
 
     if (!aptr) {
-        logerr(0,"No suitable address found for %s/%s",host,service);
+        logerr(0,catgets(cat,6,11,"No suitable address found for %s/%s"),host,
+                service);
         freeaddrinfo(abase);
         return(NULL);
     }
 
     switch (is_multicast((struct sockaddr *)&ifm->maddr)) {
     case 0:
-        logerr(0,"%s is not a multicast address",host);
+        logerr(0,catgets(cat,6,14,"%s is not a multicast address"),host);
         return(NULL);
     case 1:
         break;
@@ -297,13 +309,13 @@ struct iface *init_mcast(struct iface *ifa)
     }
 
     if ((ifm->fd=socket(ifm->maddr.ss_family,SOCK_DGRAM,IPPROTO_UDP)) < 0) {
-        logerr(errno,"Could not create UDP socket");
+        logerr(errno,catgets(cat,6,15,"Could not create UDP socket"));
         return(NULL);
      }
 
     if (ifname) {
         if (getifaddrs(&ifap) < 0) {
-                logerr(errno,"Error getting interface info");
+                logerr(errno,catgets(cat,6,16,"Error getting interface info"));
                 return(NULL);
         }
         for (ifp=ifap;ifp;ifp=ifp->ifa_next) {
@@ -316,14 +328,16 @@ struct iface *init_mcast(struct iface *ifa)
 
         if (!ifp) {
             if (iffound)
-                logerr(0,"Interface %s has no suitable local address",ifname);
+                logerr(0,catgets(cat,6,17,
+                        "Interface %s has no suitable local address"),ifname);
             else if (ifname)
-                logerr(0,"No interface %s found",ifname);
+                logerr(0,catgets(cat,6,18,"No interface %s found"),ifname);
             return(NULL);
         }
 
         if ((ifindex=if_nametoindex(ifname)) == 0) {
-            logerr(0,"Can't determine interface index for %s",ifname);
+            logerr(0,catgets(cat,6,19,"Can't determine interface index for %s"),
+                    ifname);
             return(NULL);
         }
 
@@ -343,13 +357,15 @@ struct iface *init_mcast(struct iface *ifa)
                 if (ifm->maddr.ss_family==AF_INET) {
                     if (setsockopt(ifm->fd,IPPROTO_IP,IP_MULTICAST_IF,
                             &ifm->mr.ipmr.imr_interface,sizeof(ifm->mr.ipmr.imr_interface)) < 0) {
-                        logerr(errno,"Failed to set multicast interface");
+                        logerr(errno,catgets(cat,6,20,
+                                "Failed to set multicast interface"));
                         return(NULL);
                     }
                 } else {
                     if (setsockopt(ifm->fd,IPPROTO_IPV6,IPV6_MULTICAST_IF,
                             &ifindex,sizeof(int)) < 0) {
-                        logerr(errno,"Failed to set multicast interface");
+                        logerr(errno,catgets(cat,6,20,
+                                "Failed to set multicast interface"));
                         return(NULL);
                     }
                 }
@@ -361,7 +377,8 @@ struct iface *init_mcast(struct iface *ifa)
         } else {
             if (linklocal) {
                 if (((struct sockaddr_in6 *)&ifm->maddr)->sin6_scope_id == 0) {
-                    logerr(0,"Must specify a device with link local multicast addresses");
+                    logerr(0,catgets(cat,6,21,
+                            "Must specify a device with link local multicast addresses"));
                     return(NULL);
                 }
                 ifm->mr.ip6mr.ipv6mr_interface = ((struct sockaddr_in6 *)
@@ -373,13 +390,13 @@ struct iface *init_mcast(struct iface *ifa)
     }
 
     if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)) < 0) {
-        logerr(errno,"Failed to set SO_REUSEADDR");
+        logerr(errno,catgets(cat,6,22,"Failed to set SO_REUSEADDR"));
         return(NULL);
     }
 
 #ifdef SO_REUSEPORT
     if (setsockopt(ifm->fd,SOL_SOCKET,SO_REUSEPORT,&on,sizeof(on)) < 0) {
-        logerr(errno,"Failed to set SO_REUSEPORT");
+        logerr(errno,catgets(cat,6,23,"Failed to set SO_REUSEPORT"));
         return(NULL);
     }
 #endif
@@ -388,13 +405,17 @@ struct iface *init_mcast(struct iface *ifa)
         if (ifm->maddr.ss_family==AF_INET) {
             if (setsockopt(ifm->fd,IPPROTO_IP,IP_ADD_MEMBERSHIP,&ifm->mr.ipmr,
                     sizeof(struct ip_mreq)) < 0) {
-                logerr(errno,"Failed to join multicast group %s",host);
+                logerr(errno,catgets(cat,6,24,
+                        "Failed to join multicast group %s"),
+                        host);
                 return(NULL);
             }
         } else {
             if (setsockopt(ifm->fd,IPPROTO_IPV6,IPV6_JOIN_GROUP,
                     &ifm->mr.ip6mr,sizeof(struct ipv6_mreq)) < 0) {
-                logerr(errno,"Failed to join multicast group %s",host);
+                logerr(errno,catgets(cat,6,24,
+                        "Failed to join multicast group %s"),
+                        host);
                 return(NULL);
             }
         }
@@ -402,7 +423,7 @@ struct iface *init_mcast(struct iface *ifa)
 
     if (ifa->direction == IN) {
         if (bind(ifm->fd,aptr->ai_addr,aptr->ai_addrlen) < 0) {
-            logerr(errno,"Bind failed");
+            logerr(errno,catgets(cat,6,25,"Bind failed"));
             return(NULL);
         }
     }
@@ -410,7 +431,7 @@ struct iface *init_mcast(struct iface *ifa)
     if (ifa->direction != IN) {
         /* write queue initialization */
         if (init_q(ifa, qsize) < 0) {
-            logerr(errno,"Could not create queue");
+            logerr(errno,catgets(cat,6,26,"Could not create queue"));
             return(NULL);
         }
     }
@@ -426,12 +447,13 @@ struct iface *init_mcast(struct iface *ifa)
                 (ifm->maddr.ss_family == AF_INET)?
                 IP_MULTICAST_LOOP:IPV6_MULTICAST_LOOP,&off,
                 sizeof(off)) < 0) {
-            logerr(errno,"Failed to disable multicast loopback\nDon't use bi-directional interfaces with loopback interface");
+            logerr(errno,catgets(cat,6,27,
+                    "Failed to disable multicast loopback\nDon't use bi-directional interfaces with loopback interface"));
             return(NULL);
         }
 
         if ((ifa->next=ifdup(ifa)) == NULL) {
-            logerr(0,"Interface duplication failed");
+            logerr(0,catgets(cat,6,28,"Interface duplication failed"));
             return(NULL);
         }
 
@@ -439,7 +461,7 @@ struct iface *init_mcast(struct iface *ifa)
         ifa->pair->direction=IN;
         ifm = (struct if_mcast *) ifa->pair->info;
         if (bind(ifm->fd,aptr->ai_addr,aptr->ai_addrlen) < 0){
-            logerr(errno,"Duplicate Bind failed");
+            logerr(errno,catgets(cat,6,29,"Duplicate Bind failed"));
             return(NULL);
         }
 

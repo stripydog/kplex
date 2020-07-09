@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012-2017
+ * Copyright Keith Young 2012-2019
  * For copying information see the file COPYING distributed with this software
  */
 #ifndef KPLEX_H
@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <nl_types.h>
 
 #ifdef __APPLE__
 #include <AvailabilityMacros.h>
@@ -62,6 +63,9 @@
 #define TAG_MS 2
 #define TAG_SRC 4
 #define TAG_ISRC 8
+
+/* i8n catalogue */
+extern nl_catd cat;
 
 extern int debuglevel;
 #define DEBUG(level,...) if (debuglevel >= level) logdebug(0, __VA_ARGS__)
