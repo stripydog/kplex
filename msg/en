@@ -58,6 +58,8 @@ $set 2 kplex.c
 54 "Warning: Unrecognized option \'%s\'\n"
 55 "failed to initiate queue"
 56 "\"%s\" already specified as an interface name"
+57 "failed to initialize event manager"
+58 "failed to add interface heartbeat"
 $set 3 bcast.c
 1 "Could not create duplicate socket: %s"
 2 "Disabing tag output on interface id %u (%s)"

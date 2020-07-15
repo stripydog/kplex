@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2019
+ * Copyright Keith Young 2012-2020
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -26,7 +26,7 @@
 #include <locale.h>
 
 /* Macro to identify kplex Proprietary sentences */
-#define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
+#define isprop(sptr) (sptr->len >= 8 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
 /* Message catalogue location passed from Makefile */
 #ifndef SHAREDIR
@@ -100,6 +100,42 @@ int checkcksum (senblk_t *sptr)
         return (0);
     else
         return(-1);
+}
+
+/*
+ * Add a missing checksum to a sentence
+ * Args: pointer to a senblk_t
+ * Returns: 1 is checksum added, 0 if checksum already correct, -1 otherwise
+ */
+int add_checksum(senblk_t *sptr)
+{
+    int cksm=0;
+    char *ptr;
+    int i,end;
+
+    if (sptr->len > SENMAX-3) {
+        /* Sentence would be too long if we added a checksum */
+        return(-1);
+    }
+
+    for (i=1,end=sptr->len-2,ptr=sptr->data+1;i < end; ptr++,i++) {
+        if (*ptr == '*') {
+            /* Already a checksum? */
+            return(-1);
+        }
+
+        cksm ^= *ptr;
+    }
+
+    *ptr++ = '*';
+    *ptr++ = ((i = cksm / 16) > 9)?i + 55:i + 48;
+    *ptr++ = ((i = cksm % 16) > 9)?i + 55:i + 48;
+    *ptr++ = '\r';
+    *ptr++ = '\n';
+
+    sptr->len += 3;
+
+    return 0;
 }
 
 /*
@@ -616,6 +652,9 @@ int process_prop(senblk_t *sptr, iface_t *eptr)
         } else
             return -1;
         break;
+    case 'I':
+        /* Informational message from another kplex instance */
+        return 1;
     case 'C':
         /* Command: None currently defined */
     case 'R':
@@ -875,6 +914,9 @@ void iface_destroy(void *ifptr)
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
+    if (ifa->heartbeat) {
+        stop_heartbeat(ifa);
+    }
     pthread_mutex_lock(&ifa->lists->io_mutex);
     if (ifa->tid) {
         unlink_interface(ifa);
@@ -915,6 +957,9 @@ iface_t *ifdup (iface_t *ifa)
 
     if ((newif=(iface_t *) malloc(sizeof(iface_t))) == (iface_t *) NULL)
         return(NULL);
+
+    memset(newif,0,sizeof(iface_t));
+
     if (iftypes[ifa->type].ifdup_func) {
         if ((newif->info=(*iftypes[ifa->type].ifdup_func)(ifa->info)) == NULL) {
             free(newif);
@@ -940,6 +985,7 @@ iface_t *ifdup (iface_t *ifa)
     newif->ifilter=addfilter(ifa->ifilter);
     newif->ofilter=addfilter(ifa->ofilter);
     newif->checksum=ifa->checksum;
+    newif->heartbeat = 0;
     newif->strict=ifa->strict;
     return(newif);
 }
@@ -1389,7 +1435,6 @@ nl_catd init_i8n()
 {
     char * tmpbuf;
     char *lang;
-    int i;
 
     /* initialize i8n: First try NLSPATH/defaults */
     setlocale(LC_ALL,"");
@@ -1424,7 +1469,6 @@ nl_catd init_i8n()
 int main(int argc, char ** argv)
 {
     char *tmpbuf;
-    char *lang;
     pthread_t tid;
     pid_t pid;
     int pfd;
@@ -1447,7 +1491,8 @@ int main(int argc, char ** argv)
     .initialized = NULL,
     .outputs = NULL,
     .inputs = NULL,
-    .dead = NULL
+    .dead = NULL,
+    .eventmgr = NULL
     };
     struct rlimit lim;
     struct flock *fl;
@@ -1734,10 +1779,24 @@ int main(int argc, char ** argv)
      * mapping so we can update references to "name" with an id
      */
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        if (ifptr->direction != IN && ifptr->ofilter)
-            if (name2id(ifptr->ofilter))
+        if (ifptr->direction != IN && ifptr->ofilter) {
+            if (name2id(ifptr->ofilter)) {
                 logterm(errno,catgets(cat,2,26,
                         "Name to interface translation failed"));
+            }
+        }
+        if (ifptr->heartbeat && ifptr->q) {
+            if (lists.eventmgr == NULL) {
+                if ((lists.eventmgr = init_evtmgr()) == NULL) {
+                    logterm(errno, catgets(cat,2,57,
+                            "failed to initialize event manager"));
+                }
+            }
+            if (add_event(EVT_HB,(void *)ifptr,0) < 0) {
+                logterm(errno, catgets(cat,2,58,
+                        "failed to add interface heartbeat"));
+            }
+        }
     }
 
     /* Create the key for thread local storage: in this case for a pointer to
@@ -1805,6 +1864,15 @@ int main(int argc, char ** argv)
         timetodie++;
     }
 
+    if (lists.eventmgr) {
+        if (!timetodie) {
+            if (pthread_create(&lists.eventmgr->tid,NULL,(void *)proc_events,
+                    (void *) NULL) == 0) {
+                lists.eventmgr->active=1;
+            }
+        }
+    }
+
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
      * until all the outputs have been reaped
@@ -1860,6 +1928,10 @@ int main(int argc, char ** argv)
             lists.dead=ifptr->next;
             pthread_join(ifptr->tid,&ret);
             free(ifptr);
+        }
+        if (lists.eventmgr && lists.eventmgr->active) {
+            pthread_kill(lists.eventmgr->tid,SIGUSR1);
+            pthread_join(lists.eventmgr->tid,NULL);
         }
     }
 

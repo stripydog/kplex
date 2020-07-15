@@ -25,7 +25,7 @@ SHAREDIR=$(PREFIX)/share/kplex
 LANGS=$(shell ls msg)
 LOCALES=$(LANGS:%=%.cat)
 
-objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o
+objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o events.o
 
 all: version kplex
 
@@ -36,13 +36,13 @@ version:
 	fi
 
 kplex: $(objects)
-	$(CC) -o kplex $(objects) $(LDLIBS)
+	$(CC) $(CFLAGS) -o kplex $(objects) $(LDLIBS)
 
 tcp.o: tcp.h
 gofree.o: tcp.h
 $(objects): kplex.h
 kplex.o: kplex.c kplex_mods.h version.h
-	$(CC) -c -DSHAREDIR=\"$(SHAREDIR)\" kplex.c
+	$(CC) $(CFLAGS) -c -DSHAREDIR=\"$(SHAREDIR)\" kplex.c
 
 version.h:
 	@echo '#define VERSION "'$(BASE_VERSION)'"' > version.h
