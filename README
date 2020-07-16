@@ -170,6 +170,11 @@ where:
         is specified, failure of the interface to initialize will only cause
         kplex to exit if, as a result of it failing, kplex has no inputs or no
         outputs.
+        "heartbeat": Specifies that kplex should send a proprietary sentence
+        from the interface with a frequency specified as the option's value in
+        seconds, i.e. "heartbeat=60" will send a sentence every minute.  Other
+        instances of kplex will not further propagate these "heartbeats". This
+        option is not valid on input-only interfaces.
 
 If source identifier and timestamps are both requested for an interface, they
 are combined into a single TAG block, source identifier first, e.g.:

@@ -1929,10 +1929,12 @@ int main(int argc, char ** argv)
             pthread_join(ifptr->tid,&ret);
             free(ifptr);
         }
-        if (lists.eventmgr && lists.eventmgr->active) {
-            pthread_kill(lists.eventmgr->tid,SIGUSR1);
-            pthread_join(lists.eventmgr->tid,NULL);
-        }
+    }
+
+    /* Kill the event manager only after all other threads */
+    if (lists.eventmgr && lists.eventmgr->active) {
+        pthread_kill(lists.eventmgr->tid,SIGUSR1);
+        pthread_join(lists.eventmgr->tid,NULL);
     }
 
     /* For neatness... */
