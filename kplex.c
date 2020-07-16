@@ -69,21 +69,75 @@ int mysleep(time_t sleepytime)
 
 /*
  * Check an NMEA 0183 checksum
- * Args: pointer to struct senblk
- * Returns: 0 if checksum matches checksum field, -1 otherwise
- *
+ * Args: pointer to struct senblk, checking/addition required
+ * Returns: 0 if check/addition "successful", -1 otherwise
  */
-int checkcksum (senblk_t *sptr)
+int checkcksum (senblk_t *sptr, enum cksm how)
 {
     int cksm=0;
     int rcvdcksum=0,i,end;
     char *ptr;
 
-    for(i=0,end=sptr->len-6,ptr=sptr->data+1; i < end; ptr++,i++)
-            cksm ^= *ptr;
+    /* Shouldn't be necessary but for safety... */
+    switch (how) {
+        case CKSM_STRICT:
+        case CKSM_LOOSE:
+        case CKSM_ADD:
+        case CKSM_ADDONLY:
+            break;
+        default:
+            return(0);
+            break;
+    }
 
-    if (*ptr != '*')
-        return -1;
+    for(i=0,end=sptr->len-6,ptr=sptr->data+1; i < end;i++)
+            cksm ^= *ptr++;
+
+    if (*ptr != '*') {
+    /* There's no checksum or it's incomplete */
+        if (how == CKSM_STRICT) {
+            return(-1);
+        }
+
+        for(end=sptr->len-3;i < end;i++) {
+            cksm ^= *ptr++;
+            if (*ptr == '*') {
+            /* There's an incomplete checksum */
+                if (how == CKSM_ADDONLY) {
+                /* for "addonly" we don't add but don't reject */
+                    return 0;
+                }
+                /* CKSM_LOOSE or CKSM_ADD reject bad checksums */
+                return(-1);
+            }
+        }
+
+        /* No checksum */
+        if (how == CKSM_LOOSE) {
+            return(0);
+        }
+
+        /* We can't add if the sentence is already too long */
+        if (sptr->len > SENMAX - 1) {
+            return(-1);
+        }
+
+        /* Add the checksum */
+        *ptr++ = '*';
+        *ptr++ = ((i = cksm / 16) > 9)?i + 55:i + 48;
+        *ptr++ = ((i = cksm % 16) > 9)?i + 55:i + 48;
+        *ptr++ = '\r';
+        *ptr++ = '\n';
+
+        sptr->len += 3;
+
+        return(0);
+    }
+
+    /* ADDONLY doesn't care if a checksum is wrong */
+    if (how == CKSM_ADDONLY) {
+        return(0);
+    }
 
     for (i=0,++ptr;i<2;i++,ptr++) {
         if (*ptr>47 && *ptr<58)
@@ -100,42 +154,6 @@ int checkcksum (senblk_t *sptr)
         return (0);
     else
         return(-1);
-}
-
-/*
- * Add a missing checksum to a sentence
- * Args: pointer to a senblk_t
- * Returns: 1 is checksum added, 0 if checksum already correct, -1 otherwise
- */
-int add_checksum(senblk_t *sptr)
-{
-    int cksm=0;
-    char *ptr;
-    int i,end;
-
-    if (sptr->len > SENMAX-3) {
-        /* Sentence would be too long if we added a checksum */
-        return(-1);
-    }
-
-    for (i=1,end=sptr->len-2,ptr=sptr->data+1;i < end; ptr++,i++) {
-        if (*ptr == '*') {
-            /* Already a checksum? */
-            return(-1);
-        }
-
-        cksm ^= *ptr;
-    }
-
-    *ptr++ = '*';
-    *ptr++ = ((i = cksm / 16) > 9)?i + 55:i + 48;
-    *ptr++ = ((i = cksm % 16) > 9)?i + 55:i + 48;
-    *ptr++ = '\r';
-    *ptr++ = '\n';
-
-    sptr->len += 3;
-
-    return 0;
 }
 
 /*
@@ -626,7 +644,7 @@ iface_t *get_default_global()
     ifg->flags=0;
     ifg->logto=LOG_DAEMON;
     ifp->strict=-1;
-    ifp->checksum=0;
+    ifp->checksum=CKSM_NO;
     ifp->info = (void *)ifg;
 
     return(ifp);
@@ -1200,13 +1218,17 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"checksum")) {
-            if (!strcasecmp(optr->val,"yes"))
-                e_info->checksum=1;
+            if (!strcasecmp(optr->val,"yes") || !strcasecmp(optr->val,"strict"))
+                e_info->checksum=CKSM_STRICT;
             else if (!strcasecmp(optr->val,"no"))
-                e_info->checksum=0;
+                e_info->checksum=CKSM_NO;
+            else if (!strcasecmp(optr->val,"add"))
+                e_info->checksum=CKSM_ADD;
+            else if (!strcasecmp(optr->val,"addonly"))
+                e_info->checksum=CKSM_ADDONLY;
             else {
                 fprintf(stderr,"%s",catgets(cat,2,51,
-                        "Checksum option must be either \'yes\' or \'no\'\n"));
+                        "Checksum option must be one of: \'yes\',\'no\',\'strict\',\'loose\',\'add\',\'addonly\'\n"));
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"strict")) {
@@ -1365,7 +1387,7 @@ void do_read(iface_t *ifa)
                 /* If we're not checksumming OR the checksum is correct OR
                  * it's a zero length packet, the first clause is false which
                  * is true when negated...*/
-                if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
+                if (!(ifa->checksum && checkcksum(&sblk,ifa->checksum) && (sblk.len > 0 )) &&
                         senfilter(&sblk,ifa->ifilter) == 0) {
                     push_senblk(&sblk,ifa->q);
                 }
@@ -1759,7 +1781,7 @@ int main(int argc, char ** argv)
             if (ifptr->direction == IN)
                 ifptr->q=engine->q;
 
-            if (ifptr->checksum <0)
+            if (ifptr->checksum == CKSM_UNDEF)
                 ifptr->checksum = engine->checksum;
             if (ifptr->strict <0) {
                 if (engine->strict >= 0) {

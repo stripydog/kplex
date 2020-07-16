@@ -124,6 +124,15 @@ enum evttype {
     EVT_HB
 };
 
+enum cksm {
+    CKSM_NO = 0,
+    CKSM_UNDEF,
+    CKSM_STRICT,
+    CKSM_LOOSE,
+    CKSM_ADD,
+    CKSM_ADDONLY
+};
+
 struct senblk {
     size_t len;
     unsigned long src;
@@ -325,7 +334,7 @@ struct evtmgr *init_evtmgr();
 void proc_events(void *);
 sfilter_t *addfilter(sfilter_t *);
 int senfilter(senblk_t *,sfilter_t *);
-int checkcksum(senblk_t *);
+int checkcksum(senblk_t *, enum cksm);
 unsigned long namelookup(char *);
 char *idlookup(unsigned long);
 int insertname(char *, unsigned long);

@@ -52,7 +52,7 @@ $set 2 kplex.c
 48 "Onbekende log faciliteit \'%s\' gespecificeerd\n"
 49 "Verkeerd debug niveau \"%s\": Moet zijn 0-9\n"
 50 "Verkeerde waarde voor uitstel periode: %s\n"
-51 "Controlegetal optie moet \'yes\' of \'no\' zijn\n"
+51 "Controlegetal optie moet een van \'yes\',\'no\',\'strict\',\'loose\',\'add\' of \'addonly\' zijn\n"
 52 "Strikte optie moet \'yes\' of \'no\' zijn\n"
 53 "Toevoegen van failover %s mislukt\n"
 54 "Waarschuwing: Niet herkende optie \'%s\'\n"

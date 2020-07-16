@@ -52,7 +52,7 @@ $set 2 kplex.c
 48 "Unknown log facility \'%s\' specified\n"
 49 "Bad debug level \"%s\": Must be 0-9\n"
 50 "Bad value for graceperiod: %s\n"
-51 "Checksum option must be either \'yes\' or \'no\'\n"
+51 "Checksum option must be one of: \'yes\',\'no\',\'strict\',\'loose\',\'add\',\'addonly\'\n"
 52 "Strict option must be either \'yes\' or \'no\'\n"
 53 "Failed to add failover %s\n"
 54 "Warning: Unrecognized option \'%s\'\n"
