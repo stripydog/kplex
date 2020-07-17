@@ -117,6 +117,7 @@ $set 4 fileio.c
 33 "output"
 34 "Could not create queue"
 35 "Interface duplication failed"
+36 "Failed to expand filenamex"
 $set 5 gofree.c
 1 "IP_DROP_MEMBERSHIP failed"
 2 "%s: connected to MFD %s at %s port %s"
