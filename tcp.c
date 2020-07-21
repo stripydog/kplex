@@ -497,16 +497,15 @@ void write_tcp(struct iface *ifa)
 void delayed_connect(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    int ret,err;
+    int ret;
 
     pthread_mutex_lock(&ift->shared->t_mutex);
 
     ret = do_connect(ifa);
-    err = errno;
 
     pthread_mutex_unlock(&ift->shared->t_mutex);
 
-    if (err < 0) {
+    if (ret < 0) {
         iface_thread_exit(errno);
     }
 
