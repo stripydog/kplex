@@ -175,6 +175,7 @@ int do_connect(iface_t *ifa)
             logerr(0,catgets(cat,10,25,
                     "Lookup failed for host %s/service %s: %s"),
                     ift->shared->host,ift->shared->port,gai_strerror(err));
+            freeaddrinfo(abase);
             if ((err != EAI_AGAIN && err != EAI_FAIL)) {
                return(-1);
             }
@@ -191,8 +192,8 @@ int do_connect(iface_t *ifa)
                 break;
             close(ift->fd);
         }
+        freeaddrinfo(abase);
         if (aptr) {
-            freeaddrinfo(abase);
             ++done;
             if (ift->shared->nodelay &&
                     (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
