@@ -192,6 +192,7 @@ ssize_t read_file(iface_t *ifa, char *buf)
  * Args: buffer to load the result to, size of buffer, keyword to expand
  * Returns: Number of characters in expanded buffer (excluding terminating
  * NULL) on success, 0 on failure or if expansion too large for buffer.
+ */
 size_t replace_keyword(char *buf, size_t max, const char * const keyword)
 {
     struct utsname u;
@@ -234,7 +235,9 @@ char *expand_filename(const char * const format)
             break;
         }
         if (buf[i] == '%') {
-            if (*fptr == '{') {
+            if (*fptr == '%') {
+                buf[++i] = *fptr++;
+            } else if (*fptr == '{') {
                 for (j=0,++fptr;j<KEYWORD_MAX;j++) {
                     if ((keyword[j] = *fptr++) == '}') {
                         keyword[j] = '\0';
