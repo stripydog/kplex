@@ -5,7 +5,7 @@ After=syslog.target network.target audit.service
 
 [Service]
 Type=forking
-PIDFILE=/var/run/kplex.pid
+PIDFile=/var/run/kplex.pid
 ExecStart=/usr/bin/kplex -p /var/run/kplex.pid -o mode=background
 KillMode=process
 
