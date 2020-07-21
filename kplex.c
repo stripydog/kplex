@@ -1401,7 +1401,7 @@ nl_catd init_i8n()
                     (strlen(lang) >= 2) && ( lang[2] == '\0' ||
                     (lang[2] == '_') || (lang[2] == '.'))) { 
                 if ((tmpbuf = (char *) malloc(strlen(SHAREDIR) +
-                        strlen("/locale//kplex.cat" + (size_t) 6))) == NULL) {
+                        strlen("/locale//kplex.cat") + (size_t) 6)) == NULL) {
                     perror("Failed to allocate memory");
                     exit(1);
                 }
@@ -1868,7 +1868,8 @@ int main(int argc, char ** argv)
 
     DEBUG(3,catgets(cat,2,30,"Removing pid file"));
 
-    unlink(pidfile);
+    if (pidfile)
+        unlink(pidfile);
 
     DEBUG(1,catgets(cat,2,31,"Kplex exiting"));
 
