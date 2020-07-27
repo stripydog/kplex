@@ -6,7 +6,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Do not verify certificates
-git config --global http.sslverify false
+RUN git config --global http.sslverify false
 
 # make install needs this directory
 RUN mkdir /usr/share/man/man1
@@ -22,3 +22,7 @@ RUN rm -r /app
 
 # Entrypoint
 CMD /usr/bin/kplex -o mode=background
+
+
+# Build image with:
+# docker build -t kplex .
