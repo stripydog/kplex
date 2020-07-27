@@ -60,6 +60,18 @@ in this README file for how to create a confiuration file.  A quick start
 example which bridges between a tcp server and a 38400 baud serial-to-usb
 connection is commented out in this example file.
 
+Installation with Docker
+------------------------
+You can build the docker image by cloning the repository and running `docker build -t kplex .`.
+
+Using Docker Compose
+--------------------
+Copy the `kplex.conf.ex` file to `kplex.conf` and define the default options as described in the next section. 
+
+If you have configured a TCP/UDP port you need to open this port in `docker-compose.yml` by uncomment/modify the port section.
+
+In case you are using a usb device you need to route the device to the container. Open the `docker-compose.yml`, uncomment and modify the volume pointing to `/dev`. You also need to uncomment `privileged: true` in ordeer for the container to access the `/dev` directory.
+
 Invocation:
 -----------
 
