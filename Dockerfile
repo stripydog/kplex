@@ -21,8 +21,4 @@ RUN make install /app
 RUN rm -r /app
 
 # Entrypoint
-CMD /usr/bin/kplex -o mode=background
-
-
-# Build image with:
-# docker build -t kplex .
+CMD /usr/bin/kplex
