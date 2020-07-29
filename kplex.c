@@ -1,7 +1,7 @@
 /* kplex: An anything to anything boat data multiplexer for Linux
  * Currently this program only supports nmea-0183 data.
  * For currently supported interfaces see kplex_mods.h
- * Copyright Keith Young 2012-2019
+ * Copyright Keith Young 2012-2020
  * For copying information, see the file COPYING distributed with this file
  */
 
@@ -26,7 +26,7 @@
 #include <locale.h>
 
 /* Macro to identify kplex Proprietary sentences */
-#define isprop(sptr) (sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
+#define isprop(sptr) ((sptr) && sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
 /* Message catalogue location passed from Makefile */
 #ifndef SHAREDIR
@@ -649,10 +649,6 @@ void *run_engine(void *info)
     for (;;) {
         sptr = next_senblk(eptr->q);
 
-        if (sptr==NULL)
-            /* Queue has been marked inactive */
-            break;
-
         if (isprop(sptr)) {
             if (process_prop(sptr,eptr)) {
                 senblk_free(sptr,eptr->q);
@@ -671,6 +667,12 @@ void *run_engine(void *info)
             }
             pthread_mutex_unlock(&eptr->lists->io_mutex);
         }
+
+        if (sptr == NULL) {
+            /* Queue has been marked inactive */
+            break;
+        }
+
         senblk_free(sptr,eptr->q);
     }
     pthread_exit(&retval);
