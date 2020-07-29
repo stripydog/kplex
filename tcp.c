@@ -661,7 +661,9 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
     link_to_initialized(newifa);
-    add_event(EVT_HB,(void *)newifa,0);
+    if (ifa->heartbeat) {
+        add_event(EVT_HB,(void *)newifa,0);
+    }
     pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
     pthread_sigmask(SIG_SETMASK,&saved,NULL);
     return(newifa);

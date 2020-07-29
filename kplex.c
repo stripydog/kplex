@@ -932,7 +932,7 @@ void iface_destroy(void *ifptr)
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
-    if (ifa->heartbeat) {
+    if (ifa->heartbeat && ifa->q) {
         stop_heartbeat(ifa);
     }
     pthread_mutex_lock(&ifa->lists->io_mutex);
@@ -1807,14 +1807,14 @@ int main(int argc, char ** argv)
                         "Name to interface translation failed"));
             }
         }
-        if (ifptr->heartbeat && ifptr->q) {
+        if (ifptr->heartbeat) {
             if (lists.eventmgr == NULL) {
                 if ((lists.eventmgr = init_evtmgr()) == NULL) {
                     logterm(errno, catgets(cat,2,57,
                             "failed to initialize event manager"));
                 }
             }
-            if (add_event(EVT_HB,(void *)ifptr,0) < 0) {
+            if (ifptr->q && add_event(EVT_HB,(void *)ifptr,0) < 0) {
                 logterm(errno, catgets(cat,2,58,
                         "failed to add interface heartbeat"));
             }
