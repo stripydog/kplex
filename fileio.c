@@ -306,6 +306,11 @@ iface_t *init_file (iface_t *ifa)
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename")) {
+            if (ifc->filename != NULL) {
+                logerr(0,catgets(cat,4,37,
+                        "Filename specified more than once"));
+                return(NULL);
+            }
             if (strcmp(opt->val,"-"))
                 if ((ifc->filename=strdup(opt->val)) == NULL) {
                     logerr(errno,catgets(cat,4,13,
@@ -313,6 +318,11 @@ iface_t *init_file (iface_t *ifa)
                     return(NULL);
                 }
         } else if (!strcasecmp(opt->var,"filenamex")) {
+            if (ifc->filename != NULL) {
+                logerr(0,catgets(cat,4,37,
+                        "Filename specified more than once"));
+                return(NULL);
+            }
             if (strcmp(opt->val,"-"))
                 if ((ifc->filename=expand_filename(opt->val)) == NULL) {
                     logerr(errno,catgets(cat,4,36,
