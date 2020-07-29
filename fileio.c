@@ -199,7 +199,7 @@ size_t replace_keyword(char *buf, size_t max, const char * const keyword)
     size_t n;
 
     if (!strcmp(keyword,"host")) {
-        if (uname (&u) != 0) {
+        if (uname (&u) < 0) {
             return(0);
         }
         if ((n = strlen(u.nodename)) >= max) {
@@ -230,14 +230,12 @@ char *expand_filename(const char * const format)
 
     errno = 0;
 
-    for (i=0,fptr=format;;) {
+    for (i=0,fptr=format;i <= FNAME_MAX;) {
         if ((buf[i] = *fptr++) == '\0') {
             break;
         }
         if (buf[i] == '%') {
-            if (*fptr == '%') {
-                buf[++i] = *fptr++;
-            } else if (*fptr == '{') {
+            if (*fptr == '{') {
                 for (j=0,++fptr;j<KEYWORD_MAX;j++) {
                     if ((keyword[j] = *fptr++) == '}') {
                         keyword[j] = '\0';
@@ -254,11 +252,18 @@ char *expand_filename(const char * const format)
                 i += ret;
                 continue;
             } else {
+                if (*fptr == '%') {
+                    buf[++i] = *fptr++;
+                }
                 dotime=1;
             }
         }
         ++i;
     }
+    if ( i > FNAME_MAX ) {
+        return NULL;
+    }
+
     ret = i;
     if (dotime) {
         (void) gettimeofday(&tv,NULL);
