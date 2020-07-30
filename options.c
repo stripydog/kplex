@@ -1,6 +1,6 @@
 /* options.c.
- * This flie is part of kplex.
- * Copyright Keith Young 2012-2019
+ * This file is part of kplex.
+ * Copyright Keith Young 2012-2020
  * For copying information see the file COPYING distributed with this software
  *
  * This file deals with option parsing, either from a file or the command
@@ -356,10 +356,14 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
         } else
             return(-2);
     } else if (!strcmp(var,"checksum")) {
-        if (!strcasecmp(val,"yes")) {
-            ifp->checksum=1;
+        if (!strcasecmp(val,"yes") || !strcasecmp(val,"strict")) {
+            ifp->checksum=CKSM_STRICT;
         } else if (!strcasecmp(val,"no")) {
-            ifp->checksum=0;
+            ifp->checksum=CKSM_NO;
+        } else if (!strcasecmp(val,"add")) {
+            ifp->checksum=CKSM_ADD;
+        } else if (!strcasecmp(val,"addonly")) {
+            ifp->checksum=CKSM_ADDONLY;
         } else
             return(-2);
     } else if (!strcmp(var,"timestamp")) {
@@ -419,6 +423,12 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
         for (ptr=ifp->name;*val;)
                 *ptr++= *val++;
         *ptr='\0';
+    } else if (!strcasecmp(var,"heartbeat")) {
+        long tlong;
+        errno = 0;
+        if ((ifp->heartbeat=tlong=strtol(val,NULL,0)) == 0 || (errno) || tlong != ifp->heartbeat) {
+            return(-2);
+        }
     } else
         return(1);
 
@@ -450,7 +460,7 @@ iface_t *get_config(FILE *fp, unsigned int *line, enum itype type)
     }
     memset((void *) ifp,0,sizeof(iface_t));
     ifp->direction = BOTH;
-    ifp->checksum=-1;
+    ifp->checksum=CKSM_UNDEF;
     ifp->strict=-1;
     ifp->type=type;
 
@@ -529,7 +539,7 @@ iface_t *parse_file(char *fname)
             ifg->flags=0;
             ifg->logto=LOG_DAEMON;
             ifp->info = (void *)ifg;
-            if (ifp->checksum <0)
+            if (ifp->checksum == CKSM_UNDEF)
                 ifp->checksum = 0;
 
             ifp->next=list;
@@ -561,7 +571,7 @@ iface_t *parse_arg(char *arg)
     memset((void *) ifp,0,sizeof(iface_t));
 
     ifp->direction = BOTH;
-    ifp->checksum=-1;
+    ifp->checksum=CKSM_UNDEF;
     ifp->strict=-1;
 
     for(ptr=arg;*ptr && *ptr != ':';ptr++);

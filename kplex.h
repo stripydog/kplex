@@ -1,6 +1,6 @@
 /* kplex.h
  * This file is part of kplex
- * Copyright Keith Young 2012-2019
+ * Copyright Keith Young 2012-2020
  * For copying information see the file COPYING distributed with this software
  */
 #ifndef KPLEX_H
@@ -120,6 +120,19 @@ enum udptype {
     UDP_MULTICAST
 };
 
+enum evttype {
+    EVT_HB
+};
+
+enum cksm {
+    CKSM_NO = 0,
+    CKSM_UNDEF,
+    CKSM_STRICT,
+    CKSM_LOOSE,
+    CKSM_ADD,
+    CKSM_ADDONLY
+};
+
 struct senblk {
     size_t len;
     unsigned long src;
@@ -153,6 +166,27 @@ struct iolists {
     struct iface *inputs;
     struct iface *dead;
     struct iface *engine;
+    struct evtmgr  *eventmgr;
+};
+
+struct evtmgr;
+
+typedef struct evt {
+    enum evttype type;
+    void *info;
+    int (*handle)(void *);
+    time_t period;
+    struct timespec when;
+    struct evt *next;
+    struct evtmgr *mgr;
+} evt_t;
+
+struct evtmgr {
+    pthread_t tid;
+    pthread_mutex_t evt_mutex;
+    pthread_cond_t evt_cond;
+    int active;
+    evt_t *events;
 };
 
 struct kopts {
@@ -205,6 +239,7 @@ struct iface {
     pthread_t tid;
     unsigned long id;
     char *name;
+    time_t heartbeat;
     struct iface *pair;
     enum iotype direction;
     enum itype type;
@@ -293,9 +328,13 @@ void logdebug(int, char *,...);
 void logwarn(char *,...);
 void loginfo(char *,...);
 void initlog(int);
+int add_event(enum evttype,void *,time_t);
+void stop_heartbeat(iface_t *);
+struct evtmgr *init_evtmgr();
+void proc_events(void *);
 sfilter_t *addfilter(sfilter_t *);
 int senfilter(senblk_t *,sfilter_t *);
-int checkcksum(senblk_t *);
+int checkcksum(senblk_t *, enum cksm);
 unsigned long namelookup(char *);
 char *idlookup(unsigned long);
 int insertname(char *, unsigned long);
@@ -303,6 +342,7 @@ void freenames(void);
 int cmdlineopt(struct kopts **, char *);
 void do_read(iface_t *);
 size_t gettag(iface_t *, char *, senblk_t *);
+int add_checksum(senblk_t *);
 
 extern struct iftypedef iftypes[];
 

@@ -69,21 +69,75 @@ int mysleep(time_t sleepytime)
 
 /*
  * Check an NMEA 0183 checksum
- * Args: pointer to struct senblk
- * Returns: 0 if checksum matches checksum field, -1 otherwise
- *
+ * Args: pointer to struct senblk, checking/addition required
+ * Returns: 0 if check/addition "successful", -1 otherwise
  */
-int checkcksum (senblk_t *sptr)
+int checkcksum (senblk_t *sptr, enum cksm how)
 {
     int cksm=0;
     int rcvdcksum=0,i,end;
     char *ptr;
 
-    for(i=0,end=sptr->len-6,ptr=sptr->data+1; i < end; ptr++,i++)
-            cksm ^= *ptr;
+    /* Shouldn't be necessary but for safety... */
+    switch (how) {
+        case CKSM_STRICT:
+        case CKSM_LOOSE:
+        case CKSM_ADD:
+        case CKSM_ADDONLY:
+            break;
+        default:
+            return(0);
+            break;
+    }
 
-    if (*ptr != '*')
-        return -1;
+    for(i=0,end=sptr->len-6,ptr=sptr->data+1; i < end;i++)
+            cksm ^= *ptr++;
+
+    if (*ptr != '*') {
+    /* There's no checksum or it's incomplete */
+        if (how == CKSM_STRICT) {
+            return(-1);
+        }
+
+        for(end=sptr->len-3;i < end;i++) {
+            cksm ^= *ptr++;
+            if (*ptr == '*') {
+            /* There's an incomplete checksum */
+                if (how == CKSM_ADDONLY) {
+                /* for "addonly" we don't add but don't reject */
+                    return 0;
+                }
+                /* CKSM_LOOSE or CKSM_ADD reject bad checksums */
+                return(-1);
+            }
+        }
+
+        /* No checksum */
+        if (how == CKSM_LOOSE) {
+            return(0);
+        }
+
+        /* We can't add if the sentence is already too long */
+        if (sptr->len > SENMAX - 1) {
+            return(-1);
+        }
+
+        /* Add the checksum */
+        *ptr++ = '*';
+        *ptr++ = ((i = cksm / 16) > 9)?i + 55:i + 48;
+        *ptr++ = ((i = cksm % 16) > 9)?i + 55:i + 48;
+        *ptr++ = '\r';
+        *ptr++ = '\n';
+
+        sptr->len += 3;
+
+        return(0);
+    }
+
+    /* ADDONLY doesn't care if a checksum is wrong */
+    if (how == CKSM_ADDONLY) {
+        return(0);
+    }
 
     for (i=0,++ptr;i<2;i++,ptr++) {
         if (*ptr>47 && *ptr<58)
@@ -590,7 +644,7 @@ iface_t *get_default_global()
     ifg->flags=0;
     ifg->logto=LOG_DAEMON;
     ifp->strict=-1;
-    ifp->checksum=0;
+    ifp->checksum=CKSM_NO;
     ifp->info = (void *)ifg;
 
     return(ifp);
@@ -616,6 +670,9 @@ int process_prop(senblk_t *sptr, iface_t *eptr)
         } else
             return -1;
         break;
+    case 'I':
+        /* Informational message from another kplex instance */
+        return 1;
     case 'C':
         /* Command: None currently defined */
     case 'R':
@@ -877,6 +934,9 @@ void iface_destroy(void *ifptr)
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &set, &saved);
+    if (ifa->heartbeat && ifa->q) {
+        stop_heartbeat(ifa);
+    }
     pthread_mutex_lock(&ifa->lists->io_mutex);
     if (ifa->tid) {
         unlink_interface(ifa);
@@ -917,6 +977,9 @@ iface_t *ifdup (iface_t *ifa)
 
     if ((newif=(iface_t *) malloc(sizeof(iface_t))) == (iface_t *) NULL)
         return(NULL);
+
+    memset(newif,0,sizeof(iface_t));
+
     if (iftypes[ifa->type].ifdup_func) {
         if ((newif->info=(*iftypes[ifa->type].ifdup_func)(ifa->info)) == NULL) {
             free(newif);
@@ -942,6 +1005,7 @@ iface_t *ifdup (iface_t *ifa)
     newif->ifilter=addfilter(ifa->ifilter);
     newif->ofilter=addfilter(ifa->ofilter);
     newif->checksum=ifa->checksum;
+    newif->heartbeat = 0;
     newif->strict=ifa->strict;
     return(newif);
 }
@@ -1156,13 +1220,17 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"checksum")) {
-            if (!strcasecmp(optr->val,"yes"))
-                e_info->checksum=1;
+            if (!strcasecmp(optr->val,"yes") || !strcasecmp(optr->val,"strict"))
+                e_info->checksum=CKSM_STRICT;
             else if (!strcasecmp(optr->val,"no"))
-                e_info->checksum=0;
+                e_info->checksum=CKSM_NO;
+            else if (!strcasecmp(optr->val,"add"))
+                e_info->checksum=CKSM_ADD;
+            else if (!strcasecmp(optr->val,"addonly"))
+                e_info->checksum=CKSM_ADDONLY;
             else {
                 fprintf(stderr,"%s",catgets(cat,2,51,
-                        "Checksum option must be either \'yes\' or \'no\'\n"));
+                        "Checksum option must be one of: \'yes\',\'no\',\'strict\',\'loose\',\'add\',\'addonly\'\n"));
                 exit(1);
             }
         } else if (!strcasecmp(optr->var,"strict")) {
@@ -1321,7 +1389,7 @@ void do_read(iface_t *ifa)
                 /* If we're not checksumming OR the checksum is correct OR
                  * it's a zero length packet, the first clause is false which
                  * is true when negated...*/
-                if (!(ifa->checksum && checkcksum(&sblk) && (sblk.len > 0 )) &&
+                if (!(ifa->checksum && checkcksum(&sblk,ifa->checksum) && (sblk.len > 0 )) &&
                         senfilter(&sblk,ifa->ifilter) == 0) {
                     push_senblk(&sblk,ifa->q);
                 }
@@ -1391,7 +1459,6 @@ nl_catd init_i8n()
 {
     char * tmpbuf;
     char *lang;
-    int i;
 
     /* initialize i8n: First try NLSPATH/defaults */
     setlocale(LC_ALL,"");
@@ -1426,7 +1493,6 @@ nl_catd init_i8n()
 int main(int argc, char ** argv)
 {
     char *tmpbuf;
-    char *lang;
     pthread_t tid;
     pid_t pid;
     int pfd;
@@ -1449,7 +1515,8 @@ int main(int argc, char ** argv)
     .initialized = NULL,
     .outputs = NULL,
     .inputs = NULL,
-    .dead = NULL
+    .dead = NULL,
+    .eventmgr = NULL
     };
     struct rlimit lim;
     struct flock *fl;
@@ -1716,7 +1783,7 @@ int main(int argc, char ** argv)
             if (ifptr->direction == IN)
                 ifptr->q=engine->q;
 
-            if (ifptr->checksum <0)
+            if (ifptr->checksum == CKSM_UNDEF)
                 ifptr->checksum = engine->checksum;
             if (ifptr->strict <0) {
                 if (engine->strict >= 0) {
@@ -1736,10 +1803,24 @@ int main(int argc, char ** argv)
      * mapping so we can update references to "name" with an id
      */
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
-        if (ifptr->direction != IN && ifptr->ofilter)
-            if (name2id(ifptr->ofilter))
+        if (ifptr->direction != IN && ifptr->ofilter) {
+            if (name2id(ifptr->ofilter)) {
                 logterm(errno,catgets(cat,2,26,
                         "Name to interface translation failed"));
+            }
+        }
+        if (ifptr->heartbeat) {
+            if (lists.eventmgr == NULL) {
+                if ((lists.eventmgr = init_evtmgr()) == NULL) {
+                    logterm(errno, catgets(cat,2,57,
+                            "failed to initialize event manager"));
+                }
+            }
+            if (ifptr->q && add_event(EVT_HB,(void *)ifptr,0) < 0) {
+                logterm(errno, catgets(cat,2,58,
+                        "failed to add interface heartbeat"));
+            }
+        }
     }
 
     /* Create the key for thread local storage: in this case for a pointer to
@@ -1807,6 +1888,15 @@ int main(int argc, char ** argv)
         timetodie++;
     }
 
+    if (lists.eventmgr) {
+        if (!timetodie) {
+            if (pthread_create(&lists.eventmgr->tid,NULL,(void *)proc_events,
+                    (void *) NULL) == 0) {
+                lists.eventmgr->active=1;
+            }
+        }
+    }
+
     /* While there are remaining outputs, wait until something is added to the 
      * dead list, reap everything on the dead list and check for outputs again
      * until all the outputs have been reaped
@@ -1863,6 +1953,12 @@ int main(int argc, char ** argv)
             pthread_join(ifptr->tid,&ret);
             free(ifptr);
         }
+    }
+
+    /* Kill the event manager only after all other threads */
+    if (lists.eventmgr && lists.eventmgr->active) {
+        pthread_kill(lists.eventmgr->tid,SIGUSR1);
+        pthread_join(lists.eventmgr->tid,NULL);
     }
 
     /* For neatness... */

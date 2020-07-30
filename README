@@ -122,9 +122,17 @@ where:
             interfaces.  Defaults should be fine. This should only need to be
             increased from default in the case of a bursty high-speed input
             feeding a slow ouput.
-        "checksum": May be "yes" to enable checksumming of incoming sentences on
-            an interface or "no" to disable it. This option overrides the global
-            checksum option.
+        "checksum": Overrides the global checksum option for an interface. If
+            set to "no", no checksum checks are performed on incoming sentences.
+            If set to "yes" or "strict", incoming sentences without correct
+            checksums are discarded.  If set to "loose", sentences with
+            incorrect checksums are discarded but those without any checksum
+            are permitted. If set to "add", sentences with incorrect checksums
+            are discarded but where no checksum is present, one will be added.
+            If set to "addonly", a checksum will be added if absent but
+            sentences with incorrect checksums are accepted.  With "add" and
+            "addonly", sentences without checksums are discarded if the addition
+            of a checksum would exceed the maximum permitted sentence length.
         "strict": May be "yes" to enable strict parsing of incoming sentences on
             an interface or "no" to disable it. This option overrides the global
             strict parsing option.
@@ -170,6 +178,11 @@ where:
         is specified, failure of the interface to initialize will only cause
         kplex to exit if, as a result of it failing, kplex has no inputs or no
         outputs.
+        "heartbeat": Specifies that kplex should send a proprietary sentence
+        from the interface with a frequency specified as the option's value in
+        seconds, i.e. "heartbeat=60" will send a sentence every minute.  Other
+        instances of kplex will not further propagate these "heartbeats". This
+        option is not valid on input-only interfaces.
 
 If source identifier and timestamps are both requested for an interface, they
 are combined into a single TAG block, source identifier first, e.g.:
@@ -962,13 +975,23 @@ mode=<mode>
     <mode> is either "foreground" (the default) or "background", the former
     is the default. The latter tells kplex to detach form its controlling
     terminal and run as a daemon process.
-checksum=[yes|no]
+checksum=[yes|no|strict|loose|add|addonly]
     Where:
-    "checksum=yes" tells kplex to check the checksum all incoming nmea sentences
-    (except for interfaces where per-interface configuration overrides this).
-    Sentences which do not match their calculated checksums are discarded.  The
-    default is not to calculate checksums as it is assumed that this will be
+    "checksum=no" tells kplex to perform no checksum processing.
+    "checksum=yes" and "checksum=strict" tell kplex to discard incoming
+    sentences without a correct checksum.
+    "checksum=loose" tells kplex to discard sentences with an incorrect
+    checksum but to accept those with no checksum.
+    "checksum=add" tells kplex to discard sentences with an incorrect checksum
+    but to add one if none is present.
+    "checksum=addonly" tells kplex to add a checksum if none is present but not
+    to otherwise perform checksum checking.
+    Both "add" and "addonly" arguments cause sentences without checksums to be
+    discarded if the addition of a checksum would exceed the maximum sentence
+    length.
+    The default is not to calculate checksums as it is assumed that this will be
     done by end consumer applications.
+    This option may be overriden by the per-interface "checksum" option.
 strict=[yes|no]
     Where:
     "strict=yes" tells kplex to require all sentences received to be correctly
