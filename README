@@ -214,7 +214,7 @@ This specification covers both regular files, FIFOs and terminal i/o via
 standard input and standard output.
 
     Interface-specific options:
-        filename=<xfile>
+        filename=<file>
         filenamex=<format>
         persist=[yes|no]
         append=[yes|no]
@@ -227,12 +227,12 @@ standard input and standard output.
                 In the latter case, standard input is used for inputs, standard
                 out for outputs, and standard in and standard out for "BOTH".
                 If not specified deafults to "-".
-            <xfile> is either "-", which is treated as in the "file" case above,
-                or a format string from which a filename is constructed. The
-                format string substitues variables preceded by the "%" character
-                per the strftime(3) library call.  Additionally, format strings
-                in the format %{<keyword>} are substituted for the following
-                values of <keyword>:
+            <format> is either "-", which is treated as in the "file" case
+                above, or a format string from which a filename is constructed.
+                The format string substitues variables preceded by the "%"
+                character per the strftime(3) library call.  Additionally,
+                format strings in the format %{<keyword>} are substituted for
+                the following values of <keyword>:
                 "host": The hostname of the host on which kplex is running
             <user> is the user to set ownership of a created output file to.
             <group> is the group to set a created output file to.
