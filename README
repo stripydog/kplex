@@ -1,5 +1,5 @@
 kplex: A multiplexer for various nmea 0183 interfaces
-Copyright Keith Young 2012-2018 <stripydog7@gmail.com>
+Copyright Keith Young 2012-2020 <stripydog7@gmail.com>
 Blurb:
 Details of the GPLv3 under which this software is distributed can be found in
 the file COPYING in this directory.
@@ -215,6 +215,7 @@ standard input and standard output.
 
     Interface-specific options:
         filename=<file>
+        filenamex=<format>
         persist=[yes|no]
         append=[yes|no]
         eol=[rn|n]
@@ -226,6 +227,13 @@ standard input and standard output.
                 In the latter case, standard input is used for inputs, standard
                 out for outputs, and standard in and standard out for "BOTH".
                 If not specified deafults to "-".
+            <format> is either "-", which is treated as in the "file" case
+                above, or a format string from which a filename is constructed.
+                The format string substitues variables preceded by the "%"
+                character per the strftime(3) library call.  Additionally,
+                format strings in the format %{<keyword>} are substituted for
+                the following values of <keyword>:
+                "host": The hostname of the host on which kplex is running
             <user> is the user to set ownership of a created output file to.
             <group> is the group to set a created output file to.
             <permissions> are the file access permissions, in octal form, to set

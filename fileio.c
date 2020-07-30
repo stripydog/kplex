@@ -1,6 +1,6 @@
 /* fileio.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2016
+ * Copyright Keith Young 2012 - 2020
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for i/o from files (incl stdin/stdout)
@@ -13,6 +13,11 @@
 #include <sys/uio.h>
 #include <pwd.h>
 #include <grp.h>
+#include <sys/utsname.h>
+#include <sys/time.h>
+
+#define KEYWORD_MAX 15
+#define FNAME_MAX 255
 
 struct if_file {
     int fd;
@@ -182,6 +187,98 @@ ssize_t read_file(iface_t *ifa, char *buf)
     return nread;
 }
 
+/*
+ * replace a keyword with its expansion
+ * Args: buffer to load the result to, size of buffer, keyword to expand
+ * Returns: Number of characters in expanded buffer (excluding terminating
+ * NULL) on success, 0 on failure or if expansion too large for buffer.
+ */
+size_t replace_keyword(char *buf, size_t max, const char * const keyword)
+{
+    struct utsname u;
+    size_t n;
+
+    if (!strcmp(keyword,"host")) {
+        if (uname (&u) < 0) {
+            return(0);
+        }
+        if ((n = strlen(u.nodename)) >= max) {
+            return(0);
+        }
+        strcpy(buf,u.nodename);
+        return(n);
+    }
+
+    return(0);
+}
+
+/*
+ * Expand an extended filename string
+ * Args: format string
+ * Returns: expanded filename string on success, NULL on error
+ */
+char *expand_filename(const char * const format)
+{
+    char buf[FNAME_MAX+1],buf2[FNAME_MAX+1];
+    char keyword[KEYWORD_MAX+1];
+    const char *fptr;
+    char *filename;
+    int i,j,ret;
+    int dotime=0;
+    struct timeval tv;
+    struct tm tms;
+
+    errno = 0;
+
+    for (i=0,fptr=format;i <= FNAME_MAX;) {
+        if ((buf[i] = *fptr++) == '\0') {
+            break;
+        }
+        if (buf[i] == '%') {
+            if (*fptr == '{') {
+                for (j=0,++fptr;j<KEYWORD_MAX;j++) {
+                    if ((keyword[j] = *fptr++) == '}') {
+                        keyword[j] = '\0';
+                        break;
+                    }
+                }
+                if (j == KEYWORD_MAX) {
+                    return NULL;
+                }
+                if ((ret = replace_keyword(buf+i,sizeof(buf)-i,keyword)) == 0) {
+                    return NULL;
+                }
+
+                i += ret;
+                continue;
+            } else {
+                if (*fptr == '%') {
+                    buf[++i] = *fptr++;
+                }
+                dotime=1;
+            }
+        }
+        ++i;
+    }
+    if ( i > FNAME_MAX ) {
+        return NULL;
+    }
+
+    ret = i;
+    if (dotime) {
+        (void) gettimeofday(&tv,NULL);
+        localtime_r(&tv.tv_sec,&tms);
+        if ((ret = strftime(buf2,sizeof(buf2),buf,&tms)) == 0) {
+            return NULL;
+        }
+    }
+    if ((filename = (char *) malloc(++ret)) == NULL) {
+        return NULL;
+    }
+    strcpy(filename,(dotime)?buf2:buf);
+    return filename;
+}
+
 iface_t *init_file (iface_t *ifa)
 {
     struct if_file *ifc;
@@ -209,10 +306,27 @@ iface_t *init_file (iface_t *ifa)
 
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename")) {
+            if (ifc->filename != NULL) {
+                logerr(0,catgets(cat,4,37,
+                        "Filename specified more than once"));
+                return(NULL);
+            }
             if (strcmp(opt->val,"-"))
                 if ((ifc->filename=strdup(opt->val)) == NULL) {
                     logerr(errno,catgets(cat,4,13,
                             "Failed to duplicate argument string"));
+                    return(NULL);
+                }
+        } else if (!strcasecmp(opt->var,"filenamex")) {
+            if (ifc->filename != NULL) {
+                logerr(0,catgets(cat,4,37,
+                        "Filename specified more than once"));
+                return(NULL);
+            }
+            if (strcmp(opt->val,"-"))
+                if ((ifc->filename=expand_filename(opt->val)) == NULL) {
+                    logerr(errno,catgets(cat,4,36,
+                            "Failed to expand filenamex"));
                     return(NULL);
                 }
         } else if (!strcasecmp(opt->var,"qsize")) {
