@@ -8,9 +8,6 @@ RUN apt-get update \
 # Do not verify certificates
 RUN git config --global http.sslverify false
 
-# make install needs this directory
-RUN mkdir /usr/share/man/man1
-
 # Install kplex
 WORKDIR /app
 COPY . .
