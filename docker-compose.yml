@@ -4,7 +4,7 @@ services:
                
     kplex:
         image: kplex:latest
-        build: https://github.com/stripydog/kplex.git # ToDo: change to stripydog repo after merge
+        build: https://github.com/stripydog/kplex.git
         container_name: kplex
         restart: always       
 #        ports:
