@@ -581,7 +581,6 @@ void delayed_connect(iface_t *ifa)
 iface_t *new_tcp_conn(int fd, iface_t *ifa)
 {
     iface_t *newifa;
-    struct if_tcp *oldift=(struct if_tcp *) ifa->info;
     struct if_tcp *newift=NULL;
     pthread_t tid;
     int on=1;

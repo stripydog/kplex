@@ -370,6 +370,7 @@ int add_checksum(senblk_t *);
 xfilter_t *init_xfilter(iface_t *, char *);
 int start_xfilter(xfilter_t *);
 int *run_xfilter(xfilter_t *);
+void xf_cleanup(xfilter_t *);
 void read_input(iface_t *,ssize_t (*readfunc)(void *, char *),
         enum xfilter_type);
 extern struct iftypedef iftypes[];
