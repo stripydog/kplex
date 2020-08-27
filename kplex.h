@@ -133,18 +133,37 @@ enum cksm {
     CKSM_ADDONLY
 };
 
-struct senblk {
+enum xfilter_type {
+    XNONE = 0,
+    XIFILTER,
+    XOFILTER
+};
+
+typedef struct iface iface_t;
+typedef struct ioqueue ioqueue_t;
+typedef struct sfilter sfilter_t;
+
+typedef struct xfilter {
+    pid_t   child;
+    pthread_t read_thread;
+    pthread_t write_thread;
+    enum xfilter_type type;
+    int     infd;
+    int     outfd;
+    iface_t *parent;
+    char *name;
+    ioqueue_t *q;
+} xfilter_t;
+
+typedef struct senblk {
     size_t len;
     unsigned long src;
     struct senblk *next;
     char data[SENBUFSZ];
-};
-typedef struct senblk senblk_t;
-
-typedef struct iface iface_t;
+} senblk_t;
 
 struct ioqueue {
-    iface_t *owner;
+    char *owner;
     pthread_mutex_t    q_mutex;
     pthread_cond_t    freshmeat;
     int active;
@@ -153,6 +172,7 @@ struct ioqueue {
     senblk_t *qhead;
     senblk_t *qtail;
     senblk_t *base;
+    sfilter_t *filter;
 };
 typedef struct ioqueue ioqueue_t;
 
@@ -233,19 +253,21 @@ struct sfilter {
     sf_rule_t *rules;
 };
 
-typedef struct sfilter sfilter_t;
 
 struct iface {
     pthread_t tid;
     unsigned long id;
+    int is_server;
     char *name;
     time_t heartbeat;
     struct iface *pair;
     enum iotype direction;
     enum itype type;
+    size_t qsize;
     void *info;
     struct kopts *options;
     ioqueue_t *q;
+    ioqueue_t *q1;
     struct iface *next;
     struct iolists *lists;
     int checksum;
@@ -254,10 +276,12 @@ struct iface {
     unsigned int tagflags;
     sfilter_t *ifilter;
     sfilter_t *ofilter;
+    xfilter_t *xifilter;
+    xfilter_t *xofilter;
     void (*cleanup)(struct iface *);
     void (*read)(struct iface *);
     void (*write)(struct iface *);
-    ssize_t (*readbuf)(struct iface *,char *buf);
+    ssize_t (*readbuf)(void *,char *);
 };
 
 struct iftypedef {
@@ -300,11 +324,11 @@ void *ifdup_bcast(void *);
 void *ifdup_mcast(void *);
 void *ifdup_seatalk(void *);
 
-int init_q(iface_t *, size_t);
+ioqueue_t *init_q(size_t, sfilter_t *, char *);
 
 senblk_t *next_senblk(ioqueue_t *);
 senblk_t *last_senblk(ioqueue_t *);
-void push_senblk(senblk_t *, ioqueue_t *);
+int push_senblk(senblk_t *, ioqueue_t *);
 void senblk_free(senblk_t *, ioqueue_t *);
 void flush_queue(ioqueue_t *);
 int link_interface(iface_t *);
@@ -343,7 +367,11 @@ int cmdlineopt(struct kopts **, char *);
 void do_read(iface_t *);
 size_t gettag(iface_t *, char *, senblk_t *);
 int add_checksum(senblk_t *);
-
+xfilter_t *init_xfilter(iface_t *, char *);
+int start_xfilter(xfilter_t *);
+int *run_xfilter(xfilter_t *);
+void read_input(iface_t *,ssize_t (*readfunc)(void *, char *),
+        enum xfilter_type);
 extern struct iftypedef iftypes[];
 
 #endif /* KPLEX_H */

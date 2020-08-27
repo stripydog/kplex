@@ -10,7 +10,6 @@
  */
 
 #include "kplex.h"
-#include <signal.h>
 #include <sys/time.h>
 
 /*
@@ -121,13 +120,7 @@ void reschedule_periodic(evt_t *e)
 void proc_events(void *arg)
 {
     struct timeval tv;
-    sigset_t set;
     evt_t *teptr;
-
-    /* unblock SIGUSR1 so we can be told to shut down */
-    sigemptyset(&set);
-    sigaddset(&set,SIGUSR1);
-    pthread_sigmask(SIG_UNBLOCK,&set,NULL);
 
     pthread_mutex_lock(&mgr->evt_mutex);
 
@@ -147,9 +140,6 @@ void proc_events(void *arg)
         /* Handle next event on the queue */
         mgr->events->handle(mgr->events->info);
 
-        /* Don't want to die in the middle of lis manipulation */
-        pthread_sigmask(SIG_BLOCK,&set,NULL);
-
         /* If event is periodic, reschedule; otherwise remove */
         if (mgr->events->period) {
             reschedule_periodic(mgr->events);
@@ -158,7 +148,6 @@ void proc_events(void *arg)
             mgr->events = teptr->next;
             free(teptr);
         }
-        pthread_sigmask(SIG_UNBLOCK,&set,NULL);
     }
 }
 
@@ -170,12 +159,7 @@ void proc_events(void *arg)
 void stop_heartbeat(iface_t *ifp)
 {
     evt_t **epptr,*eptr;
-    sigset_t set,oset;
 
-    sigemptyset(&set);
-    sigaddset(&set,SIGUSR1);
-
-    pthread_sigmask(SIG_BLOCK,&set,&oset);
     pthread_mutex_lock(&mgr->evt_mutex);
 
     /* Search the list for any heartbeats associated with ifp and remove them
@@ -191,7 +175,6 @@ void stop_heartbeat(iface_t *ifp)
         epptr=&(*epptr)->next;
     }
     pthread_mutex_unlock(&mgr->evt_mutex);
-    pthread_sigmask(SIG_SETMASK,&oset,NULL);
 }
 
 /*
@@ -204,10 +187,6 @@ int add_event(enum evttype etype, void *info, time_t when)
 {
     struct timeval tv;
     evt_t *new_evt,**evtpptr;
-    sigset_t set,oset;
-
-    sigemptyset(&set);
-    sigaddset(&set,SIGUSR1);
 
     if ((new_evt = (evt_t *) malloc(sizeof(evt_t))) == NULL) {
         logerr(errno,catgets(cat,12,2,"Failed to add new event"));
@@ -232,8 +211,6 @@ int add_event(enum evttype etype, void *info, time_t when)
         return(-1);
     }
 
-    pthread_sigmask(SIG_BLOCK,&set,&oset);
-
     pthread_mutex_lock(&mgr->evt_mutex);
     for (evtpptr=&mgr->events;(*evtpptr);evtpptr=&(*evtpptr)->next) {
         if ((*evtpptr)->when.tv_sec > when) {
@@ -245,6 +222,5 @@ int add_event(enum evttype etype, void *info, time_t when)
     *evtpptr=new_evt;
     pthread_mutex_unlock(&mgr->evt_mutex);
     pthread_cond_broadcast(&mgr->evt_cond);
-    pthread_sigmask(SIG_SETMASK,&oset,NULL);
     return(0);
 }

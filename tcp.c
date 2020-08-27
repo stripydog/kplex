@@ -9,7 +9,6 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-#include <signal.h>
 #include <sys/uio.h>
 #include <arpa/inet.h>
 
@@ -316,8 +315,9 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     return(nread);
 }
 
-ssize_t read_tcp(struct iface *ifa, char *buf)
+ssize_t read_tcp(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *)ptr;
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     ssize_t nread;
     int done=0;
@@ -427,11 +427,6 @@ void write_tcp(struct iface *ifa)
 
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
-
-        if (senfilter(sptr,ifa->ofilter)) {
-            senblk_free(sptr,ifa->q);
-            continue;
-        }
 
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
@@ -590,7 +585,6 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     struct if_tcp *newift=NULL;
     pthread_t tid;
     int on=1;
-    sigset_t set,saved;
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL) {
         logerr(errno,catgets(cat,10,28,"malloc failed for %s"),ifa->name);
@@ -601,7 +595,8 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
 
     if (((newift = (struct if_tcp *) malloc(sizeof(struct if_tcp))) == NULL) ||
             ((ifa->direction != IN) &&
-            (init_q(newifa, oldift->qsize) < 0))) {
+            ((newifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name))
+            == NULL))) {
         logerr(errno,catgets(cat,10,29,"Failed to set up new connection"));
         if (newifa && newifa->q)
             free(newifa->q);
@@ -618,6 +613,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
     newifa->direction=ifa->direction;
     newifa->type=TCP;
     newifa->name=ifa->name;
+    newifa->qsize=ifa->qsize;
     newifa->info=newift;
     newifa->heartbeat = ifa->heartbeat;
     newifa->cleanup=cleanup_tcp;
@@ -637,6 +633,7 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
             logerr(errno,catgets(cat,10,20,
                     "Could not disable Nagle on new tcp connection"));
+        newifa->q1 = newifa->q;
 
         if (ifa->direction == BOTH) {
             if ((newifa->next=ifdup(newifa)) == NULL) {
@@ -649,23 +646,15 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
             newifa->direction=OUT;
             newifa->pair->direction=IN;
             newifa->pair->q=ifa->lists->engine->q;
-            sigemptyset(&set);
-            sigaddset(&set, SIGUSR1);
-            pthread_sigmask(SIG_BLOCK, &set, &saved);
             link_to_initialized(newifa->pair);
             pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa->pair);
-            pthread_sigmask(SIG_SETMASK,&saved,NULL);
         }
     }
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
     link_to_initialized(newifa);
     if (ifa->heartbeat) {
         add_event(EVT_HB,(void *)newifa,0);
     }
     pthread_create(&tid,NULL,(void *)start_interface,(void *) newifa);
-    pthread_sigmask(SIG_SETMASK,&saved,NULL);
     return(newifa);
 }
 
@@ -843,7 +832,6 @@ iface_t *init_tcp(iface_t *ifa)
         return(NULL);
     }
 
-    ift->qsize=DEFQSIZE;
     ift->shared=NULL;
     preamble=NULL;
 
@@ -874,12 +862,6 @@ iface_t *init_tcp(iface_t *ifa)
             }
             if (*eptr != '\0') {
                 logerr(0,catgets(cat,10,41,"Invalid retry value %s"),opt->val);
-                return(NULL);
-            }
-        } else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(ift->qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,10,42,"Invalid queue size specified: %s"),
-                        opt->val);
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"keepalive")) {
@@ -1151,7 +1133,7 @@ iface_t *init_tcp(iface_t *ifa)
 
     if ((*conntype == 'c') && (ifa->direction != IN)) {
     /* This is an unusual but supported combination */
-        if (init_q(ifa, ift->qsize) < 0) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,10,30,"Interface duplication failed"));
             return(NULL);
         }
@@ -1190,6 +1172,7 @@ iface_t *init_tcp(iface_t *ifa)
             ifa->pair->direction=IN;
         }
     } else {
+        ifa->is_server=1;
         ifa->write=tcp_server;
         ifa->read=tcp_server;
     }

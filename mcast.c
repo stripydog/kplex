@@ -1,6 +1,6 @@
 /* mcast.c
  * This file is part of kplex
- * Copyright Keith Young 2013 - 2019
+ * Copyright Keith Young 2013 - 2020
  * For copying information see the file COPYING distributed with this software
  *
  * Multicast interfaces
@@ -11,8 +11,6 @@
 #include <net/if.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
-
-#define DEFMCASTQSIZE 64
 
 struct if_mcast {
     int fd;
@@ -98,11 +96,6 @@ void write_mcast(struct iface *ifa)
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
 
-        if (senfilter(sptr,ifa->ofilter)) {
-            senblk_free(sptr,ifa->q);
-            continue;
-        }
-
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
                 logerr(errno,catgets(cat,6,5,
@@ -129,8 +122,9 @@ void write_mcast(struct iface *ifa)
     iface_thread_exit(errno);
 }
 
-ssize_t read_mcast(iface_t *ifa, char *buf)
+ssize_t read_mcast(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *) ptr;
     struct if_mcast *ifm = (struct if_mcast *) ifa->info;
     struct sockaddr_storage src;
     socklen_t sz = (socklen_t) sizeof(src);
@@ -179,7 +173,6 @@ struct iface *init_mcast(struct iface *ifa)
     struct ifaddrs *ifap,*ifp;
     char *host,*service;
     struct servent *svent;
-    size_t qsize = DEFMCASTQSIZE;
     struct kopts *opt;
     int ifindex,iffound=0;
     int linklocal=0;
@@ -199,14 +192,8 @@ struct iface *init_mcast(struct iface *ifa)
             ifname=opt->val;
         else if (!strcasecmp(opt->var,"group"))
             host=opt->val;
-        else if (!strcasecmp(opt->var,"port"))
+        else if (!strcasecmp(opt->var,"port")) {
             service=opt->val;
-        else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,6,7,"Invalid queue size specified: %s"),
-                        opt->val);
-                return(NULL);
-            }
         } else  {
             logerr(0,catgets(cat,6,8,"Unknown interface option %s"),opt->var);
             return(NULL);
@@ -430,7 +417,7 @@ struct iface *init_mcast(struct iface *ifa)
 
     if (ifa->direction != IN) {
         /* write queue initialization */
-        if (init_q(ifa, qsize) < 0) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,6,26,"Could not create queue"));
             return(NULL);
         }

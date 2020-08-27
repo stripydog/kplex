@@ -1,6 +1,6 @@
 /* serial.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2019
+ * Copyright Keith Young 2012 - 2020
  * For copying information see the file COPYING distributed with this software
  *
  * This file contains code for serial-like interfaces. This currently
@@ -22,8 +22,6 @@
 #endif
 #include <grp.h>
 #include <pwd.h>
-
-#define DEFSERIALQSIZE 32
 
 struct if_serial {
     int fd;
@@ -203,8 +201,9 @@ int ttysetup(int dev,struct termios *otermios_p, int baud, int st)
  * Args: pointer to interface structure pointer to buffer
  * Returns: Number of bytes read, zero on error or end of file
  */
-ssize_t read_serial(struct iface *ifa, char *buf)
+ssize_t read_serial(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *) ptr;
     struct if_serial *ifs = (struct if_serial *) ifa->info;
     return(read(ifs->fd,buf,BUFSIZ));
 }
@@ -238,11 +237,6 @@ void write_serial(struct iface *ifa)
          * down. Time to die */
         if ((senblk_p = next_senblk(ifa->q)) == NULL)
             break;
-
-        if (senfilter(senblk_p,ifa->ofilter)) {
-            senblk_free(senblk_p,ifa->q);
-            continue;
-        }
 
         if (ifa->tagflags) {
             if ((tlen = gettag(ifa,tbuf,senblk_p)) == 0) {
@@ -298,7 +292,6 @@ struct iface *init_serial (struct iface *ifa)
                    explicit baud rate specification */
     int ret;
     struct kopts *opt;
-    int qsize=DEFSERIALQSIZE;
     
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename"))
@@ -331,7 +324,7 @@ struct iface *init_serial (struct iface *ifa)
                 return(NULL);
             }
         } else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
+            if (!(ifa->qsize=atoi(opt->val))) {
                 logerr(0,catgets(cat,8,16,"Invalid queue size specified: %s"),
                         opt->val);
                 return(NULL);
@@ -378,12 +371,13 @@ struct iface *init_serial (struct iface *ifa)
     ifa->cleanup=cleanup_serial;
 
     /* Allocate queue for outbound interfaces */
-    if (ifa->direction != IN)
-        if (init_q(ifa, qsize) < 0) {
+    if (ifa->direction != IN) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,8,24,"Could not create queue"));
             cleanup_serial(ifa);
             return(NULL);
         }
+    }
 
     /* Link in serial specific data */
     ifa->info=(void *)ifs;
@@ -413,7 +407,6 @@ struct iface *init_pty (struct iface *ifa)
     int baud=B4800,slavefd;
     int ret;
     struct kopts *opt;
-    int qsize=DEFSERIALQSIZE;
     char *master="s";
     char *cp;
     mode_t perm = 0;
@@ -483,12 +476,6 @@ struct iface *init_pty (struct iface *ifa)
                 logerr(0,catgets(cat,8,15,
                         "Unsupported baud rate \'%s\' in interface specification '\%s\'"),
                         opt->val,devname);
-                return(NULL);
-            }
-        } else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,8,31,"Invalid queue size specified: %s"),
-                        opt->val);
                 return(NULL);
             }
         } else {
@@ -594,12 +581,13 @@ struct iface *init_pty (struct iface *ifa)
     ifa->write=write_serial;
     ifa->cleanup=cleanup_serial;
 
-    if (ifa->direction != IN)
-        if (init_q(ifa, qsize) < 0) {
+    if (ifa->direction != IN) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,8,24,"Could not create queue"));
             cleanup_serial(ifa);
             return(NULL);
         }
+    }
 
     ifa->info=(void *)ifs;
     if (ifa->direction == BOTH) {

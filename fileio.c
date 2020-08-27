@@ -22,7 +22,6 @@
 struct if_file {
     int fd;
     char *filename;
-    size_t qsize;
 };
 
 /*
@@ -73,11 +72,6 @@ void write_file(iface_t *ifa)
                     "Failed to open FIFO %s for writing\n"),ifc->filename);
             iface_thread_exit(errno);
         }
-        if (init_q(ifa,ifc->qsize) < 0) {
-            logerr(errno,catgets(cat,4,2,"Could not create queue for FIFO %s"),
-                    ifc->filename);
-            iface_thread_exit(errno);
-        }
         DEBUG(3,catgets(cat,4,3,"%s opened FIFO %s for writing"),ifa->name,
                 ifc->filename);
     }
@@ -97,11 +91,6 @@ void write_file(iface_t *ifa)
     for(;;)  {
         if ((sptr = next_senblk(ifa->q)) == NULL) {
             break;
-        }
-
-        if (senfilter(sptr,ifa->ofilter)) {
-            senblk_free(sptr,ifa->q);
-            continue;
         }
 
         if (!usereturn) {
@@ -162,11 +151,11 @@ void file_read_wrapper(iface_t *ifa)
     do_read(ifa);
 }
 
-ssize_t read_file(iface_t *ifa, char *buf)
+ssize_t read_file(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *)ptr;
     struct if_file *ifc = (struct if_file *) ifa->info;
     ssize_t nread;
-
     for(;;) {
         if ((nread=read(ifc->fd,buf,BUFSIZ)) <=0) {
             if (!flag_test(ifa,F_PERSIST))
@@ -300,7 +289,6 @@ iface_t *init_file (iface_t *ifa)
 
     memset ((void *)ifc,0,sizeof(struct if_file));
 
-    ifc->qsize=DEFQSIZE;
     ifc->fd=-1;
     ifa->info = (void *) ifc;
 
@@ -329,12 +317,6 @@ iface_t *init_file (iface_t *ifa)
                             "Failed to expand filenamex"));
                     return(NULL);
                 }
-        } else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(ifc->qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,4,14,"Invalid queue size specified: %s"),
-                        opt->val);
-                return(NULL);
-            }
         } else if (!strcasecmp(opt->var,"append")) {
             if (!strcasecmp(opt->val,"yes")) {
                 append++;
@@ -488,8 +470,8 @@ iface_t *init_file (iface_t *ifa)
     ifa->readbuf=read_file;
     ifa->cleanup=cleanup_file;
 
-    if (ifa->direction != IN && ifc->fd >= 0)
-        if (init_q(ifa, ifc->qsize)< 0) {
+    if (ifa->direction != IN)
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(0,catgets(cat,4,34,"Could not create queue"));
             cleanup_file(ifa);
             return(NULL);

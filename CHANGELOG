@@ -3,6 +3,7 @@ v1.5:
 * Added filenamex option for file interfaces
 * Added heartbeat option
 * Expanded checksumming options
+* Added xfilter support
 
 v1.4: January 6th 2019
 * Fixed crash with checksumming enabled

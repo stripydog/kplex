@@ -18,7 +18,6 @@ struct tcp_preamble {
 
 struct if_tcp {
     int fd;
-    size_t qsize;
     struct if_tcp_shared *shared;
 };
 
@@ -46,6 +45,6 @@ struct if_tcp_shared {
 
 void cleanup_tcp(iface_t *ifa);
 void write_tcp(struct iface *ifa);
-ssize_t read_tcp(struct iface *ifa, char *buf);
+ssize_t read_tcp(void *ifa, char *buf);
 
 

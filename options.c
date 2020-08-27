@@ -230,6 +230,26 @@ struct kopts *add_option(char *var, char *val)
     return(vv);
 }
 
+xfilter_t *addxfilter(iface_t *ifp, enum xfilter_type type, char *prog)
+{
+    xfilter_t *xf;
+
+    if ((xf = malloc(sizeof(xfilter_t))) == NULL) {
+        return NULL;
+    }
+
+    memset((void *)xf,0,sizeof(xfilter_t));
+
+    if ((xf->name = strdup(prog)) == NULL) {
+        return NULL;
+    }
+
+    xf->parent = ifp;
+    xf->type = type;
+
+    return xf;
+}
+
 sfilter_t *getfilter(char *fstring)
 {
     char *sptr;
@@ -348,6 +368,24 @@ int add_common_opt(char *var, char *val,iface_t *ifp)
             free_filter(ifp->ofilter);
         if ((ifp->ofilter=getfilter(val)) == NULL)
         return(-2);
+    } else if (!strcmp(var,"xifilter")) {
+        if ((ifp->xifilter)) {
+            free(ifp->xifilter->name);
+            free(ifp->xifilter);
+        }
+        if ((ifp->xifilter=addxfilter(ifp,XIFILTER,val)) == NULL)
+        return(-2);
+    } else if (!strcmp(var,"xofilter")) {
+        if ((ifp->xofilter)) {
+            free(ifp->xofilter->name);
+            free(ifp->xofilter);
+        }
+        if ((ifp->xofilter=addxfilter(ifp,XOFILTER,val)) == NULL)
+        return(-2);
+    } else if (!strcmp(var,"qsize")) {
+        if (!(ifp->qsize=atoi(val))) {
+            return(-2);
+        }
     } else if (!strcmp(var,"strict")) {
         if (!strcasecmp(val,"yes")) {
             ifp->strict=1;
@@ -461,6 +499,7 @@ iface_t *get_config(FILE *fp, unsigned int *line, enum itype type)
     memset((void *) ifp,0,sizeof(iface_t));
     ifp->direction = BOTH;
     ifp->checksum=CKSM_UNDEF;
+    ifp->qsize = DEFQSIZE;
     ifp->strict=-1;
     ifp->type=type;
 
@@ -573,6 +612,7 @@ iface_t *parse_arg(char *arg)
     ifp->direction = BOTH;
     ifp->checksum=CKSM_UNDEF;
     ifp->strict=-1;
+    ifp->qsize=DEFQSIZE;
 
     for(ptr=arg;*ptr && *ptr != ':';ptr++);
     if (!*ptr) {

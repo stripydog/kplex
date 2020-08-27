@@ -1,6 +1,6 @@
 /* gofree.c
  * This file is part of kplex
- * Copyright Keith Young 2013-2019
+ * Copyright Keith Young 2013-2020
  *  For copying information see the file COPYING distributed with this softwar`
  */
 
@@ -64,7 +64,6 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     iface_t *newifa;
     struct if_tcp *newift;
     int err;
-    sigset_t set,saved;
     char addrbuf[INET_ADDRSTRLEN];   /* for debug info */
 
     if ((newifa = malloc(sizeof(iface_t))) == NULL)
@@ -101,16 +100,9 @@ iface_t *new_gofree_conn(pthread_t *tid, struct gofree_mfd *mfd, iface_t *ifa)
     /* Copying ofilter is unnecessary as gofree is input only */
     newifa->checksum=ifa->checksum;
     newifa->q=ifa->lists->engine->q;
-    /* disable SIGUSR1 before launching new thread to avoid it being killed
-     * while holding a mutex */
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
     link_to_initialized(newifa);
     pthread_create(tid,NULL,(void *)start_interface,(void *) newifa);
 
-    /* reset sig mask and re-enable SIGUSR1 */
-    pthread_sigmask(SIG_SETMASK,&saved,NULL);
     DEBUG(3,catgets(cat,5,2,"%s: connected to MFD %s at %s port %s"),ifa->name,
             mfd->name,inet_ntop(AF_INET,(const void *)&mfd->addr.sin_addr,
             addrbuf,INET_ADDRSTRLEN),ntohs(mfd->addr.sin_port));
@@ -386,12 +378,13 @@ void gofree_server (iface_t *ifa)
                 }
             }
             if (!newconn) {
+                /* Very dubious. Re-write required */
                 if (pthread_kill(tid,0) == 0)
                     /* Connection thread is still running */
                     continue;
             } else {
                 /* Connected but new connection required */
-                pthread_kill(tid,SIGUSR1);
+                pthread_cancel(tid);
                 pthread_join(tid,NULL);
             }
         }

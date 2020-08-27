@@ -41,16 +41,6 @@ time_t graceperiod=3;   /* Grace period for unsent data before shutdown (secs)*/
 int debuglevel=0;       /* debug off by default */
 nl_catd cat;            /* i8n catalogue */
 
-/* Signal handler for SIGUSR1 used by interface threads.  Note that this is
- * highly dubious: pthread_exit() is not async safe.  No associated problems
- * reported so far and if they do occur they should occur on exit, but this
- * will be changed in the next release
- */
-void terminate(int sig)
-{
-    pthread_exit((void *)&sig);
-}
-
 /* Sleep function not relying on SIGALRM for thread safety
  * Unnecessary on many platforms but here to minimise portability issues
  * Could do this with nanosleep() or select()
@@ -407,12 +397,7 @@ int addfailover(sfilter_t **head,char *spec)
  */
 void iface_thread_exit(int ret)
 {
-    sigset_t set;
-
-    sigemptyset(&set);
-    sigaddset(&set,SIGUSR1);
-    pthread_sigmask(SIG_BLOCK,&set,NULL);
-
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,NULL);
     pthread_exit((void *)&ret);
 }
 
@@ -421,20 +406,21 @@ void iface_thread_exit(int ret)
  *  Args: iface_t to add queue to, size of queue (in senblk structures)
  *  Returns: 0 on success, -1 on failure
  */
-int init_q(iface_t *ifa, size_t size)
+ioqueue_t *init_q(size_t size, sfilter_t *filter, char *owner)
 {
     ioqueue_t *newq;
     senblk_t *sptr;
     int    i;
+
     if ((newq=(ioqueue_t *)malloc(sizeof(ioqueue_t))) == NULL)
-        return(-1);
+        return(NULL);
+
     if ((newq->base=(senblk_t *)calloc(size,sizeof(senblk_t))) ==NULL) {
         i=errno;
         free(newq);
         errno=i;
-        return(-1);
+        return(NULL);
     }
-
     /* "base" always points to the allocated memory so that we can free() it.
      * All senblks initially allocated to the free list
      */
@@ -447,14 +433,14 @@ int init_q(iface_t *ifa, size_t size)
     sptr->next = NULL;
 
     newq->qhead = newq->qtail = NULL;
-    newq->owner=ifa;
+    newq->owner = owner;
+    newq->filter = filter;
 
     pthread_mutex_init(&newq->q_mutex,NULL);
     pthread_cond_init(&newq->freshmeat,NULL);
 
     newq->active=1;
-    ifa->q=newq;
-    return(0);
+    return(newq);
 }
 
 /*
@@ -474,13 +460,18 @@ senblk_t *senblk_copy(senblk_t *dptr,senblk_t *sptr)
 /*
  * Add an senblk to an ioqueue
  * Args: Pointer to senblk and Pointer to queue it is to be added to
- * Returns: None
+ * Returns: 0 on success, -1 on error.
  */
-void push_senblk(senblk_t *sptr, ioqueue_t *q)
+int push_senblk(senblk_t *sptr, ioqueue_t *q)
 {
     senblk_t *tptr;
 
     pthread_mutex_lock(&q->q_mutex);
+
+    if (q == NULL || q->active == 0) {
+        pthread_mutex_unlock(&q->q_mutex);
+        return -1;
+    }
 
     if (sptr == NULL) {
         /* NULL senblk pointer is magic "off" switch for a queue */
@@ -498,7 +489,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
             if (q->drops < 0)
                 q->drops++;
             DEBUG(4,catgets(cat,2,33,"Dropped senblk q=%s"),
-                    (q->owner->name)?q->owner->name:
+                    (q->owner)?q->owner:
                     catgets(cat,2,34,"(unknown)"));
         }
     
@@ -520,6 +511,7 @@ void push_senblk(senblk_t *sptr, ioqueue_t *q)
     }
     pthread_cond_broadcast(&q->freshmeat);
     pthread_mutex_unlock(&q->q_mutex);
+    return 0;
 }
 
 /*
@@ -645,6 +637,7 @@ iface_t *get_default_global()
     ifg->logto=LOG_DAEMON;
     ifp->strict=-1;
     ifp->checksum=CKSM_NO;
+    ifp->qsize = DEFQSIZE;
     ifp->info = (void *)ifg;
 
     return(ifp);
@@ -717,9 +710,12 @@ void *run_engine(void *info)
             pthread_mutex_lock(&eptr->lists->io_mutex);
             /* Traverse list of outputs and push a copy of senblk to each */
             for (optr=eptr->lists->outputs;optr;optr=optr->next) {
-                if ((optr->q) && ((!sptr) ||
+                if ((optr->q1) && ((!sptr) ||
                         ((sptr->src != optr->id) || (flag_test(optr,F_LOOPBACK))))) {
-                    push_senblk(sptr,optr->q);
+                    if (optr->q1->filter == NULL ||
+                            senfilter(sptr,optr->q1->filter)) {
+                        push_senblk(sptr,optr->q1);
+                    }
                 }
             }
             pthread_mutex_unlock(&eptr->lists->io_mutex);
@@ -740,23 +736,20 @@ void *run_engine(void *info)
  * depending on direction
  * Args: Pointer to interface structure (cast to void *)
  * Returns: Nothing
- * We should come into this with SIGUSR1 blocked
  */
 void start_interface(void *ptr)
 {
     iface_t *ifa = (iface_t *)ptr;
     iface_t **lptr;
     iface_t **iptr;
-    sigset_t set;
 
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,NULL);
 
     pthread_mutex_lock(&ifa->lists->io_mutex);
     ifa->tid = pthread_self();
 
     if (pthread_setspecific(ifkey,ptr)) {
-        perror(catgets(cat,2,35,"Falied to set key"));
+        perror(catgets(cat,2,35,"Failed to set key"));
         exit(1);
     }
 
@@ -790,7 +783,20 @@ void start_interface(void *ptr)
             pthread_cond_wait(&ifa->lists->init_cond,&ifa->lists->io_mutex);
 
     pthread_mutex_unlock(&ifa->lists->io_mutex);
-    pthread_sigmask(SIG_UNBLOCK,&set,NULL);
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
+
+    if (ifa->xifilter) {
+        if (start_xfilter(ifa->xifilter) < 0) {
+            pthread_exit((void *) &errno);
+        }
+    }
+
+    if (ifa->xofilter) {
+        if (start_xfilter(ifa->xofilter) < 0) {
+            pthread_exit((void *) &errno);
+        }
+    }
+
     if (ifa->direction == IN) {
         ifa->read(ifa);
     } else
@@ -822,10 +828,18 @@ int link_to_initialized(iface_t *ifa)
  * Side Effects: Cleanup routines invoked, de-coupled from any pair, all data
  * other than the main interface structure is freed
  * Because of dealing with the pair, the io_mutex should be locked before
- * involing this routine
+ * invoking this routine
  */
 void free_if_data(iface_t *ifa)
 {
+    if (ifa->xifilter) {
+        xf_cleanup(ifa->xifilter);
+    }
+
+    if (ifa->xofilter) {
+        xf_cleanup(ifa->xofilter);
+    }
+
     if ((ifa->direction == OUT) && ifa->q) {
         /* output interfaces have queues which need freeing */
         free(ifa->q->base);
@@ -850,7 +864,7 @@ void free_if_data(iface_t *ifa)
             pthread_mutex_unlock(&ifa->pair->q->q_mutex);
         } else {
             if (ifa->pair->tid)
-                pthread_kill(ifa->pair->tid,SIGUSR1);
+                pthread_cancel(ifa->pair->tid);
             else
                 ifa->pair->direction = NONE;
         }
@@ -924,16 +938,14 @@ int unlink_interface(iface_t *ifa)
 void iface_destroy(void *ifptr)
 {
     iface_t *ifa = (iface_t *) ifptr;
+    int cstate;
 
     DEBUG(3,catgets(cat,2,37,"Cleaning up data for exiting %s %s %s id %x"),
             (ifa->direction == IN)?catgets(cat,2,38,"input"):
             catgets(cat,2,39,"output"),(ifa->id & IDMINORBITS)?
             catgets(cat,2,40,"connection"):catgets(cat,2,41,"interface"),
             ifa->name,ifa->id);
-    sigset_t set,saved;
-    sigemptyset(&set);
-    sigaddset(&set, SIGUSR1);
-    pthread_sigmask(SIG_BLOCK, &set, &saved);
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&cstate);
     if (ifa->heartbeat && ifa->q) {
         stop_heartbeat(ifa);
     }
@@ -946,7 +958,7 @@ void iface_destroy(void *ifptr)
         free_if_data(ifa);
 
     pthread_mutex_unlock(&ifa->lists->io_mutex);
-    pthread_sigmask(SIG_SETMASK,&saved,NULL);
+    (void) pthread_setcancelstate(cstate,NULL);
 }
 
 /*
@@ -1004,9 +1016,15 @@ iface_t *ifdup (iface_t *ifa)
     newif->options=NULL;
     newif->ifilter=addfilter(ifa->ifilter);
     newif->ofilter=addfilter(ifa->ofilter);
+    if ((ifa->xifilter)) {
+        newif->xifilter=ifa->xifilter;
+        ifa->xifilter=NULL;
+        newif->xifilter->parent=newif;
+    }
     newif->checksum=ifa->checksum;
     newif->heartbeat = 0;
     newif->strict=ifa->strict;
+    newif->qsize=ifa->qsize;
     return(newif);
 }
 
@@ -1171,7 +1189,6 @@ int name2id(sfilter_t *filter)
 int proc_engine_options(iface_t *e_info,struct kopts *options)
 {
     struct kopts *optr;
-    size_t qsize=DEFQSIZE;
     struct if_engine *ifg = (struct if_engine *) e_info->info;
 
     if (e_info->options) {
@@ -1183,7 +1200,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
 
     for (optr=e_info->options;optr;optr=optr->next) {
         if (!strcasecmp(optr->var,"qsize")) {
-            if(!(qsize = atoi(optr->val))) {
+            if(!(e_info->qsize = atoi(optr->val))) {
                 fprintf(stderr,catgets(cat,2,46,"Invalid queue size: %s\n"),
                         optr->val);
                 exit(1);
@@ -1255,8 +1272,7 @@ int proc_engine_options(iface_t *e_info,struct kopts *options)
             exit(0);
         }
     }
-
-    if (init_q(e_info, qsize) < 0) {
+    if ((e_info->q = init_q(e_info->qsize,NULL,"engine")) == NULL) {
         perror(catgets(cat,2,55,"failed to initiate queue"));
         exit(1);
     }
@@ -1317,11 +1333,8 @@ size_t gettag(iface_t *ifa, char *buf, senblk_t *sptr)
     return(len);
 }
 
-/* generic read routine
- * Args: Interface Pointer
- * Returns: nothing
- */ 
-void do_read(iface_t *ifa)
+void read_input(iface_t *ifa, ssize_t (*readfunc)(void *, char *),
+        enum xfilter_type is_xfilter)
 {
     senblk_t sblk;
     char buf[BUFSIZ];
@@ -1331,10 +1344,24 @@ void do_read(iface_t *ifa)
     enum sstate senstate;
     int nocr=flag_test(ifa,F_NOCR)?1:0;
     int loose = (ifa->strict)?0:1;
+    void *obj;
+    ioqueue_t *q;
+
     sblk.src=ifa->id;
     senstate=SEN_NODATA;
 
-    while ((nread=(*ifa->readbuf)(ifa,buf)) > 0) {
+    if (is_xfilter) {
+        obj = (void *) ((is_xfilter == XIFILTER)?ifa->xifilter:ifa->xofilter);
+        q = ifa->q;
+    } else {
+        obj = (void *) ifa;
+        if ((ifa->xifilter)) {
+            q = ifa->xifilter->q;
+        } else {
+            q = ifa->q;
+        }
+    }
+    while ((nread=(readfunc)(obj,buf)) > 0) {
         for(bptr=buf,eptr=buf+nread;bptr<eptr;bptr++) {
             switch (*bptr) {
             case '$':
@@ -1389,9 +1416,11 @@ void do_read(iface_t *ifa)
                 /* If we're not checksumming OR the checksum is correct OR
                  * it's a zero length packet, the first clause is false which
                  * is true when negated...*/
-                if (!(ifa->checksum && checkcksum(&sblk,ifa->checksum) && (sblk.len > 0 )) &&
-                        senfilter(&sblk,ifa->ifilter) == 0) {
-                    push_senblk(&sblk,ifa->q);
+                if (!(ifa->checksum && checkcksum(&sblk,ifa->checksum) &&
+                        (sblk.len > 0 ))) {
+                    if ((is_xfilter) || senfilter(&sblk,ifa->ifilter) == 0) {
+                        push_senblk(&sblk,q);
+                    }
                 }
                 senstate=SEN_NODATA;
                 continue;
@@ -1413,7 +1442,24 @@ void do_read(iface_t *ifa)
             *ptr++=*bptr;
         }
     }
+    if (is_xfilter) {
+        return;
+    }
+
     iface_thread_exit(errno);
+}
+
+/* generic read routine
+ * Args: Interface Pointer
+ * Returns: nothing
+ */
+void do_read(iface_t *ifa)
+{
+    /* After addition of xfilters this is now just a wrapper around
+     * read_input
+     */
+
+    read_input(ifa,ifa->readbuf,XNONE);
 }
 
 /* Make an interface name based on file type and index
@@ -1522,7 +1568,7 @@ int main(int argc, char ** argv)
     struct flock *fl;
     int gotinputs=0;
     int rcvdsig;
-    struct sigaction sa;
+    int status;
 
     (void) init_i8n();
 
@@ -1758,7 +1804,6 @@ int main(int argc, char ** argv)
                     "Failed to associate interface name and id"));
 
         ifptr->lists = &lists;
-
         if ((rptr=(*iftypes[ifptr->type].init_func)(ifptr)) == NULL) {
             logerr(0,catgets(cat,2,24,"Failed to initialize Interface %s"),
                     (ifptr->name)?ifptr->name:catgets(cat,2,25,"(unnamed)"));
@@ -1780,9 +1825,6 @@ int main(int argc, char ** argv)
          * interfaces where the initialisation routine has expanded them to an
          * IN/OUT pair.
          */
-            if (ifptr->direction == IN)
-                ifptr->q=engine->q;
-
             if (ifptr->checksum == CKSM_UNDEF)
                 ifptr->checksum = engine->checksum;
             if (ifptr->strict <0) {
@@ -1809,6 +1851,34 @@ int main(int argc, char ** argv)
                         "Name to interface translation failed"));
             }
         }
+        if ((!ifptr->is_server)) {
+            if (ifptr->direction == IN) {
+                ifptr->q = ifptr->lists->engine->q;
+                if ((ifptr->xifilter)) {
+                    if ((ifptr->xifilter->q =
+                            init_q(ifptr->qsize,NULL,ifptr->xifilter->name))
+                            == NULL) {
+                        logterm(errno,catgets(cat,2,59,
+                                "Failed to create queue"));
+                        }
+                    ifptr->q1 = ifptr->xifilter->q;
+                } else {
+                    ifptr->q1 = ifptr->lists->engine->q;
+                }
+            } else {
+                if ((ifptr->xofilter)) {
+                    if ((ifptr->xofilter->q =
+                            init_q(ifptr->qsize,NULL,ifptr->xofilter->name))
+                            == NULL) {
+                        logterm(errno,catgets(cat,2,59,
+                                "Failed to create queue"));
+                    }
+                    ifptr->q1 = ifptr->xofilter->q;
+                } else {
+                    ifptr->q1 = ifptr->q;
+                }
+            }
+        }
         if (ifptr->heartbeat) {
             if (lists.eventmgr == NULL) {
                 if ((lists.eventmgr = init_evtmgr()) == NULL) {
@@ -1816,7 +1886,7 @@ int main(int argc, char ** argv)
                             "failed to initialize event manager"));
                 }
             }
-            if (ifptr->q && add_event(EVT_HB,(void *)ifptr,0) < 0) {
+            if ((!ifptr->is_server) && add_event(EVT_HB,(void *)ifptr,0) < 0) {
                 logterm(errno, catgets(cat,2,58,
                         "failed to add interface heartbeat"));
             }
@@ -1850,20 +1920,14 @@ int main(int argc, char ** argv)
     reaper=pthread_self();
 
     sigemptyset(&set);
-    sigemptyset(&sa.sa_mask);
-    sa.sa_handler=terminate;
-    sa.sa_flags=0;
-    sigaction(SIGUSR1,&sa,NULL);
-    sigaddset(&set,SIGUSR1);
     sigaddset(&set,SIGUSR2);
     sigaddset(&set,SIGALRM);
     sigaddset(&set,SIGTERM);
     sigaddset(&set,SIGINT);
+    sigaddset(&set,SIGCHLD);
     pthread_sigmask(SIG_BLOCK, &set, NULL);
-    sigdelset(&set,SIGUSR1);
     signal(SIGPIPE,SIG_IGN);
     pthread_create(&tid,NULL,run_engine,(void *) engine);
-
     pthread_mutex_lock(&lists.io_mutex);
     for (ifptr=lists.initialized;ifptr;ifptr=ifptr->next) {
         /* Check we've got at least one input */
@@ -1917,6 +1981,27 @@ int main(int argc, char ** argv)
             rcvdsig = 0;
         }
 
+        if (rcvdsig == SIGCHLD) {
+            pid = wait(&status);
+            for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
+                if (ifptr->xifilter && ifptr->xifilter->child == pid) {
+                    break;
+                }
+            }
+            if (ifptr) {
+                for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
+                    if (ifptr->xofilter && ifptr->xofilter->child == pid) {
+                        break;
+                    }
+                }
+            }
+
+            if (ifptr) {
+                (void) pthread_cancel(ifptr->tid);
+            }
+            continue;
+        }
+
         if ((timetodie > 0) || ( lists.outputs == NULL && (timetodie == 0)) ||
                 rcvdsig == SIGTERM || rcvdsig == SIGINT) {
             timetodie=-1;
@@ -1927,12 +2012,21 @@ int main(int argc, char ** argv)
             signal(SIGINT,SIG_IGN);
             sigdelset(&set,SIGTERM);
             sigdelset(&set,SIGINT);
+
+            /* Make engine queue inactive, turning off outputs */
+            pthread_mutex_lock(&engine->q->q_mutex);
+            engine->q->active=0;
+            pthread_cond_broadcast(&engine->q->freshmeat);
+            pthread_mutex_unlock(&engine->q->q_mutex);
+
+            /* kill inputs */
             for (ifptr=lists.inputs;ifptr;ifptr=ifptr->next) {
-                pthread_kill(ifptr->tid,SIGUSR1);
+                pthread_cancel(ifptr->tid);
             }
             for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
-                if (ifptr->q == NULL)
-                    pthread_kill(ifptr->tid,SIGUSR1);
+                if (ifptr->q == NULL) {
+                    pthread_cancel(ifptr->tid);
+                }
             }
             /* Set up the graceperiod alarm */
             if (graceperiod)
@@ -1944,8 +2038,9 @@ int main(int argc, char ** argv)
             if (graceperiod == 0)
                 graceperiod=1;
             for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
-                if (ifptr->q)
-                    pthread_kill(ifptr->tid,SIGUSR1);
+                if (ifptr->q) {
+                    pthread_cancel(ifptr->tid);
+                }
             }
         }
         for (ifptr=lists.dead;ifptr;ifptr=lists.dead) {
@@ -1957,7 +2052,7 @@ int main(int argc, char ** argv)
 
     /* Kill the event manager only after all other threads */
     if (lists.eventmgr && lists.eventmgr->active) {
-        pthread_kill(lists.eventmgr->tid,SIGUSR1);
+        pthread_cancel(lists.eventmgr->tid);
         pthread_join(lists.eventmgr->tid,NULL);
     }
 

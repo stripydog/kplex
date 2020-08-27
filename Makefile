@@ -25,7 +25,7 @@ SHAREDIR=$(PREFIX)/share/kplex
 LANGS=$(shell ls msg)
 LOCALES=$(LANGS:%=%.cat)
 
-objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o events.o
+objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o events.o xfilter.o
 
 all: version kplex
 

@@ -1,6 +1,6 @@
 /* udp.c
  * This file is part of kplex
- * Copyright Keith Young 2015 - 2019
+ * Copyright Keith Young 2015 - 2020
  * For copying information see the file COPYING distributed with this software
  *
  * UDP interfaces
@@ -224,11 +224,6 @@ void write_udp(struct iface *ifa)
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
 
-        if (senfilter(sptr,ifa->ofilter)) {
-            senblk_free(sptr,ifa->q);
-            continue;
-        }
-
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
                 logerr(errno,catgets(cat,11,4,"%s: Disabing tag output"),
@@ -260,8 +255,9 @@ void write_udp(struct iface *ifa)
     iface_thread_exit(errno);
 }
 
-ssize_t read_udp(iface_t *ifa, char *buf)
+ssize_t read_udp(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *) ptr;
     struct if_udp *ifu = (struct if_udp *) ifa->info;
     struct sockaddr_storage src;
     ssize_t nread;
@@ -332,7 +328,6 @@ struct iface *init_udp(struct iface *ifa)
     struct ifaddrs *ifap=NULL,*ifp;
     char *address,*service,*ifname,*eptr;
     struct servent *svent;
-    size_t qsize = DEFQSIZE;
     struct kopts *opt;
     int coalesce=0;
     int ifindex,iffound=0;
@@ -372,12 +367,6 @@ struct iface *init_udp(struct iface *ifa)
             else
                 logerr(0,catgets(cat,11,6,
                         "Unrecognized value for coalesce: %s"),opt->val);
-        } else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,11,7,"Invalid queue size specified: %s"),
-                        opt->val);
-                return(NULL);
-            }
         } else if (!strcasecmp(opt->var,"type")) {
             if (!strcasecmp(opt->val,"unicast"))
                 ifu->type = UDP_UNICAST;
@@ -761,7 +750,7 @@ struct iface *init_udp(struct iface *ifa)
         }
 
         /* write queue initialization */
-        if (init_q(ifa, qsize) < 0) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,11,31,"Could not create queue"));
             return(NULL);
         }

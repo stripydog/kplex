@@ -1,6 +1,6 @@
 /* bcast.c
  * This file is part of kplex
- * Copyright Keith Young 2012 - 2019
+ * Copyright Keith Young 2012 - 2020
  * For copying information see the file COPYING distributed with this software
  *
  * This is hideous and proves what an abomination IPv4 broadcast is.
@@ -20,8 +20,6 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <arpa/inet.h>
-
-#define DEFBCASTQSIZE 64
 
 /* structures for list of (local outbound) addresses to ignore when receiving */
 
@@ -138,11 +136,6 @@ void write_bcast(struct iface *ifa)
         if ((sptr = next_senblk(ifa->q)) == NULL)
             break;
 
-        if (senfilter(sptr,ifa->ofilter)) {
-            senblk_free(sptr,ifa->q);
-            continue;
-        }
-
         if (ifa->tagflags)
             if ((iov[0].iov_len = gettag(ifa,iov[0].iov_base,sptr)) == 0) {
                 logerr(errno,catgets(cat,3,4,
@@ -170,8 +163,9 @@ void write_bcast(struct iface *ifa)
     iface_thread_exit(errno);
 }
 
-ssize_t read_bcast(struct iface *ifa, char *buf)
+ssize_t read_bcast(void *ptr, char *buf)
 {
+    iface_t *ifa = (iface_t *) ptr;
     struct if_bcast *ifb=(struct if_bcast *) ifa->info;
     struct sockaddr_in src;
     struct ignore_addr *igp;
@@ -219,7 +213,6 @@ struct iface *init_bcast(struct iface *ifa)
     static struct ifaddrs *ifap;
     struct ifaddrs *ifp=NULL;
     struct ignore_addr **igpp,*newig;
-    size_t qsize = DEFBCASTQSIZE;
     struct kopts *opt;
     
     if ((ifb=malloc(sizeof(struct if_bcast))) == NULL) {
@@ -251,13 +244,8 @@ struct iface *init_bcast(struct iface *ifa)
             if (((port=atoi(opt->val)) <= 0) || (port > 65535)) {
                 logerr(0,catgets(cat,3,8,"port %s out of range"),opt->val);
                 return(NULL);
-            } else
+            } else {
                 port=htons(port);
-        }  else if (!strcasecmp(opt->var,"qsize")) {
-            if (!(qsize=atoi(opt->val))) {
-                logerr(0,catgets(cat,3,9,"Invalid queue size specified: %s"),
-                        opt->val);
-                return(NULL);
             }
         } else  {
             logerr(0,catgets(cat,3,10,"Unknown interface option %s"),opt->var);
@@ -397,7 +385,7 @@ struct iface *init_bcast(struct iface *ifa)
 #endif
 
         /* write queue initialization */
-        if (init_q(ifa,qsize) < 0) {
+        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
             logerr(errno,catgets(cat,3,20,"Could not create queue"));
             return(NULL);
         }
