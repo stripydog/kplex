@@ -12,6 +12,9 @@
 void xf_thread_exit(xfilter_t *xf,int ret)
 {
     (void) kill(xf->child,SIGTERM);
+    if (xf->type == XOFILTER) {
+        push_senblk(NULL,xf->parent->q);
+    };        
     pthread_exit((void *)&ret);
 }
 

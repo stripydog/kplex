@@ -465,11 +465,14 @@ senblk_t *senblk_copy(senblk_t *dptr,senblk_t *sptr)
 int push_senblk(senblk_t *sptr, ioqueue_t *q)
 {
     senblk_t *tptr;
+    int state;
 
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&state);
     pthread_mutex_lock(&q->q_mutex);
 
     if (q == NULL || q->active == 0) {
         pthread_mutex_unlock(&q->q_mutex);
+        (void) pthread_setcancelstate(state,NULL);
         return -1;
     }
 
@@ -511,6 +514,7 @@ int push_senblk(senblk_t *sptr, ioqueue_t *q)
     }
     pthread_cond_broadcast(&q->freshmeat);
     pthread_mutex_unlock(&q->q_mutex);
+    (void) pthread_setcancelstate(state,NULL);
     return 0;
 }
 
@@ -524,13 +528,16 @@ int push_senblk(senblk_t *sptr, ioqueue_t *q)
 senblk_t *next_senblk(ioqueue_t *q)
 {
     senblk_t *tptr;
-
+    int state;
+  
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&state);
     pthread_mutex_lock(&q->q_mutex);
     while ((tptr = q->qhead) == NULL) {
         /* No data available for reading */
         if (!q->active) {
             /* Return NULL if the queue has been shut down */
             pthread_mutex_unlock(&q->q_mutex);
+            (void) pthread_setcancelstate(state,NULL);
             return ((senblk_t *)NULL);
         }
         /* Wait until something is available */
@@ -542,6 +549,7 @@ senblk_t *next_senblk(ioqueue_t *q)
     if ((q->qhead=tptr->next) == NULL)
         q->qtail=NULL;
     pthread_mutex_unlock(&q->q_mutex);
+    (void) pthread_setcancelstate(state,NULL);
     return(tptr);
 }
 
@@ -555,7 +563,9 @@ senblk_t *next_senblk(ioqueue_t *q)
 senblk_t *last_senblk(ioqueue_t *q)
 {
     senblk_t *tptr,*nptr;
+    int state;
 
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&state);
     pthread_mutex_lock(&q->q_mutex);
     /* Move all but last senblk on the queue to the free list */
     if ((tptr=q->qhead) != NULL) {
@@ -571,6 +581,7 @@ senblk_t *last_senblk(ioqueue_t *q)
         if (!q->active) {
             /* Return NULL if the queue has been shut down */
             pthread_mutex_unlock(&q->q_mutex);
+            (void) pthread_setcancelstate(state,NULL);
             return ((senblk_t *)NULL);
         }
         /* Wait until something is available */
@@ -582,6 +593,7 @@ senblk_t *last_senblk(ioqueue_t *q)
     if ((q->qhead=tptr->next) == NULL)
         q->qtail=NULL;
     pthread_mutex_unlock(&q->q_mutex);
+    (void) pthread_setcancelstate(state,NULL);
     return(tptr);
 }
 
@@ -593,6 +605,9 @@ senblk_t *last_senblk(ioqueue_t *q)
  */
 void flush_queue(ioqueue_t *q)
 {
+    int state;
+
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&state);
     pthread_mutex_lock(&q->q_mutex);
     if (q->qhead != NULL) {
         q->qtail->next = q->free;
@@ -600,6 +615,7 @@ void flush_queue(ioqueue_t *q)
         q->qhead=q->qtail=NULL;
     }
     pthread_mutex_unlock(&q->q_mutex);
+    (void) pthread_setcancelstate(state,NULL);
 }
 
 /*
@@ -610,11 +626,15 @@ void flush_queue(ioqueue_t *q)
  */
 void senblk_free(senblk_t *sptr, ioqueue_t *q)
 {
+    int state;
+
+    (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE,&state);
     pthread_mutex_lock(&q->q_mutex);
     /* Adding to head of free list is quicker than tail */
     sptr->next = q->free;
     q->free=sptr;
     pthread_mutex_unlock(&q->q_mutex);
+    (void) pthread_setcancelstate(state,NULL);
 }
 
 iface_t *get_default_global()
