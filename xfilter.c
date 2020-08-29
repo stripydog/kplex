@@ -22,6 +22,7 @@ void xf_cleanup(xfilter_t *xf)
 {
     (void) pthread_cancel(xf->read_thread);
     (void) pthread_cancel(xf->write_thread);
+    push_senblk(NULL,xf->q);
     (void) pthread_join(xf->read_thread,NULL);
     (void) pthread_join(xf->write_thread,NULL);
     kill(xf->child,SIGTERM);

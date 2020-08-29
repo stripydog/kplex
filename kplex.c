@@ -2045,7 +2045,7 @@ int main(int argc, char ** argv)
             }
             for (ifptr=lists.outputs;ifptr;ifptr=ifptr->next) {
                 if (ifptr->q == NULL) {
-                    pthread_cancel(ifptr->tid);
+                    push_senblk(NULL,ifptr->q);
                 }
             }
             /* Set up the graceperiod alarm */
