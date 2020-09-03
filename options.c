@@ -145,7 +145,7 @@ int get_interface_section(FILE *fp, unsigned int *line, enum itype *type)
  */
 int next_config(FILE *fp, unsigned int *line, char **var, char **val)
 {
-    char *ptr;
+    char *ptr,*ptr2;
     char quote;
     while ((ptr=fgets(configbuf,BUFSIZE,fp))) {
         /* discard white space */
@@ -191,9 +191,23 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
 
     for (;(*ptr == ' ') || (*ptr == '\t');ptr++);
     if (*ptr == '\'' || *ptr == '"') {
-        for (quote=*ptr++,*val=ptr;*ptr != quote; ptr++)
+        for (quote=*ptr++,*val=ptr,ptr2=ptr;*ptr != quote; ptr++,ptr2++){
             if (*ptr == '\0' || *ptr == '\n')
                 return(-1);
+            if (*ptr == '\\') {
+                switch (*(ptr+1)) {
+                    case '\\':
+                    case '"':
+                    case '\'':
+                        ++ptr;
+                    default:
+                        break;
+                };
+            }
+            if (ptr != ptr2)
+                *ptr2 = *ptr;
+        }
+        *ptr2 = '\0';
     } else {
         for (*val=ptr;*ptr != ' ' && *ptr != '\t'; ptr++)
             if (*ptr == '\n' || *ptr == '#') {
@@ -207,9 +221,9 @@ int next_config(FILE *fp, unsigned int *line, char **var, char **val)
         }
     }
     *ptr++='\0';
-    for (;*ptr == ' ' || *ptr == '\t';ptr++)
-        if (*ptr == '\n' || *ptr == '#' || *ptr == '\0')
-            return(0);
+    for (;*ptr == ' ' || *ptr == '\t';ptr++);
+    if (*ptr == '\n' || *ptr == '#' || *ptr == '\0')
+        return(0);
     return(-1);
 }
 
