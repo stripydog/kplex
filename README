@@ -79,7 +79,7 @@ in the following locations and use the first file found:
   compatibility, will not be supported in the next major release and its use is
   discouraged.
 * OS ONLY: ~/Library/Preferences/kplex.conf
-* ~/.kplex.con
+* ~/.kplex.conf
 * /etc/kplex.conf
 
 Specifying filename as "-" disables looking for the default configuration files.
@@ -791,7 +791,7 @@ kplex allows you specify two types of filter: filters specified by the
 "ifilter" or "ofilter" options simply make "pass or drop" decisions regarding a
 sentence based on the first 5 characters of the first field (after the initial
 "!" or "$").  "External filters" specified by the "xifilter" and "xofilter"
-optionsare user-supplied scripts or programs whichacan modify the data stream
+options are user-supplied scripts or programs which can modify the data stream
 in arbitrary ways.
 
 Input/Output filters
@@ -861,7 +861,7 @@ character in length.  kplex can only filter on the 5 characters following the
 "$" and thus cannot precisely filter all proprietary sentences.
 Similarly kplex cannot completely filter Query sentences which consist of "$"
 followed by the two letter talker id of the requester, the two letter talker id
-of the target talker, the character "Q", a comman and the three character
+of the target talker, the character "Q", a comma and the three character
 sentence mnemonic.  Only the 5 characters after the "$" (ie requester/target
 pair) can be filtered on.
 
@@ -918,9 +918,16 @@ on those data (drops, inserts and/or modifies sentences) and writes to standard
 output.  Writes should be line buffered and shell script writers should be
 aware that shell output to something other than a terminal is normally block
 buffered which is almost certainly not what you want.  Linux/BSD users may
-investigate tools such as "stdbuf" to facilitate line buffered output.  At this
-point the name of the filter must be only a single executable and command line
-arguments cannot be specified.
+investigate tools such as "stdbuf" to facilitate line buffered output.
+If the command to execute as an xfilter takes arguments (ie is not just the
+name of a single executable) the entire command line string must be put inside
+matching single or double quotes on the command line or in the configuration
+file. Quotes or backslashes within the command line string preceded by
+backslash characters ('\') will be passed to the xfilter command line with the
+preceding backslash removed.  Thus:
+xofilter="/usr/local/bin/myfilter do \"filtering stuff\""
+Will execute an external output filter with the command line:
+/usr/local/bin/myfilter do "filtering stuff"
 
 If standard error output is required, external filters should make their own
 arrangements for writing to a log file or syslog.
