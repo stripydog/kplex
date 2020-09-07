@@ -152,7 +152,77 @@ int establish_keepalive(struct if_tcp *ift)
 }
 
 /*
- * Reconnect a lost connection in persist mode
+ * Connect to a remote tcp server
+ * Args: Pointer to interface to connect
+ * Returns: 0 on success, -1 on failure
+ */
+int do_connect(iface_t *ifa)
+{
+    struct if_tcp *ift = (struct if_tcp *) ifa->info;
+    struct if_tcp *iftp;
+    struct addrinfo hints,*abase,*aptr;
+    int err;
+    int on=1;
+    int done = 0;
+
+    memset((void *)&hints,0,sizeof(hints));
+
+    hints.ai_family=AF_UNSPEC;
+    hints.ai_socktype=SOCK_STREAM;
+
+   while (!done) {
+        if ((err=getaddrinfo(ift->shared->host,ift->shared->port,&hints,&abase))) {
+            logerr(0,catgets(cat,10,25,
+                    "Lookup failed for host %s/service %s: %s"),
+                    ift->shared->host,ift->shared->port,gai_strerror(err));
+            freeaddrinfo(abase);
+            if ((err != EAI_AGAIN && err != EAI_FAIL)) {
+               return(-1);
+            }
+            abase=NULL;
+        }
+
+        for (aptr=abase;aptr;aptr=aptr->ai_next) {
+            if ((ift->fd=socket(aptr->ai_family,aptr->ai_socktype,aptr->ai_protocol)) < 0) {
+                logerr(errno,catgets(cat,10,7,"Failed to create socket"));
+                continue;
+            }
+
+            if (connect(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
+                break;
+            close(ift->fd);
+        }
+        freeaddrinfo(abase);
+        if (aptr) {
+            ++done;
+            if (ift->shared->nodelay &&
+                    (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
+                        < 0))
+                logerr(errno,catgets(cat,10,72,
+                        "Could not disable Nagle algorithm for tcp socket"));
+
+            (void) establish_keepalive(ift);
+            if (ifa->pair) {
+                iftp = (struct if_tcp *) ifa->pair->info;
+                iftp->fd = ift->fd;
+            }
+            /* do preamble */
+            if (ift->shared->preamble)
+                do_preamble(ift,NULL);
+
+            DEBUG(3,catgets(cat,10,26,"%s: connected"),
+                    ifa->name);
+
+        } else {
+            DEBUG(4,catgets(cat,10,27,"%s: connect failed (sleeping)"),
+
+                    ifa->name);
+            mysleep(ift->shared->retry);
+        }
+    }
+    return 0;
+}
+/* Reconnect a lost connection in persist mode
  * Args: Pointer to interface and error raised by onnection failure
  * Returns: 0 on success, -1 in the case of an unrecoverable error
  * Side effects: Connection should be re-established on exit
@@ -160,9 +230,7 @@ int establish_keepalive(struct if_tcp *ift)
 int reconnect(iface_t *ifa, int err)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    struct if_tcp *iftp;
-    int retval=0;
-    int on=1;
+    int ret;
 
     DEBUG(3,catgets(cat,10,6,"%s: Reconnecting (write) interface"),ifa->name);
 
@@ -176,57 +244,14 @@ int reconnect(iface_t *ifa, int err)
         mysleep(ift->shared->retry);
     }
 
-    /* Loop retrying until we reconnect or encounter an error which doesn't
-     * look like one we are going to recover from */
-    for(retval=0;retval == 0;) {
-        /* For most re-connections, closing and re-opening the socket is 
-         * unnecessary, but we do it here for consistency */
-        close(ift->fd);
-        if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
-                ift->shared->protocol)) < 0) {
-            logerr(errno,catgets(cat,10,7,"Failed to create socket"));
-            retval=-1;
-            break;
-        }
-        DEBUG(6,catgets(cat,10,8,"%s: Reconnecting..."),ifa->name);
-        if (connect(ift->fd,(const struct sockaddr *)
-                &ift->shared->sa,ift->shared->sa_len) == 0) {
-            break;
-        }
-
-        switch (errno) {
-        case ECONNREFUSED:
-        case EHOSTUNREACH:
-        case ENETDOWN:
-        case ENETUNREACH:
-            mysleep(ift->shared->retry);
-        case ETIMEDOUT:
-            continue;
-        default:
-            retval = -1;
-        }
-    }
-    DEBUG(3,catgets(cat,10,9,"%s: Reconnected (write) interface"),ifa->name);
-    if (retval == 0) {
-        if (ifa->pair) {
-                iftp = (struct if_tcp *) ifa->pair->info;
-                iftp->fd = ift->fd;
-            }
-        if (ift->shared->nodelay &&
-                (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
-                < 0))
-            logerr(errno,catgets(cat,10,10,
-                    "Could not disable Nagle on new tcp connection"));
-        (void) establish_keepalive(ift);
-        if (ift->shared->preamble){
-            do_preamble(ift,NULL);
-        }
+    if ((ret = do_connect(ifa)) < 0) {
+        return (ret);
     }
 
     DEBUG(7,catgets(cat,10,11,"Flushing queue interface %s"),ifa->name);
     flush_queue(ifa->q);
 
-    return(retval);
+    return(ret);
 }
 
 /*
@@ -240,10 +265,8 @@ int reconnect(iface_t *ifa, int err)
 ssize_t reread(iface_t *ifa, char *buf, int bsize)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    struct if_tcp *iftp;
     ssize_t nread;
     int fflags;
-    int on=1;
 
     DEBUG(3,catgets(cat,10,12,"%s: Reconnecting (read) interface"),ifa->name);
     /* ift->shared->t_mutex should be held by the calling routine */
@@ -263,53 +286,17 @@ ssize_t reread(iface_t *ifa, char *buf, int bsize)
     if ((nread=read(ift->fd,buf,bsize)) <= 0) {
         if (nread == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
             /* An actual error as opposed to success but would block */
-            for (nread=-1;nread!=0;) {
-                close(ift->fd);
-                if ((ift->fd=socket(ift->shared->sa.ss_family,SOCK_STREAM,
-                        ift->shared->protocol)) < 0) {
-                    logerr(errno,catgets(cat,10,15,"Failed to create socket"));
-                    nread=-1;
-                    break;
-                }
-
-                mysleep(ift->shared->retry);
-                DEBUG(7,catgets(cat,10,16,"%s: Retrying connection..."),
-                        ifa->name);
-                if ((nread=connect(ift->fd,
-                        (const struct sockaddr *)&ift->shared->sa,
-                        ift->shared->sa_len)) == 0)
-                    DEBUG(3,catgets(cat,10,17,
-                            "%s: Reconnected (read) interface"),ifa->name);
-            }
+            nread = do_connect(ifa);
         } else {
-            nread=0;
+            nread = 0;
         }
     }
+
     if (nread >= 0) {
         if (fcntl(ift->fd,F_SETFL,fflags) < 0) {
             logerr(errno,catgets(cat,10,18,
                     "Failed to make tcp socket blocking"));
             nread=-1;
-        }
-    }
-    if (nread == 0) {
-        (void) establish_keepalive(ift);
-
-        if (ifa->pair) {
-            if (!(iftp = (struct if_tcp *) ifa->pair->info)) {
-                logerr(errno,catgets(cat,10,19,
-                    "No pair information found for bi-directional tcp connection!"));
-                nread=-1;
-            } else {
-                if (ift->shared->nodelay && (setsockopt(ift->fd,IPPROTO_TCP,
-                        TCP_NODELAY,&on,sizeof(on)) < 0))
-                    logerr(errno,catgets(cat,10,20,
-                            "Could not disable Nagle on new tcp connection"));
-
-                iftp->fd = ift->fd;
-                if (iftp->shared->preamble)
-                    do_preamble(iftp,NULL);
-            }
         }
     }
 
@@ -511,74 +498,21 @@ void write_tcp(struct iface *ifa)
 void delayed_connect(iface_t *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
-    struct if_tcp *iftp;
-    struct addrinfo hints,*abase,*aptr;
-    int err;
-    int on=1;
-
-    memset((void *)&hints,0,sizeof(hints));
-
-    hints.ai_family=AF_UNSPEC;
-    hints.ai_socktype=SOCK_STREAM;
+    int ret;
 
     pthread_mutex_lock(&ift->shared->t_mutex);
 
-    while (ift->shared->host) {
-        if ((err=getaddrinfo(ift->shared->host,ift->shared->port,&hints,&abase))) {
-            if ((err != EAI_AGAIN && err != EAI_FAIL)) {
-                logerr(0,catgets(cat,10,25,
-                        "Lookup failed for host %s/service %s: %s"),
-                        ift->shared->host,ift->shared->port,gai_strerror(err));
-                iface_thread_exit(errno);
-            }
-            abase=NULL;
-        }
-
-        for (aptr=abase;aptr;aptr=aptr->ai_next) {
-            if ((ift->fd=socket(aptr->ai_family,aptr->ai_socktype,aptr->ai_protocol)) < 0)
-                continue;
-            if (connect(ift->fd,aptr->ai_addr,aptr->ai_addrlen) == 0)
-                break;
-            close(ift->fd);
-        }
-        if (aptr) {
-            ift->shared->sa_len=aptr->ai_addrlen;
-            (void) memcpy(&ift->shared->sa,aptr->ai_addr,aptr->ai_addrlen);
-            ift->shared->protocol=aptr->ai_protocol;
-            freeaddrinfo(abase);
-            free(ift->shared->host);
-            free(ift->shared->port);
-            ift->shared->host=ift->shared->port=NULL;
-            if (ift->shared->nodelay &&
-                    (setsockopt(ift->fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on))
-                        < 0))
-                logerr(errno,catgets(cat,10,10,
-                        "Could not disable Nagle on new tcp connection"));
-
-            (void) establish_keepalive(ift);
-            if (ifa->pair) {
-                iftp = (struct if_tcp *) ifa->pair->info;
-                iftp->fd = ift->fd;
-            }
-            /* do preamble */
-            if (ift->shared->preamble)
-                do_preamble(ift,NULL);
-
-            DEBUG(3,catgets(cat,10,26,"%s: Completed delayed connect"),
-                    ifa->name);
-
-        } else {
-            DEBUG(4,catgets(cat,10,27,"%s: Delayed connect failed (sleeping)"),
-                    ifa->name);
-            mysleep(ift->shared->retry);
-        }
-    }
+    ret = do_connect(ifa);
 
     pthread_mutex_unlock(&ift->shared->t_mutex);
 
-    if (ifa->direction == IN)
+    if (ret < 0) {
+        iface_thread_exit(errno);
+    }
+
+    if (ifa->direction == IN) {
         do_read(ifa);
-    else {
+    } else {
         write_tcp(ifa);
     }
 }
@@ -635,8 +569,8 @@ iface_t *new_tcp_conn(int fd, iface_t *ifa)
         newifa->q=ifa->lists->engine->q;
     else {
         if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(on)) < 0)
-            logerr(errno,catgets(cat,10,20,
-                    "Could not disable Nagle on new tcp connection"));
+            logerr(errno,catgets(cat,10,72,
+                    "Could not disable Nagle algorithm for tcp socket"));
 
         if (ifa->direction == BOTH) {
             if ((newifa->next=ifdup(newifa)) == NULL) {
@@ -1117,14 +1051,9 @@ iface_t *init_tcp(iface_t *ifa)
             logerr(0,catgets(cat,10,70,"retry value out of range"));
             return(NULL);
         }
-        if (connection) {
-            ift->shared->sa_len=connection->ai_addrlen;
-            (void) memcpy(&ift->shared->sa,connection->ai_addr,connection->ai_addrlen);
-            ift->shared->protocol=connection->ai_protocol;
-            ift->shared->host=ift->shared->port=NULL;
-        } else {
-            ift->shared->host=strdup(host);
-            ift->shared->port=strdup(port);
+        ift->shared->host=strdup(host);
+        ift->shared->port=strdup(port);
+        if (!connection) {
             DEBUG(3,catgets(cat,10,71,
                     "%s: Initial connection to %s port %s failed"),ifa->name,
                     host,port);
