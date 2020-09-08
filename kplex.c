@@ -177,7 +177,7 @@ int senfilter(senblk_t *sptr, sfilter_t *filter)
     /* inputs should have ensured all sentences ended with \r\n so if we check
      * for \r here, we only have to check for \r in the for loops, not \n too */
     if (*sptr->data == '\r')
-        return(1);
+        return(-1);
 
     for (fptr=filter->rules;fptr;fptr=fptr->next) {
         if ((fptr->src.id) && (fptr->src.id != (sptr->src&mask)))
@@ -1326,7 +1326,7 @@ void do_read(iface_t *ifa)
     senblk_t sblk;
     char buf[BUFSIZ];
     char tbuf[TAGMAX];
-    char *bptr,*eptr,*ptr;
+    char *bptr,*eptr,*ptr,*csum;
     int nread,countmax,count=0;
     enum sstate senstate;
     int nocr=flag_test(ifa,F_NOCR)?1:0;
@@ -1343,6 +1343,7 @@ void do_read(iface_t *ifa)
                 countmax=SENMAX-(nocr|loose);
                 count=1;
                 *ptr++=*bptr;
+                csum=0;
                 senstate=SEN_SENPROC;
                 continue;
             case '\\':
@@ -1386,15 +1387,30 @@ void do_read(iface_t *ifa)
                     senstate = SEN_NODATA;
                     continue;
                 }
-                /* If we're not checksumming OR the checksum is correct OR
-                 * it's a zero length packet, the first clause is false which
-                 * is true when negated...*/
-                if (!(ifa->checksum && checkcksum(&sblk,ifa->checksum) && (sblk.len > 0 )) &&
+                /* Logic below is a bit gnarly..
+                 * A sentence is passed if
+                 * - It's at least 5 characters excluding start, trailers
+                 *   and checksum
+                 * - There's only two characters after the '*' (excl CR/NL)
+                 * - Checksumming is not mandated OR checksum check succeeds
+                 * - It passes filtering
+                 * Otherwise it is discarded
+                 */
+                if (sblk.len >= ((csum)?11:8) && !(csum && (ptr - csum != 4)) &&
+                        !(ifa->checksum && checkcksum(&sblk,ifa->checksum)) &&
                         senfilter(&sblk,ifa->ifilter) == 0) {
                     push_senblk(&sblk,ifa->q);
                 }
                 senstate=SEN_NODATA;
                 continue;
+            case '*':
+                if (senstate == SEN_SENPROC) {
+                    if (csum) {
+                        senstate=SEN_NODATA;
+                        continue;
+                    }
+                    csum = ptr;
+                }
             default:
                 break;
             }
