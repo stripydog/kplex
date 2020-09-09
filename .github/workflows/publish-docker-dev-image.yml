@@ -19,5 +19,5 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
           registry: docker.pkg.github.com
           repository: remotecloud/kplex/kplex
-          tags: remotecloud/kplex:dev
+          tags: dev
 
