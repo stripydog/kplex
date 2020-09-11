@@ -60,7 +60,7 @@ install: kplex $(LOCALES)
 	test -d "$(DESTDIR)$(SHAREDIR)" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR)
 	test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR/)locale
 	test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -m 755 $(DESTDIR)$(SHAREDIR)/locale
-	for l in $(LANGS); do test -d $(DESTDIR)$(SHAREDIR)/locale/$$l || mkdir $(DESTDIR)$(SHAREDIR)/locale/$$l ; mv $${l}.cat $(DESTDIR)$(SHAREDIR)/locale/$$l/kplex.cat; done
+	for l in $(LANGS); do test -d $(DESTDIR)$(SHAREDIR)/locale/$$l || mkdir $(DESTDIR)$(SHAREDIR)/locale/$$l ; install -g $(INSTGROUP) -o root -m 644 $${l}.cat $(DESTDIR)$(SHAREDIR)/locale/$$l/kplex.cat; done
 
 uninstall:
 	-rm -f $(DESTDIR)$(BINDIR)/kplex
@@ -69,6 +69,7 @@ uninstall:
 
 clean:
 	-rm -f kplex $(objects)
+	-rm -f $(LOCALES)
 
 .PHONY: release
 release:
