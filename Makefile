@@ -65,6 +65,7 @@ install: kplex $(LOCALES)
 uninstall:
 	-rm -f $(DESTDIR)$(BINDIR)/kplex
 	-rm -f $(DESTDIR)$(MANDIR)/man1/kplex.1.gz
+	-rm -rf $(DESTDIR)$(SHAREDIR)
 
 clean:
 	-rm -f kplex $(objects)
