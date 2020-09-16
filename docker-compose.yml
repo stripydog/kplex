@@ -1,0 +1,15 @@
+version: "3.5"
+
+services:
+               
+    kplex:
+        image: kplex:latest
+        build: https://github.com/stripydog/kplex.git
+        container_name: kplex
+        restart: always       
+#        ports:
+#            - "10110:10110"
+        volumes:
+            - ./kplex.conf:/etc/kplex.conf:ro # kplex.conf needs to be created first
+#            - /dev:/dev/ttyUSB0 # filename=<device>    
+#        privileged: true            

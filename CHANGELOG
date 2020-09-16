@@ -4,6 +4,7 @@ v1.5:
 * Added heartbeat option
 * Expanded checksumming options
 * Added xfilter support
+* Re-lookup up tcp server address on each reconnection
 
 v1.4: January 6th 2019
 * Fixed crash with checksumming enabled

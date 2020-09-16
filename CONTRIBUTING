@@ -1,0 +1,39 @@
+CONTRIBUTING TO KPLEX
+=====================
+
+Suggestions/Feedback/Bug reports/Feature requests
+-------------------------------------------------
+Please post these to the kplex google group: https://groups.google.com/g/kplex
+This group is monitored more frequently than the github "issues" queue.
+
+Pull Requests
+-------------
+Kplex is not for the faint hearted.  It was complex to begin with but has subsequently
+become reminiscent of the wiring behind my instrument panel.  If your change is more
+than trivial or you're not happy with multithreaded systems programming, post a request
+to the google group instead.  The architecture and mutex use should be documented but
+currently isn't and even the author needs to spend hours reminding himself of how it works
+if making a change after several months of not looking at it.  If you want to try it
+anyway...
+* Discuss the concept first on the kplex google group.  It may overlap with an in-
+  development idea or it might be unlikely to be accepted, both of which are good to
+  know before you begin work.
+* Branch and submit pull requests for the "develop" branch, not "master".  Master is
+  usually stable between releases with feature branches taken off and merged back to
+  develop.
+* Only submit pull requests which are POSIX compliant and avoid any Linuxisms or
+  use of features which may not be widely implemented.  kplex should compile on
+  any version of MacOS, Linux or BSD from the last 5 years.
+* All messages should be internationali[sz]ed using the catgets functions and messages
+  added at minimum to the msg/en file.  Message sets correspond to files as documented
+  in msg/en.  Please consider updating message files for other languages you know, even
+  if only for the messages you added.
+* At some point I'll find a style guide I like and reference it here.  In the meantime
+  use 4 spaces to indent, an additional 4 for continuation lines and keep all line
+  lengths less 79 characters or less.
+* Don't use functions which aren't thread safe except during initialisation when kplex
+  is still single-threaded
+* Don't be afraid to ask for clarification of the purpose of any piece of code or what
+  mutexes a thread should hold to perform an operation.
+  
+Yes I know it needs completely re-writing!
