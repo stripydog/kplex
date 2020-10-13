@@ -1,4 +1,5 @@
 OS=$(shell uname -s)
+PREFIX?=/usr/local
 ifneq ("$(wildcard .git)","")
 CFLAGS?=-g -Wall
 VERSION := $(shell git describe --dirty --tags | sed 's/^v//')
@@ -17,7 +18,7 @@ ifneq ($(OS),Darwin)
 LDLIBS?=-lpthread -lutil
 endif
 endif
-PREFIX?=/usr/local
+
 DESTDIR?= ""
 BINDIR?=$(PREFIX)/bin
 SHAREDIR=$(PREFIX)/share/kplex
