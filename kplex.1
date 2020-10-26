@@ -1,4 +1,4 @@
-.TH KPLEX 8
+.TH KPLEX 1
 .SH NAME
 kplex \- multiplex marine data between multiple sources
 .SH SYNOPSIS
@@ -12,8 +12,8 @@ kplex \- multiplex marine data between multiple sources
 .IR filename ]
 .RB [ \-o
 .IR option ]
-.RI [ interface-spec...
-.R ]
+.RI [ interface-spec
+.IR ... ]
 .
 .SH DESCRIPTION
 kplex multiplexes data in NMEA-0183 format between multiple data
@@ -27,8 +27,8 @@ takes the form:
 .P
 .RS
 .IB interface-type :
-.RI [ "option"
-.R [,...] ]
+.RI [ "option" 
+[,...] ]
 .RE
 .PP
 The full range of
@@ -81,7 +81,7 @@ Pass
 .I option
 to kplex.  Options have the form
 .IR var=val .
-.R Multiple options can be specified, separated by commas.  The full list of
+Multiple options can be specified, separated by commas.  The full list of
 possible options can be found in the online documentation.
 .
 .SH SEE ALSO
