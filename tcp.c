@@ -168,17 +168,18 @@ int do_connect(iface_t *ifa)
 
     hints.ai_family=AF_UNSPEC;
     hints.ai_socktype=SOCK_STREAM;
+    abase = NULL;
 
    while (!done) {
         if ((err=getaddrinfo(ift->shared->host,ift->shared->port,&hints,&abase))) {
             logerr(0,catgets(cat,10,25,
                     "Lookup failed for host %s/service %s: %s"),
                     ift->shared->host,ift->shared->port,gai_strerror(err));
-            freeaddrinfo(abase);
-            if ((err != EAI_AGAIN && err != EAI_FAIL)) {
+            if ((err != EAI_NONAME && err != EAI_SERVICE && err != EAI_AGAIN && err != EAI_FAIL)) {
                return(-1);
             }
-            abase=NULL;
+            mysleep(ift->shared->retry);
+            continue;
         }
 
         for (aptr=abase;aptr;aptr=aptr->ai_next) {
@@ -364,6 +365,7 @@ ssize_t read_tcp(void *ptr, char *buf)
                     pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
                 }
                 if ((nread=reread(ifa,buf,BUFSIZ)) < 0) {
+                    ift->fd = -1;
                     if (ifa->pair)
                         ((struct if_tcp *)ifa->pair->info)->fd=-1;
                     logerr(errno,catgets(cat,10,22,
@@ -391,7 +393,6 @@ void write_tcp(struct iface *ifa)
 {
     struct if_tcp *ift = (struct if_tcp *) ifa->info;
     senblk_t *sptr;
-    int status=0;
     int err=0;
     int data=0;
     int cnt=1;
@@ -460,7 +461,7 @@ void write_tcp(struct iface *ifa)
                     (void) shutdown(ift->fd,SHUT_RDWR);
                     pthread_cond_wait(&ift->shared->fv,&ift->shared->t_mutex);
                 }
-                if ((status=reconnect(ifa,err)) <  0) {
+                if (reconnect(ifa,err) <  0) {
                     if (ifa->pair)
                         ((struct if_tcp *) ifa->pair->info)->fd=-1;
                     logerr(errno,catgets(cat,10,23,

@@ -1,5 +1,6 @@
 *.o
 *.swp
+*.cat
 kplex
 core
 version.h
