@@ -1,4 +1,4 @@
-kplex (1.4-1) unstable; urgency=low
+kplex (1.4-1) focal; urgency=low
 
   * Initial release. Closes: #0010
   * Fixed Makefile for Debian
