@@ -7,10 +7,15 @@
 # This special exception was added by Craig Small in version 0.37 of dh-make.
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
-
+export DH_VERBOSE=1
 %:
 	dh $@
 
 override_dh_auto_install:
 	$(MAKE) DESTDIR=$$(pwd)/debian/kplex PREFIX=/usr install
+
+	install -d $$(pwd)/debian/kplex/lib/systemd/system/
+	install -m 0644 kplex.service $$(pwd)/debian/kplex/lib/systemd/system/
+
+	install -d $$(pwd)/debian/kplex/etc/init.d/
+	install -D -g root -o root -m 755 kplex.init $$(pwd)/debian/kplex/etc/init.d/
