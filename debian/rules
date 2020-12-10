@@ -12,10 +12,12 @@ export DH_VERBOSE=1
 	dh $@
 
 override_dh_auto_install:
+	install -m 0644 kplex.service $$(pwd)/debian/
+	install -D -g root -o root -m 755 kplex.init $$(pwd)/debian
 	$(MAKE) DESTDIR=$$(pwd)/debian/kplex PREFIX=/usr install
 
-	install -d $$(pwd)/debian/kplex/lib/systemd/system/
-	install -m 0644 kplex.service $$(pwd)/debian/kplex/lib/systemd/system/
+override_dh_installinit:
+	dh_installinit --name=kplex --no-start --no-enable
 
-	install -d $$(pwd)/debian/kplex/etc/init.d/
-	install -D -g root -o root -m 755 kplex.init $$(pwd)/debian/kplex/etc/init.d/
+override_dh_installsystemd:
+	dh_installsystemd --name=kplex --no-enable -no-start
