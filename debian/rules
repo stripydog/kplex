@@ -13,7 +13,9 @@ export DH_VERBOSE=1
 
 override_dh_auto_install:
 	install -m 0644 kplex.service $$(pwd)/debian/
-	install -D -g root -o root -m 755 kplex.init $$(pwd)/debian
+	install -m 0644 -D kplex.conf.ex $$(pwd)/debian/kplex/etc/kplex.conf
+	install -m 0755 -D -g root -o root kplex.init $$(pwd)/debian
+
 	$(MAKE) DESTDIR=$$(pwd)/debian/kplex PREFIX=/usr install
 
 override_dh_installinit:
