@@ -1,6 +1,6 @@
 /* udp.c
  * This file is part of kplex
- * Copyright Keith Young 2015 - 2019
+ * Copyright Keith Young 2015 - 2021
  * For copying information see the file COPYING distributed with this software
  *
  * UDP interfaces
@@ -12,7 +12,7 @@
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 
-#define CBUFSIZ 128
+#define CBUFSIZ 810
 
 static struct ignore_addr {
     struct sockaddr_in iaddr;
@@ -24,7 +24,9 @@ static struct ignore_addr {
 
 struct coalesce {
     size_t offset;
-    size_t seqid;
+    unsigned char seqid;
+    unsigned char frag;
+    unsigned char chan;
     char buf[CBUFSIZ];
 };
 
@@ -112,10 +114,9 @@ void cleanup_udp(iface_t *ifa)
     close(ifu->fd);
 }
 
-int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
+int is_ais(char *sptr,size_t len,unsigned char  *nfrag, unsigned char  *frag,
+        unsigned char *seq, char *chan)
 {
-    int i;
-
     if (len < 13)
         return(0);
 
@@ -127,22 +128,39 @@ int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
     if ((*sptr++) != ',')
         return(0);
 
-    for (i=7,*nfrag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *nfrag = *nfrag*10+*sptr-'0';
+    if (*sptr < '0' || *sptr  > '9') {
+        return(0);
+    }
 
-    if (*sptr++ != ',' || i > len)
+    *nfrag = *sptr++ - '0';
+
+    if (*sptr++ != ',')
         return(0);
 
-    for (*frag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *frag = *frag*10+*sptr-'0';
+    if (*sptr < '0' || *sptr  > '9') {
+        return(0);
+    }
 
-    if (*sptr++ != ',' || i > len)
+    *frag = *sptr++ - '0';
+
+    if (*sptr++ != ',')
         return(0);
 
-    for (*seq=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *seq = *seq*10+*sptr-'0';
+    if (*sptr == ',') {
+        *seq = 0;
+        sptr++;
+    } else {
+        if (*sptr < '0' || *sptr  > '9') {
+            return(0);
+        }
+        *seq = *sptr++ - '0';
+        if (*sptr++ != ',') {
+            return(0);
+        }
+    }
 
-    if (*sptr != ',' || i > len)
+    *chan = *sptr++;
+    if (*sptr != ',')
         return(0);
 
     return(1);
@@ -150,31 +168,37 @@ int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
 
 int coalesce(struct if_udp *ifu, struct msghdr * mh)
 {
-    size_t nfrags,frag;
-    unsigned int seqid;
     struct iovec *ioptr = mh->msg_iov;
     int data = mh->msg_iovlen-1;
     size_t len;
     int i;
     struct coalesce *cp = ifu->coalesce;
+    unsigned char seqid,frag,nfrags;
+    char chan;
 
     if (!(is_ais(ioptr[data].iov_base,ioptr[data].iov_len,
-            &nfrags,&frag,&seqid)))
+            &nfrags,&frag,&seqid,&chan)))
         return(0);
-
-    if (nfrags == 1 && cp->offset == 0)
-        return(0);
-
-    for (i=0;i<mh->msg_iovlen;i++)
-        len=ioptr[i].iov_len;
-
-    if ((cp->offset + len) > CBUFSIZ || ((cp->offset) && (cp->seqid != seqid) &&
-            frag < nfrags)) {
-        sendto(ifu->fd,cp->buf,cp->offset,0,
-               (struct sockaddr *)&ifu->addr,ifu->asize);
-        cp->offset=0;
+    if ((!cp->offset) && nfrags == 1) {
+        return (0);
     }
-
+    for (i=0,len=0;i<mh->msg_iovlen;i++)
+        len+=ioptr[i].iov_len;
+    if (cp->offset) {
+        if ((cp->offset + len) > CBUFSIZ || cp->seqid != seqid ||
+		++(cp->frag) != frag || cp->chan != chan) {
+            sendto(ifu->fd,cp->buf,cp->offset,0,
+                    (struct sockaddr *)&ifu->addr,ifu->asize);
+            cp->offset = cp->frag = cp->seqid = 0;
+            if (frag != 1 || nfrags == 1) {
+                return(0);
+            }
+        }
+    } else {
+        cp->seqid = seqid;
+        cp->chan = chan;
+	cp->frag = 1;
+    }
     if (data) {
         memcpy(cp->buf+cp->offset,mh->msg_iov->iov_base,mh->msg_iov->iov_len);
         cp->offset += mh->msg_iov->iov_len;
@@ -186,7 +210,7 @@ int coalesce(struct if_udp *ifu, struct msghdr * mh)
     if (frag == nfrags) {
         sendto(ifu->fd,cp->buf,cp->offset,0,
                 (struct sockaddr *)&ifu->addr,ifu->asize);
-        cp->offset=0;
+        cp->offset = cp->frag = cp->seqid = 0;
     } else
         cp->seqid=seqid;
 
@@ -725,7 +749,6 @@ struct iface *init_udp(struct iface *ifa)
                     igp->iaddr.sin_addr.s_addr ==
                     ((struct sockaddr_in *)sa)->sin_addr.s_addr)
                 break;
-
         if (igp == NULL) {
             if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr)))
                     < 0) {
@@ -737,7 +760,6 @@ struct iface *init_udp(struct iface *ifa)
                     ((struct sockaddr_in *)sa)->sin_addr.s_addr;
             igp->refcnt=igp->writers=0;
             igp->next=(ignore)?ignore->next:NULL;
-
             ignore=igp;
         }
 
@@ -771,7 +793,7 @@ struct iface *init_udp(struct iface *ifa)
                 logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
                 return(NULL);
             }
-            ifu->coalesce->offset=ifu->coalesce->seqid=0;
+            ifu->coalesce->offset=ifu->coalesce->frag=0;
         }
     }
 
