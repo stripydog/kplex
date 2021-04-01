@@ -4,6 +4,7 @@ v1.5:
 * Added heartbeat option
 * Expanded checksumming options
 * Re-lookup up tcp server address on each reconnection
+* Prevent bi-directional udp broadcast interfaces re-reading transmitted data
 
 v1.4: January 6th 2019
 * Fixed crash with checksumming enabled

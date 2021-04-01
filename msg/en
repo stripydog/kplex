@@ -340,3 +340,4 @@ $set 11 udp.c
 41 "Failed to join multicast group %s"
 42 "bind failed for udp interface %s"
 43 "udp interface %s listening on %s, port %d"
+44 "Failed to get socket source address"
