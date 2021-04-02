@@ -559,6 +559,14 @@ that port. This is invariably not what you want and it is normally better to use
 separate send and receive interfaces for bi-directional communication over UDP
 between two instances of kplex.
 
+Bi-directional broadcast interfaces will ignore sentences they transmit in
+order to minimize the possibility of data loops.  When specifying multiple
+interfaces which may send or recive data transmitted to the same broadcast
+address, care should be taken to avoid data loops and consequent broadcast
+storms.
+
+Bi-directional multicast interfaces will ignore sentences they transmit.
+
 Generally kplex can work out whether an interface should use unicast, multicast
 or broadcast traffic from the supplied <address> so the "type" option should not
 normally be given and doing so to force an mode not consistent with the supplied
@@ -569,15 +577,14 @@ is explicitly requested.
 
 By default or if "coalesce=no" is specified, input sentences are always
 transmitted one per packet as soon as they can be.  If "coalesce=yes" is
-specified, kplex will buffer parts of a multi-part AIS message so long as
-enough space is available (512 bytes, a minimum of 7 sentences depending ons
-size, can be buffered). Buffered data will be transmitted if the last part of
-the message is received (even if all the intervening parts have not been),
-there is insufficient space to store another sentence, or a sentence arrives
-which is not part of the buffered message. In the latter cases the newly arrived
-sentence is buffered if it is part (but not the last fragment) of a multi-part
-AIS sentence, otherwise it is transmitted immediately.  kplex does not re-order
-out of order fragments of a multi-part AIS message.
+specified, kplex will buffer parts of a multi-part AIS message.  Buffered data
+will be transmitted if the last part of the message is received (even if all
+the intervening parts have not been), there is insufficient space to store
+another sentence, or a sentence arrives which is not part of the buffered
+message. In the latter cases the newly arrived sentence is buffered if it is
+part (but not the last fragment) of a multi-part AIS sentence, otherwise it is
+transmitted immediately.  kplex does not re-order out of order fragments of a
+multi-part AIS message.
 
 Broadcast Interfaces
 --------------------

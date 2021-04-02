@@ -1,5 +1,5 @@
 kplex: a multitransport multiplexor for linux
-Copyright 2012 Keith Young
+Copyright 2012-2021 Keith Young
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@ GNU General Public License for more details.
 Specifically, this program should not be used in critical
 systems on which safety depends.
 
-The terms of cersion 3 of the GNU General Public Licence are as
+The terms of version 3 of the GNU General Public Licence are as
 follows:
 
 

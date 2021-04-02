@@ -5,6 +5,7 @@ v1.5:
 * Expanded checksumming options
 * Added xfilter support
 * Re-lookup up tcp server address on each reconnection
+* Prevent bi-directional udp broadcast interfaces re-reading transmitted data
 
 v1.4: January 6th 2019
 * Fixed crash with checksumming enabled

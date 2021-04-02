@@ -1,6 +1,6 @@
 /* udp.c
  * This file is part of kplex
- * Copyright Keith Young 2015 - 2020
+ * Copyright Keith Young 2015 - 2021
  * For copying information see the file COPYING distributed with this software
  *
  * UDP interfaces
@@ -12,19 +12,13 @@
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 
-#define CBUFSIZ 128
-
-static struct ignore_addr {
-    struct sockaddr_in iaddr;
-    unsigned short port;
-    int refcnt;
-    int writers;
-    struct ignore_addr *next;
-} *ignore;
+#define CBUFSIZ 810
 
 struct coalesce {
     size_t offset;
-    size_t seqid;
+    unsigned char seqid;
+    unsigned char frag;
+    unsigned char chan;
     char buf[CBUFSIZ];
 };
 
@@ -37,7 +31,7 @@ struct if_udp {
         struct ip_mreq ipmr;
         struct ipv6_mreq ip6mr;
     } mr;
-    struct ignore_addr *ignore;
+    struct sockaddr_in *ignore;
     struct coalesce *coalesce;
 };
 
@@ -60,6 +54,9 @@ void *ifdup_udp(void *ifa)
 
     /* In-bound connections don't need pointer to coalesce buffer */
     newif->coalesce = NULL;
+    /* Out-bound connections don't need the ignore list */
+    oldif->ignore = NULL;
+
 
     /* Whole new file descriptor to bind() to.  Not an issue for Linux but
      * for some other platforms (e.g. OS X) we can't send with a multicast /
@@ -79,7 +76,6 @@ void *ifdup_udp(void *ifa)
 void cleanup_udp(iface_t *ifa)
 {
     struct if_udp *ifu = (struct if_udp *) ifa->info;
-    struct ignore_addr *igp;
 
     if (ifu->type == UDP_MULTICAST && ifa->direction == IN) {
         if (ifu->addr.ss_family == AF_INET) {
@@ -91,18 +87,7 @@ void cleanup_udp(iface_t *ifa)
                 logerr(errno,catgets(cat,11,3,"IPV6_LEAVE_GROUP failed"));
         }
     } else if (ifu->ignore) {
-        /* Broadcast Interface: OK to do this stuff with iomutex locked */
-        if (--ifu->ignore->refcnt == 0) {
-            if (ifu->ignore == ignore)
-                ignore=ifu->ignore->next;
-            else
-                for (igp=ignore;igp;igp=igp->next)
-                    if (igp == ifu->ignore)
-                        if (igp->next == ifu->ignore)
-                            igp->next = ifu->ignore->next;
-            free(ifu->ignore);
-        } else if (ifa->direction == OUT)
-            ifu->ignore->writers--;
+        free(ifu->ignore);
     }
 
     if (ifu->coalesce)
@@ -112,10 +97,17 @@ void cleanup_udp(iface_t *ifa)
     close(ifu->fd);
 }
 
-int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
+/*
+ * is_ais determines whether a sentence formatter is VDO or VDM
+ * Arguments: pointer to an nmea sentence and its length, pointers to
+ * storage for number of fragments, fragment number, sequence number and channel
+ * Returns: If formatter is VDM/VDO and message has appropriate structure
+ * values for num. fragments, fragment num, sequence ID and channel are stored
+ * in appropriate pointers and 1 is returned.  Otherwise returns 0
+ */
+int is_ais(char *sptr,size_t len,unsigned char  *nfrag, unsigned char  *frag,
+        unsigned char *seq, char *chan)
 {
-    int i;
-
     if (len < 13)
         return(0);
 
@@ -127,54 +119,85 @@ int is_ais(char *sptr,size_t len,size_t *nfrag, size_t *frag, unsigned int *seq)
     if ((*sptr++) != ',')
         return(0);
 
-    for (i=7,*nfrag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *nfrag = *nfrag*10+*sptr-'0';
+    if (*sptr < '0' || *sptr  > '9') {
+        return(0);
+    }
 
-    if (*sptr++ != ',' || i > len)
+    *nfrag = *sptr++ - '0';
+
+    if (*sptr++ != ',')
         return(0);
 
-    for (*frag=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *frag = *frag*10+*sptr-'0';
+    if (*sptr < '0' || *sptr  > '9') {
+        return(0);
+    }
 
-    if (*sptr++ != ',' || i > len)
+    *frag = *sptr++ - '0';
+
+    if (*sptr++ != ',')
         return(0);
 
-    for (*seq=0;i <= len && *sptr >= '0' && *sptr <= '9';sptr++,i++)
-        *seq = *seq*10+*sptr-'0';
+    if (*sptr == ',') {
+        *seq = 0;
+        sptr++;
+    } else {
+        if (*sptr < '0' || *sptr  > '9') {
+            return(0);
+        }
+        *seq = *sptr++ - '0';
+        if (*sptr++ != ',') {
+            return(0);
+        }
+    }
 
-    if (*sptr != ',' || i > len)
+    *chan = *sptr++;
+    if (*sptr != ',')
         return(0);
 
     return(1);
 }
 
+/*
+ * coalesce joins together multi-part AIS sentences to send in a single UDP
+ * datagram
+ * Arguments: Interface pointer and pointer to msghdr pointing to a sentence
+ * Returns: 1 if the sentence pointed to is stored or sent by the routine,
+ * 0 otherwise.
+ */
 int coalesce(struct if_udp *ifu, struct msghdr * mh)
 {
-    size_t nfrags,frag;
-    unsigned int seqid;
     struct iovec *ioptr = mh->msg_iov;
     int data = mh->msg_iovlen-1;
     size_t len;
     int i;
     struct coalesce *cp = ifu->coalesce;
+    unsigned char seqid,frag,nfrags;
+    char chan;
 
     if (!(is_ais(ioptr[data].iov_base,ioptr[data].iov_len,
-            &nfrags,&frag,&seqid)))
+            &nfrags,&frag,&seqid,&chan)))
         return(0);
-
-    if (nfrags == 1 && cp->offset == 0)
-        return(0);
-
-    for (i=0;i<mh->msg_iovlen;i++)
-        len=ioptr[i].iov_len;
-
-    if ((cp->offset + len) > CBUFSIZ || ((cp->offset) && (cp->seqid != seqid) &&
-            frag < nfrags)) {
-        sendto(ifu->fd,cp->buf,cp->offset,0,
-               (struct sockaddr *)&ifu->addr,ifu->asize);
-        cp->offset=0;
+    if ((!cp->offset) && nfrags == 1) {
+        return (0);
     }
-
+    for (i=0,len=0;i<mh->msg_iovlen;i++)
+        len+=ioptr[i].iov_len;
+    if (cp->offset) {
+        if ((cp->offset + len) > CBUFSIZ || cp->seqid != seqid ||
+		++(cp->frag) != frag || cp->chan != chan) {
+            if (send(ifu->fd,cp->buf,cp->offset,0) < 0) {
+                return -1;
+            }
+            cp->offset = cp->frag = cp->seqid = 0;
+            if (frag != 1 || nfrags == 1) {
+                return(0);
+            }
+        }
+    } else {
+        cp->seqid = seqid;
+        cp->chan = chan;
+	cp->frag = 1;
+    }
     if (data) {
         memcpy(cp->buf+cp->offset,mh->msg_iov->iov_base,mh->msg_iov->iov_len);
         cp->offset += mh->msg_iov->iov_len;
@@ -184,13 +207,14 @@ int coalesce(struct if_udp *ifu, struct msghdr * mh)
     cp->offset += mh->msg_iov[data].iov_len;
 
     if (frag == nfrags) {
-        sendto(ifu->fd,cp->buf,cp->offset,0,
-                (struct sockaddr *)&ifu->addr,ifu->asize);
-        cp->offset=0;
+        if (send(ifu->fd,cp->buf,cp->offset,0) < 0) {
+            return -1;
+        }
+        cp->offset = cp->frag = cp->seqid = 0;
     } else
         cp->seqid=seqid;
 
-    return (1);;
+    return (1);
 }
 
 
@@ -199,12 +223,13 @@ void write_udp(struct iface *ifa)
     struct if_udp *ifu;
     senblk_t *sptr;
     int data=0;
+    int c;
     struct msghdr msgh;
     struct iovec iov[2];
 
     ifu = (struct if_udp *) ifa->info;
-    msgh.msg_name=(void *)&ifu->addr;
-    msgh.msg_namelen=ifu->asize;
+    msgh.msg_name=NULL;
+    msgh.msg_namelen=0;
     msgh.msg_control=NULL;
     msgh.msg_controllen=msgh.msg_flags=0;
     msgh.msg_iov=iov;
@@ -238,7 +263,10 @@ void write_udp(struct iface *ifa)
         iov[data].iov_len=sptr->len;
 
         if (ifu->coalesce) {
-            if (coalesce(ifu,&msgh)) {
+            if ((c = coalesce(ifu,&msgh)) != 0) {
+                if (c < 0) {
+                    break;
+                }
                 senblk_free(sptr,ifa->q);
                 continue;
             }
@@ -248,7 +276,6 @@ void write_udp(struct iface *ifa)
             break;
         senblk_free(sptr,ifa->q);
     }
-
     if (ifa->tagflags)
         free(iov[0].iov_base);
 
@@ -275,14 +302,19 @@ ssize_t read_udp(void *ptr, char *buf)
     mh.msg_controllen = 0;
     mh.msg_flags = 0;
 
+    memset((void *)&src,0,sizeof(src));
+
     do {
         nread = recvmsg(ifu->fd,&mh,0);
 
-        if (ifu->ignore && ifu->ignore->writers) {
+        if (ifu->ignore) {
         /* Broadcast Interface: IPv4 */
-            if (memcmp((void *)&src,(void *)&ifu->ignore->iaddr,(size_t) mh.msg_namelen)
-                    == 0) 
+            if (((struct sockaddr_in *)&src)->sin_addr.s_addr ==
+                    ifu->ignore->sin_addr.s_addr &&
+                    ((struct sockaddr_in *)&src)->sin_port ==
+                    ifu->ignore->sin_port) {
                 continue;
+            }
         }
         return (nread);
     } while(1);
@@ -335,9 +367,10 @@ struct iface *init_udp(struct iface *ifa)
     int on=1,off=0;
     int err;
     int port;
+    socklen_t slen;
     struct sockaddr_storage laddr;
+    struct sockaddr_in srcaddr;
     struct sockaddr *sa;
-    struct ignore_addr *igp;
     char debugbuf[INET6_ADDRSTRLEN];
     
     if ((ifu=malloc(sizeof(struct if_udp))) == NULL) {
@@ -347,6 +380,7 @@ struct iface *init_udp(struct iface *ifa)
 
     memset(ifu,0,sizeof(struct if_udp));
     memset(&laddr,0,sizeof(struct sockaddr_storage));
+    memset(&srcaddr,0,sizeof(srcaddr));
     sa=(struct sockaddr *)&ifu->addr;
 
     ifname=address=service=NULL;
@@ -690,6 +724,36 @@ struct iface *init_udp(struct iface *ifa)
         return(NULL);
      }
 
+    if (ifa->direction != IN) {
+        if (ifu->type == UDP_BROADCAST) {
+            if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
+                logerr(errno,catgets(cat,11,30,"Setsockopt failed"));
+                return(NULL);
+            }
+        }
+
+        if (connect(ifu->fd,(struct sockaddr *) &ifu->addr,
+                (ifu->addr.ss_family == AF_INET6)?
+                INET6_ADDRSTRLEN:INET_ADDRSTRLEN) < 0) {
+            logerr(errno,catgets(cat,11,45,"Failed to connect"));
+            return(NULL);
+        }
+
+        /* write queue initialization */
+        if (init_q(ifa, qsize) < 0) {
+            logerr(errno,catgets(cat,11,31,"Could not create queue"));
+            return(NULL);
+        }
+        if (coalesce) {
+            if ((ifu->coalesce=
+                    (struct coalesce *)malloc(sizeof(struct coalesce))) == NULL) {
+                logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
+                return(NULL);
+            }
+            ifu->coalesce->offset=ifu->coalesce->frag=0;
+        }
+    }
+
     if (ifu->type == UDP_MULTICAST) {
         if (ifname && ifa->direction != IN) {
             if (ifu->addr.ss_family==AF_INET) {
@@ -709,58 +773,25 @@ struct iface *init_udp(struct iface *ifa)
             }
         }
     } else if (ifu->type == UDP_BROADCAST) {
-        for (igp=ignore;igp;igp=igp->next)
-            if (igp->iaddr.sin_port == ((struct sockaddr_in *)sa)->sin_port &&
-                    igp->iaddr.sin_addr.s_addr ==
-                    ((struct sockaddr_in *)sa)->sin_addr.s_addr)
-                break;
-
-        if (igp == NULL) {
-            if ((igp=(struct ignore_addr *)malloc(sizeof(struct ignore_addr)))
-                    < 0) {
+        if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
+            logerr(errno,catgets(cat,11,30,"Setsockopt failed"));
+            return(NULL);
+        }
+        if (ifa->direction == BOTH) {
+            slen = sizeof(struct sockaddr_in);
+            if (getsockname(ifu->fd,(struct sockaddr *) &srcaddr, &slen) < 0) {
+                logerr(errno,catgets(cat,11,44,
+                        "Failed to get socket source address"));
+            }
+            if ((ifu->ignore=(struct sockaddr_in *)
+                    malloc(sizeof(struct sockaddr_in))) < 0) {
                 logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
                 return(NULL);
             }
-            igp->iaddr.sin_port = ((struct sockaddr_in *)sa)->sin_port;
-            igp->iaddr.sin_addr.s_addr =
-                    ((struct sockaddr_in *)sa)->sin_addr.s_addr;
-            igp->refcnt=igp->writers=0;
-            igp->next=(ignore)?ignore->next:NULL;
-
-            ignore=igp;
-        }
-
-        if ((igp->refcnt+=(ifa->direction == BOTH)?2:1)<0) {
-            logerr(0,catgets(cat,11,29,"Max broadcast interfaces exceeded"));
-            return(NULL);
-        }
-
-        if (ifa->direction != IN)
-            igp->writers++;
-
-        ifu->ignore=igp;
-    }
-
-    if (ifa->direction != IN) {
-        if (ifu->type == UDP_BROADCAST) {
-            if (setsockopt(ifu->fd,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) < 0){
-                logerr(errno,catgets(cat,11,30,"Setsockopt failed"));
-                return(NULL);
-            }
-        }
-
-        /* write queue initialization */
-        if ((ifa->q = init_q(ifa->qsize,ifa->ofilter,ifa->name)) == NULL) {
-            logerr(errno,catgets(cat,11,31,"Could not create queue"));
-            return(NULL);
-        }
-        if (coalesce) {
-            if ((ifu->coalesce=
-                    (struct coalesce *)malloc(sizeof(struct coalesce))) == NULL) {
-                logerr(errno,catgets(cat,11,5,"Could not allocate memory"));
-                return(NULL);
-            }
-            ifu->coalesce->offset=ifu->coalesce->seqid=0;
+            memset(ifu->ignore,0,sizeof(struct sockaddr_in));
+            ifu->ignore->sin_family = AF_INET;
+            ifu->ignore->sin_port = srcaddr.sin_port;
+            ifu->ignore->sin_addr.s_addr = srcaddr.sin_addr.s_addr;
         }
     }
 
