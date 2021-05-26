@@ -24,6 +24,7 @@
 #include <pwd.h>
 
 #define DEFSERIALQSIZE 32
+#define SIERRA_GPS_START "$GPS_START\n"
 
 struct if_serial {
     int fd;
@@ -290,7 +291,8 @@ struct iface *init_serial (struct iface *ifa)
     int ret;
     struct kopts *opt;
     int qsize=DEFSERIALQSIZE;
-    
+    int send_gps_start = 0;
+
     for(opt=ifa->options;opt;opt=opt->next) {
         if (!strcasecmp(opt->var,"filename"))
             devname=opt->val;
@@ -324,7 +326,9 @@ struct iface *init_serial (struct iface *ifa)
                 logerr(0,"Invalid queue size specified: %s",opt->val);
                 return(NULL);
             }
-        } else  {
+        } else if (!strcasecmp(opt->var, "sierragpsstart")) {
+            send_gps_start=atoi(opt->val);
+        } else {
             logerr(0,"unknown interface option %s",opt->var);
             return(NULL);
         }
@@ -337,7 +341,7 @@ struct iface *init_serial (struct iface *ifa)
     }
 
     /* Open interface or die */
-    if ((ifs->fd=ttyopen(devname,ifa->direction)) < 0) {
+    if ((ifs->fd=ttyopen(devname, send_gps_start?BOTH:ifa->direction)) < 0) {
         return(NULL);
     }
     DEBUG(3,"%s: opened serial device %s for %s",ifa->name,devname,
@@ -357,6 +361,9 @@ struct iface *init_serial (struct iface *ifa)
     }
     ifs->saved=1;
     ifs->slavename=NULL;
+
+    if (send_gps_start)
+        write(ifs->fd, SIERRA_GPS_START, strlen(SIERRA_GPS_START));
 
     /* Assign pointers to read, write and cleanup routines */
     ifa->read=do_read;
