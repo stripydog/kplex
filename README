@@ -56,9 +56,77 @@ the serial ports (normally "dialout" on modern debian-based systems).
 
 The configuration file the .deb installation installs in /etc/kplex.conf
 actually does nothing (all directives are commented out).  Read the instructions
-in this README file for how to create a confiuration file.  A quick start
+in this README file for how to create a configuration file.  A quick start
 example which bridges between a tcp server and a 38400 baud serial-to-usb
 connection is commented out in this example file.
+
+Docker
+------
+kplex can now run in a Docker container. There are no dependencies to install, 
+and nothing to build. The final image size is about 55 to 75 MB depending on 
+the host architecture.
+
+A pre-built container has been uploaded to the GitHub Container Registry. 
+
+docker run -d --name buildkplex --restart=unless-stopped --log-driver=local --network=host -v ~/kplex.conf:/etc/kplex.conf:ro buildais:1.0 ./kplex -d 4
+
+After changing anything in the kplex.conf configuration file, restart the 
+container with `docker restart kplex`. The configuration file will be re-loaded 
+at this time.
+
+Two options for obtaining the container: Either download and run a pre-built 
+container, or build the container locally.
+
+Just to test things out on a pre-built container: 
+docker run -it --rm --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest ./kplex -d 4
+
+* This downloads a pre-built container from the Github container registry.
+* Architectures supported are i386, amd64, arm32v6, arm32v7, and arm64. Tested 
+  on amd64, arm32v7, and arm64. arm packages run on all RaspberryPi flavors. Your 
+  client will automatically download the appropriate architecture.
+* --network=host: Allows the container to talk to the internet, if you are 
+  sending the packets to an online service.
+* -v ~/kplex.conf:/etc/kplex.conf:ro  This mounts kplex.conf (from your 
+  home directory) into the container /etc folder, when the container is started. 
+  kplex looks in /etc for configuration files during startup.
+* ./kplex -d ....  Run this command inside the container. Options are needed.
+* -d 4  adds some debug info to kplex.
+* Ctrl-C to kill the container.
+* Using the --rm flag will delete the container when you kill it. Otherwise, 
+  it will stay around until you prune.
+
+For a more permanent setup, run the container in the background:
+docker run -d --name kplex --restart=unless-stopped --log-driver=local --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest ./kplex -d 4 -f kplex.conf
+
+* -d: Start this container in daemon/background mode.
+* --name: Name this anything you want.
+* --restart=unless-stopped: Automatically restart the container if something 
+  happens (reboot, USB problem), unless you have manually stopped the container.
+* --log-driver=local: By default, docker uses the json log driver which may fill 
+  up your harddrive, depending on how busy your station is. local log driver 
+  defaults to 100MB of saved logs, and automatically rotates them.
+* After you make any edits to kplex.conf, reload the container with "docker 
+  restart kplex".
+* View the startup messages and decoded packets with "docker logs --follow kplex".
+* Stop the container with "docker stop kplex".
+
+Building the container:
+
+Clone the repository with "git clone https://github.com/stripydog/kplex.git", then 
+from that folder "docker build -t kplex ."
+
+Or, build the container without cloning the repository:
+"docker build https://github.com/stripydog/kplex.git"
+
+Other tips and tricks:
+
+* If you have this [file] STDOUT directive in your kplex.conf file, you can see 
+  the individual AIS packets with "docker logs --follow kplex".
+  [file]
+  filename=-
+  direction=out
+
+
 
 Invocation:
 -----------
