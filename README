@@ -66,14 +66,6 @@ kplex can now run in a Docker container. There are no dependencies to install,
 and nothing to build. The final image size is about 55 to 75 MB depending on 
 the host architecture.
 
-A pre-built container has been uploaded to the GitHub Container Registry. 
-
-docker run -d --name buildkplex --restart=unless-stopped --log-driver=local --network=host -v ~/kplex.conf:/etc/kplex.conf:ro buildais:1.0 ./kplex -d 4
-
-After changing anything in the kplex.conf configuration file, restart the 
-container with `docker restart kplex`. The configuration file will be re-loaded 
-at this time.
-
 Two options for obtaining the container: Either download and run a pre-built 
 container, or build the container locally.
 
