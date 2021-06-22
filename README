@@ -70,7 +70,7 @@ Two options for obtaining the container: Either download and run a pre-built
 container, or build the container locally.
 
 Just to test things out on a pre-built container: 
-docker run -it --rm --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest ./kplex -d 4
+docker run -it --rm --network=host -v /home/user/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest
 
 * This downloads a pre-built container from the Github container registry.
 * Architectures supported are i386, amd64, arm32v6, arm32v7, and arm64. Tested 
@@ -78,17 +78,16 @@ docker run -it --rm --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bk
   client will automatically download the appropriate architecture.
 * --network=host: Allows the container to talk to the internet, if you are 
   sending the packets to an online service.
-* -v ~/kplex.conf:/etc/kplex.conf:ro  This mounts kplex.conf (from your 
-  home directory) into the container /etc folder, when the container is started. 
+* -v /home/user/kplex.conf:/etc/kplex.conf:ro  This mounts kplex.conf (from your 
+  home directory) into the container's /etc folder (read-only), when the container is started. 
   kplex looks in /etc for configuration files during startup.
-* ./kplex -d ....  Run this command inside the container. Options are needed.
-* -d 4  adds some debug info to kplex.
+* To add command-line options, add ./kplex [OPTIONS] on the end.
 * Ctrl-C to kill the container.
 * Using the --rm flag will delete the container when you kill it. Otherwise, 
   it will stay around until you prune.
 
 For a more permanent setup, run the container in the background:
-docker run -d --name kplex --restart=unless-stopped --log-driver=local --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest ./kplex -d 4 -f kplex.conf
+docker run -d --name kplex --restart=unless-stopped --log-driver=local --network=host -v ~/kplex.conf:/etc/kplex.conf:ro ghcr.io/bklofas/kplex:latest ./kplex -d 4
 
 * -d: Start this container in daemon/background mode.
 * --name: Name this anything you want.
@@ -97,15 +96,28 @@ docker run -d --name kplex --restart=unless-stopped --log-driver=local --network
 * --log-driver=local: By default, docker uses the json log driver which may fill 
   up your harddrive, depending on how busy your station is. local log driver 
   defaults to 100MB of saved logs, and automatically rotates them.
+* ./kplex -d 4: Debug command line options. Optional if all the configuration
+  is in the kplex.conf file.
 * After you make any edits to kplex.conf, reload the container with "docker 
   restart kplex".
-* View the startup messages and decoded packets with "docker logs --follow kplex".
+* If you want to bring real serial devices into the container, add 
+  "--device=/dev/ttyS0" to the command line
+* For USB-serial devices, you could use "--device=/dev/ttyUSB0" or similar, but
+  it's probably better to specify the USB devices by ID. Look in /dev/serial/by-id,
+  and add "--device=/dev/serial/by-id/usb-Prolific_Tech..." or similar. This will
+  ensure the same device is used across reboots. Use the same path in the kplex.conf
+  file. For example:
+  [serial]
+  filename=/dev/ttyS0   or /dev/ttyUSB0   or /dev/serial/by-id/usb-Prolific_Tech....
+  direction=in
+  baud=4800
+* View the startup messages (if any) and output with "docker logs --follow kplex".
 * Stop the container with "docker stop kplex".
 
 Building the container:
 
 Clone the repository with "git clone https://github.com/stripydog/kplex.git", then 
-from that folder "docker build -t kplex ."
+from that folder "docker build -t kplex:1.0 ."
 
 Or, build the container without cloning the repository:
 "docker build https://github.com/stripydog/kplex.git"
