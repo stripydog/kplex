@@ -22,8 +22,13 @@ endif
 DESTDIR?= ""
 BINDIR?=$(PREFIX)/bin
 SHAREDIR=$(PREFIX)/share/kplex
+ifdef NOCATGETS
+CFLAGS+=-D NOCATGETS
+else
+I8NOPTS=-DSHAREDIR=\"$(SHAREDIR)\"
 LANGS=$(shell ls msg)
 LOCALES=$(LANGS:%=%.cat)
+endif
 
 objects=kplex.o fileio.o serial.o bcast.o tcp.o options.o error.o lookup.o mcast.o gofree.o udp.o events.o
 
@@ -42,7 +47,7 @@ tcp.o: tcp.h
 gofree.o: tcp.h
 $(objects): kplex.h
 kplex.o: kplex.c kplex_mods.h version.h
-	$(CC) $(CFLAGS) -c -DSHAREDIR=\"$(SHAREDIR)\" kplex.c
+	$(CC) $(CFLAGS) -c $(I8NOPTS)  kplex.c
 
 version.h:
 	@echo '#define VERSION "'$(BASE_VERSION)'"' > version.h
@@ -57,10 +62,12 @@ install: kplex $(LOCALES)
 	install -g $(INSTGROUP) -o root -m 755 kplex $(DESTDIR)$(BINDIR)/kplex
 	test -d $(DESTDIR)$(MANDIR)/man1 || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(MANDIR)/man1
 	gzip -c kplex.1 > $(DESTDIR)$(MANDIR)/man1/kplex.1.gz
-	test -d "$(DESTDIR)$(SHAREDIR)" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR)
-	test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR/)locale
-	test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -m 755 $(DESTDIR)$(SHAREDIR)/locale
-	for l in $(LANGS); do test -d $(DESTDIR)$(SHAREDIR)/locale/$$l || mkdir $(DESTDIR)$(SHAREDIR)/locale/$$l ; install -g $(INSTGROUP) -o root -m 644 $${l}.cat $(DESTDIR)$(SHAREDIR)/locale/$$l/kplex.cat; done
+	if [ -z "$(NOCATGETS)" ]; then \
+	    test -d "$(DESTDIR)$(SHAREDIR)" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR); \
+	    test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -g $(INSTGROUP) -o root -m 755 $(DESTDIR)$(SHAREDIR/)locale ; \
+	    test -d "$(DESTDIR)$(SHAREDIR)/locale" || install -d -m 755 $(DESTDIR)$(SHAREDIR)/locale ; \
+	    for l in $(LANGS); do test -d $(DESTDIR)$(SHAREDIR)/locale/$$l || mkdir $(DESTDIR)$(SHAREDIR)/locale/$$l ; install -g $(INSTGROUP) -o root -m 644 $${l}.cat $(DESTDIR)$(SHAREDIR)/locale/$$l/kplex.cat; done ; \
+    fi
 
 uninstall:
 	-rm -f $(DESTDIR)$(BINDIR)/kplex

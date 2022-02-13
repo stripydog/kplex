@@ -16,9 +16,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
-#include <nl_types.h>
-
-extern nl_catd cat;
+#include "kplex.h"
 
 #define IDENT "kplex"
 

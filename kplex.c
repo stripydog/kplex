@@ -28,9 +28,12 @@
 /* Macro to identify kplex Proprietary sentences */
 #define isprop(sptr) ((sptr) && sptr->len >= 7 && sptr->data[1] == 'P' && sptr->data[2] == 'K' && sptr->data[3] == 'P' && sptr->data[4] == 'X')
 
+#ifndef NOCATGETS
 /* Message catalogue location passed from Makefile */
 #ifndef SHAREDIR
 #define SHAREDIR "/usr/share/kplex"
+#endif
+nl_catd cat;            /* i8n catalogue */
 #endif
 
 /* Globals. Sadly. Used in signal handlers so few other simple options */
@@ -39,7 +42,6 @@ pthread_t reaper;       /* tid of thread responsible for reaping */
 int timetodie=0;        /* Set on receipt of SIGTERM or SIGINT */
 time_t graceperiod=3;   /* Grace period for unsent data before shutdown (secs)*/
 int debuglevel=0;       /* debug off by default */
-nl_catd cat;            /* i8n catalogue */
 
 /* Signal handler for SIGUSR1 used by interface threads.  Note that this is
  * highly dubious: pthread_exit() is not async safe.  No associated problems
@@ -1471,6 +1473,7 @@ char * mkname(iface_t *ifa, unsigned int i)
     return(strdup(nambuf));
 }        
 
+#ifndef NOCATGETS
 nl_catd init_i8n()
 {
     char * tmpbuf;
@@ -1505,6 +1508,7 @@ nl_catd init_i8n()
     }
     return cat;
 }
+#endif
 
 int main(int argc, char ** argv)
 {
@@ -1540,7 +1544,11 @@ int main(int argc, char ** argv)
     int rcvdsig;
     struct sigaction sa;
 
+#ifdef NOCATGETS
+    setlocale(LC_ALL,"");
+#else
     (void) init_i8n();
+#endif
 
     pthread_mutex_init(&lists.io_mutex,NULL);
 
@@ -1987,7 +1995,9 @@ int main(int argc, char ** argv)
 
     DEBUG(1,catgets(cat,2,31,"Kplex exiting"));
 
+#ifndef NOCATGETS
     catclose(cat);
+#endif
 
     exit(0);
 }

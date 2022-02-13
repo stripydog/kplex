@@ -15,7 +15,6 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
-#include <nl_types.h>
 
 #ifdef __APPLE__
 #include <AvailabilityMacros.h>
@@ -64,8 +63,13 @@
 #define TAG_SRC 4
 #define TAG_ISRC 8
 
+#ifdef NOCATGETS
+#define catgets(cat,x,y,msg) msg
+#else
 /* i8n catalogue */
+#include <nl_types.h>
 extern nl_catd cat;
+#endif
 
 extern int debuglevel;
 #define DEBUG(level,...) if (debuglevel >= level) logdebug(0, __VA_ARGS__)
