@@ -1029,7 +1029,8 @@ char *get_def_config()
         if ((pw=getpwuid(getuid())))
             confptr=pw->pw_dir;
     if (confptr) {
-        if ((buf = malloc(strlen(confptr)+strlen(KPLEXHOMECONF)+2)) == NULL) {
+        if ((buf = (char *) malloc(strlen(confptr)+strlen(KPLEXHOMECONF)+2))
+                == NULL) {
             perror(catgets(cat,2,2,"failed to allocate memory"));
             exit(1);
         }
@@ -1050,7 +1051,7 @@ char *get_def_config()
         }
 
         if ((strlen(KPLEXHOMECONF)) < osxlen) {
-            if (realloc(buf,(baselen=strlen(buf))+osxlen+1) == NULL) {
+            if ((buf = realloc(buf,(baselen=strlen(buf))+osxlen+1)) == NULL) {
                 perror(catgets(cat,2,42,"Can't query OSX config file"));
                 doosxconf=0;
             }
