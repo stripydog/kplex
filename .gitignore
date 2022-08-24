@@ -4,3 +4,9 @@
 kplex
 core
 version.h
+
+# Debian package
+debian/files
+debian/kplex
+debian/kplex.*
+debian/debhelper-build-stamp

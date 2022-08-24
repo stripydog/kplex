@@ -1,0 +1,16 @@
+Source: kplex
+Section: net
+Priority: optional
+Maintainer: Keith Young <stripydog7@gmail.com>
+Uploaders: Frederic Guilbault <2@0464.ca>, Keith Young <stripydog7@gmail.com>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 4.5.0
+Homepage: http://www.stripydog.com/kplex
+
+Package: kplex
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: NMEA-0183 multiplexer for GNU/Linux
+ kplex combines, filters and prioritises NMEA-0183 data from various types of
+ inputs (serial, network, file, pseudo terminal) and sends it to various
+ outputs.

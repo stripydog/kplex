@@ -1,0 +1,46 @@
+kplex for Debian
+----------------
+
+This package installs an init script in /etc/init.d but does not set things up
+to start kplex at boot time. To have kplex run at boot:
+* Read the instructions on enabling kplex at boot time, paying particular heed
+  to recommendations to create a non-root user to run kplex as
+* Create a configuration file for kplex and install it as /etc/kplex.conf
+* Enable boot-time invocation of kplex with:
+    update-rc.d kplex defaults
+
+ -- Keith Young <stripydog7@gmail.com>  Mon, 04 Mar 2013 11:18:17 +0000
+
+
+
+
+
+
+# How to Build kplex into a debian package
+----------------
+ First, make sure you have the required dependencies :
+ ```
+ sudo apt-get install build-essential devscripts lintian
+ ```
+
+ To build a local package:
+ ```
+ debuild -i -us -uc -b
+ ```
+
+ To build a signed source package (required by launchpad)
+ ```
+ debuild -S
+ ```
+
+ # Known problems
+
+ By default the Linter complain about:
+ `E: kplex changes: bad-distribution-in-changes-file unstable`
+
+ Considering that kplex does not depend on any package.
+ If you build a local package this doesn't impact anything.
+ But it you plan to distribute via some kind of repository, the distribution version matter.
+ In that case you need to set the proper version code name in debian/changelog (search&replace for the word `unstable` )
+
+ -- Frederic Guilbault <2@0464.ca>  Mon, 12 Oct 2020 00:00:00 +0000

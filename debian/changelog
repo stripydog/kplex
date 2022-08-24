@@ -1,0 +1,6 @@
+kplex (1.4-1) focal; urgency=low
+
+  * Initial release. Closes: #0010
+  * Fixed Makefile for Debian
+
+ -- Keith Young <stripydog7@gmail.com>  Sun, 06 Jan 2019 19:23:04 +0000
