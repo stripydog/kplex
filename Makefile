@@ -1,4 +1,5 @@
 OS=$(shell uname -s)
+PREFIX?=/usr/local
 ifneq ("$(wildcard .git)","")
 CFLAGS?=-g -Wall
 VERSION := $(shell git describe --dirty --tags | sed 's/^v//')
@@ -7,18 +8,17 @@ else
 BASE_VERSION := $(shell cat base_version)
 endif
 ifeq ($(OS),Linux)
-PREFIX?=/usr
 MANDIR?=$(PREFIX)/share/man
 LDLIBS?=-pthread -lutil
 INSTGROUP?=root
 else
-PREFIX?=/usr/local
 MANDIR?=$(PREFIX)/man
 INSTGROUP?=wheel
 ifneq ($(OS),Darwin)
 LDLIBS?=-lpthread -lutil
 endif
 endif
+
 DESTDIR?= ""
 BINDIR?=$(PREFIX)/bin
 SHAREDIR=$(PREFIX)/share/kplex
